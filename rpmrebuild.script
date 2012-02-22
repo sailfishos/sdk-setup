@@ -1,0 +1,6 @@
+# Mer rpm db is created by the external/host rpm and may be incompatible with
+# the guest - possibly 64/32 or an endian issue.
+# Clean and recreated the rpm db
+echo "Rebuilding rpm DB"
+rm -f /var/lib/rpm/__db*
+rpm --rebuilddb
