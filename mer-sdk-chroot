@@ -1,0 +1,241 @@
+#!/bin/bash
+# mer-sdk-chroot
+
+# TODO
+#
+# Support a Mer clean setup (ie no .oscrc)
+
+usage()
+{
+    cat <<EOF
+    usage: sudo $1 [-u <user>] [-m <all|none|home>] [<SDK root path>]
+       Use the Mer SDK
+       -u  System user to link into SDK (not needed if using sudo)
+       -m  Devices to bind mount from host: none, all (default)
+           or just $HOME
+EOF
+    return 0
+}
+
+# Use the SUDO value if present
+user=$SUDO_USER || true;
+
+bind_mount_devices="yes";
+bind_mount_home="yes";
+while getopts "u:m:" opt; do
+    case $opt in
+	u ) user=$OPTARG;;
+	m ) 
+	    case $OPTARG in
+		all) ;;
+		home)
+		    bind_mount_devices="no";;
+		none)
+		    bind_mount_devices="no";
+		    bind_mount_home="no";;
+		*)  echo "Only 'none', 'all' or 'home' are permitted for -m"
+		    usage
+		    exit 1;;
+	    esac ;;
+	\? ) usage
+            exit 1;;
+	: ) echo "Option -$OPTARG requires an argument." >&2
+	    usage
+	    exit 1;;
+	* ) usage
+            exit 1;;
+    esac
+done
+shift $(($OPTIND - 1))
+
+
+if [[ -z "${1}" ]] ; then
+    sdkroot=$(dirname $(readlink -f $0))
+else
+    sdkroot="$1"
+fi
+
+if [[ -f ${sdkroot}/etc/MerSDK ]] ; then
+    echo "${sdkroot} is not a Mer SDK root directory"
+    usage
+    exit 1
+fi
+
+if [[ -z $user ]] ; then
+    echo "$1 expects to be run as root using sudo"
+    echo "User could not be obtained from \$SUDO_USER, if running as root,"
+    echo "please use -u <user>"
+    usage
+    exit 1
+fi
+
+# Exit if variables not set
+set -u
+
+# Make sure normal users can use any dirs we make
+umask 022
+
+# What devices do we want to mount from the host?
+mountpoints=$(grep "^/" /proc/self/mounts | cut -f2 -d" " | sort)
+mountpoints_r=$(grep "^/" /proc/self/mounts | cut -f2 -d" " | sort -r)
+
+prepare_mountpoints() {
+    echo "Mounting system directories..."
+    mount -o bind /proc ${sdkroot}/proc
+    mount -o bind /proc/sys/fs/binfmt_misc ${sdkroot}/proc/sys/fs/binfmt_misc
+    mount -o bind /sys ${sdkroot}/sys
+    mount -o bind /dev ${sdkroot}/dev
+    mount -o bind /dev/pts ${sdkroot}/dev/pts
+    mount -o bind /dev/shm ${sdkroot}/dev/shm
+    mount -o bind /var/lib/dbus ${sdkroot}/var/lib/dbus
+    mount -o bind /var/run/dbus ${sdkroot}/var/run/dbus
+
+    if [[ $bind_mount_devices == "yes" ]] ; then
+	echo "Mounting / and data directories..."
+        # Mount all data partitions present in parent
+        # sort them in case there are odd depth-mounts
+	mkdir -p ${sdkroot}/parentroot
+	for mp in $mountpoints; do
+	    mkdir -p ${sdkroot}/parentroot
+	    mount -o bind $mp ${sdkroot}/parentroot/$mp
+	done
+    fi
+
+    mkdir -p ${sdkroot}/lib/modules/`uname -r`
+    mount -o bind /lib/modules/`uname -r` ${sdkroot}/lib/modules/`uname -r`
+}
+
+prepare_etc() {
+    cp /etc/resolv.conf ${sdkroot}/etc/resolv.conf
+
+    [[ -d ${sdkroot}/etc/ssl/certs ]] || {
+	mkdir -p ${sdkroot}/etc/ssl/certs
+	cp -a /etc/ssl/certs ${sdkroot}/etc/ssl/certs
+    }
+}
+
+prepare_user() {
+    # getent is probably best for user data 
+    sed -i -e "/^${user}:/d" ${sdkroot}/etc/passwd
+    getent passwd $user >> ${sdkroot}/etc/passwd
+
+    if [[ $bind_mount_home == "yes" ]] ; then
+	echo "Mounting home directory"
+	HOMEDIR=$(getent passwd $user | cut -f6 -d:)
+	mkdir -p ${sdkroot}${HOMEDIR}
+	mount -o bind ${HOMEDIR} ${sdkroot}${HOMEDIR}
+    fi
+    echo "$user ALL=NOPASSWD: ALL" > ${sdkroot}/etc/sudoers.d/$user
+    chmod 0440 ${sdkroot}/etc/sudoers.d/$user
+}
+
+user_hooks() {
+    if [[ $bind_mount_home == "yes" ]] ; then
+	[[ -e $HOMEDIR/.mersdkrc ]] && . $HOMEDIR/.mersdkrc
+	[[ $(type -t enter_sdk) == "function" ]] && {
+	    echo "User entry hook"
+	    enter_sdk
+	}
+    fi
+}    
+
+err_cleanup() {
+    echo
+    echo 'Something went wrong during cleanup.'
+    echo 'Retrying umounts but manual check is required'
+    echo '- press return to confirm'
+    echo
+    read dummy
+    # Now retry cleanup
+    set +e
+    cleanup
+}
+
+umounterrs=""
+warn_umount(){
+    echo
+    echo "Error executing umount of $mountpoint"
+    umounterrs="$umounterrs\n$mountpoint"
+}
+
+try_umount() {
+    mountpoint=$1
+    trap "warn_umount" ERR
+    umount $mountpoint
+    trap - ERR
+}
+
+cleanup () {
+    [[ $(type -t leave_sdk) == "function" ]] && {
+	echo "User exit hook"
+	leave_sdk
+    }
+
+    if [[ $bind_mount_home == "yes" ]] ; then
+	echo "Unmounting $HOMEDIR"
+	try_umount ${sdkroot}${HOMEDIR}
+    fi
+
+    try_umount ${sdkroot}/lib/modules/`uname -r`
+
+    if [[ $bind_mount_devices == "yes" ]] ; then
+	echo "Unmounting / & data directories..."
+        # umount in reverse order
+	for mp in ${mountpoints_r}; do
+	    try_umount ${sdkroot}/parentroot/$mp
+	done
+	fi
+    echo "Unmounting system directories..."
+
+    try_umount ${sdkroot}/var/run/dbus
+    try_umount ${sdkroot}/var/lib/dbus
+    try_umount ${sdkroot}/dev/shm
+    try_umount ${sdkroot}/dev/pts
+    try_umount ${sdkroot}/dev
+    try_umount ${sdkroot}/sys
+    try_umount ${sdkroot}/proc/sys/fs/binfmt_misc
+    try_umount ${sdkroot}/proc
+
+    echo "Done."
+
+    if [[ $umounterrs ]]; then
+	echo
+	echo "Errors encountered when unmounting the following mountpoints"
+	echo -e $umounterrs
+    fi
+}
+
+trap "err_cleanup; exit" INT TERM EXIT
+
+prepare_user
+
+# host / and data and /proc and similar
+prepare_mountpoints
+
+# resolv.conf and ssl certs
+prepare_etc
+
+# Any commands the user wants to run
+user_hooks
+
+echo "Entering chroot as $user"
+chroot ${sdkroot} su - $user
+
+# Call cleanup manually - if an error occurs then warn and retry
+cleanup
+
+trap - INT TERM EXIT
+
+# Issues
+
+# mic needs psmisc
+# need:
+# editor
+# sudo
+# build
+
+# Zypper issues:
+# Do we need: ??
+# rm /var/lib/rpm/__db.00*
+# rpm --rebuilddb
+#
