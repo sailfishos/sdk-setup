@@ -218,8 +218,10 @@ prepare_etc
 # Any commands the user wants to run
 user_hooks
 
+# setarch is used so uname -a will report i386 - this allows osc to
+# work
 echo "Entering chroot as $user"
-chroot ${sdkroot} su - $user
+setarch i386 chroot ${sdkroot} su - $user
 
 # Call cleanup manually - if an error occurs then warn and retry
 cleanup
