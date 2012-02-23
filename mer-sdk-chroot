@@ -67,9 +67,10 @@ if [[ -f ${sdkroot}/etc/MerSDK ]] ; then
 fi
 
 if [[ -z $user ]] ; then
-    echo "$1 expects to be run as root using sudo"
+    echo "$0 expects to be run as root using sudo"
     echo "User could not be obtained from \$SUDO_USER, if running as root,"
     echo "please use -u <user>"
+    echo
     usage
     exit 1
 fi
