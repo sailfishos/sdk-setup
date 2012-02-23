@@ -116,7 +116,7 @@ prepare_etc() {
 
     [[ -d ${sdkroot}/etc/ssl/certs ]] || {
 	mkdir -p ${sdkroot}/etc/ssl/certs
-	cp -a /etc/ssl/certs ${sdkroot}/etc/ssl/certs
+	cp -aL /etc/ssl/certs ${sdkroot}/etc/ssl/
     }
 }
 
