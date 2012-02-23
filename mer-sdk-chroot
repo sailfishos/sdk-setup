@@ -17,6 +17,11 @@ EOF
     return 0
 }
 
+if [[ $EUID -ne 0 ]]; then
+    echo "$0 must be run as root - attempting to sudo"
+    exec sudo $0 "$@"
+fi
+
 # Use the SUDO value if present
 user=$SUDO_USER || true;
 
