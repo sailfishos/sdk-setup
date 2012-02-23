@@ -1,0 +1,5 @@
+# Normally /etc/mtab is provided by systemd
+#
+rm -f /etc/mtab
+ln -s /proc/self/mounts /etc/mtab
+
