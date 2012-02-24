@@ -4,15 +4,20 @@
 # TODO
 #
 # Support a Mer clean setup (ie no .oscrc)
+# Support multiple shells (ie split setup/entry)
 
 usage()
 {
     cat <<EOF
-    usage: sudo $1 [-u <user>] [-m <all|none|home>] [<SDK root path>]
-       Use the Mer SDK
+    usage: sudo $1 [-u <user>] [-m <all|none|home>] [-r <SDK root path>]
+       The Mer chroot SDK 
+
        -u  System user to link into SDK (not needed if using sudo)
        -m  Devices to bind mount from host: none, all (default)
            or just $HOME
+       -r The root of the SDK to use - normally derived from the
+          pathname of $0
+
 EOF
     return 0
 }
@@ -27,7 +32,7 @@ user=$SUDO_USER || true;
 
 bind_mount_devices="yes";
 bind_mount_home="yes";
-while getopts "u:m:" opt; do
+while getopts "u:m:r:" opt; do
     case $opt in
 	u ) user=$OPTARG;;
 	m ) 
@@ -42,6 +47,7 @@ while getopts "u:m:" opt; do
 		    usage
 		    exit 1;;
 	    esac ;;
+	r ) sdkroot=$OPTARG;;
 	\? ) usage
             exit 1;;
 	: ) echo "Option -$OPTARG requires an argument." >&2
@@ -53,11 +59,8 @@ while getopts "u:m:" opt; do
 done
 shift $(($OPTIND - 1))
 
-
-if [[ -z "${1}" ]] ; then
+if [[ -z "${sdkroot}" ]] ; then
     sdkroot=$(dirname $(readlink -f $0))
-else
-    sdkroot="$1"
 fi
 
 if [[ -f ${sdkroot}/etc/MerSDK ]] ; then
