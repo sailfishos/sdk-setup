@@ -183,7 +183,6 @@ cleanup () {
     echo "Unmounting all directories... ($(echo \"${mountpoints_r}\" | wc -w) found)"
 
     # umount in reverse order
-    # Report any errors found
     for mp in ${mountpoints_r}; do
 	try_umount ${sdkroot}$mp/
     done
@@ -191,6 +190,7 @@ cleanup () {
     # umount the self-bind mount we use to apply the --make-unbindable
     try_umount ${sdkroot}
 
+    # Report any errors found
     if [[ $umounterrs ]]; then
 	echo
 	echo "Errors encountered when unmounting the following mountpoints"
