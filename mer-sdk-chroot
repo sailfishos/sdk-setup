@@ -106,7 +106,7 @@ prepare_mountpoints() {
     mount --bind /sys ${sdkroot}/sys
     mount --bind /dev ${sdkroot}/dev
     mount --bind /dev/pts ${sdkroot}/dev/pts
-    mount --bind /dev/shm ${sdkroot}/dev/shm
+    mount --bind /dev/shm/ ${sdkroot}/dev/shm/
     mount --bind /var/lib/dbus ${sdkroot}/var/lib/dbus
     mount --bind /var/run/dbus ${sdkroot}/var/run/dbus
 
