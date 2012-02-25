@@ -247,6 +247,25 @@ run_user_hook() {
 	$hook
     }
 }
+################
+
+add_pid_to_active_chroot_list() {
+    mkdir -p $sdkroot/.active_chroots/
+    touch $sdkroot/.active_chroots/$$
+}
+rm_pid_from_active_chroot_list() {
+    rm $sdkroot/.active_chroots/$$
+}
+ensure_active_chroot_list_is_empty() {
+    mkdir -p $sdkroot/.active_chroots/
+    pids=$(ls $sdkroot/.active_chroots/)
+    [[ -z "$pids" ]] || {
+	echo "There appears to be $(echo $pids | wc -w) chroot(s) still using this SDK"
+	echo "Process(es): $pids"
+	exit 1;
+    }
+}
+
 ################################################################
 
 action=${1:-enter}
@@ -260,7 +279,9 @@ case "$action" in
 	setup_user_hooks
 	echo "Entering chroot as $user"
 	run_user_hook enter_sdk
+	add_pid_to_active_chroot_list
 	setarch i386 chroot ${sdkroot} su - $user
+	rm_pid_from_active_chroot_list
 	run_user_hook leave_sdk
 	;;
 
@@ -282,6 +303,7 @@ EOF
 
     umount )
 	ensure_mounted
+	ensure_active_chroot_list_is_empty
 	get_mount_options
 	rm ${sdkroot}/.sdkoptions
 	setup_user_hooks
