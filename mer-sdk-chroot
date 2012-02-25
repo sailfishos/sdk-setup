@@ -111,14 +111,9 @@ prepare_mountpoints() {
     mount --bind /var/run/dbus ${sdkroot}/var/run/dbus
 
     if [[ $bind_mount_root == "yes" ]] ; then
-	echo "Mounting / and data directories..."
-        # Mount all data partitions present in parent
-        # sort them in case there are odd depth-mounts
+	echo "Mounting / as /parentroot"
 	mkdir -p ${sdkroot}/parentroot
-	for mp in $mountpoints; do
-	    mkdir -p ${sdkroot}/parentroot
-	    mount --bind $mp ${sdkroot}/parentroot/$mp
-	done
+	mount --rbind / ${sdkroot}/parentroot/
     fi
 
     mkdir -p ${sdkroot}/lib/modules/`uname -r`
