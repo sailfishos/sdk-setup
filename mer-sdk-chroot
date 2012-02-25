@@ -168,7 +168,6 @@ try_umount() {
     mountpoint=$1
     shift
     trap "warn_umount" ERR
-    echo umounting $mountpoint
     umount "$@" $mountpoint
     trap - ERR
 }
