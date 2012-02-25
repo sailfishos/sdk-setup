@@ -90,14 +90,14 @@ mountpoints_r=$(grep "^/" /proc/self/mounts | grep -v bind | cut -f2 -d" " | sor
 
 prepare_mountpoints() {
     echo "Mounting system directories..."
-    mount -o bind /proc ${sdkroot}/proc
-    mount -o bind /proc/sys/fs/binfmt_misc ${sdkroot}/proc/sys/fs/binfmt_misc
-    mount -o bind /sys ${sdkroot}/sys
-    mount -o bind /dev ${sdkroot}/dev
-    mount -o bind /dev/pts ${sdkroot}/dev/pts
-    mount -o bind /dev/shm ${sdkroot}/dev/shm
-    mount -o bind /var/lib/dbus ${sdkroot}/var/lib/dbus
-    mount -o bind /var/run/dbus ${sdkroot}/var/run/dbus
+    mount --bind /proc ${sdkroot}/proc
+    mount --bind /proc/sys/fs/binfmt_misc ${sdkroot}/proc/sys/fs/binfmt_misc
+    mount --bind /sys ${sdkroot}/sys
+    mount --bind /dev ${sdkroot}/dev
+    mount --bind /dev/pts ${sdkroot}/dev/pts
+    mount --bind /dev/shm ${sdkroot}/dev/shm
+    mount --bind /var/lib/dbus ${sdkroot}/var/lib/dbus
+    mount --bind /var/run/dbus ${sdkroot}/var/run/dbus
 
     if [[ $bind_mount_devices == "yes" ]] ; then
 	echo "Mounting / and data directories..."
@@ -106,12 +106,12 @@ prepare_mountpoints() {
 	mkdir -p ${sdkroot}/parentroot
 	for mp in $mountpoints; do
 	    mkdir -p ${sdkroot}/parentroot
-	    mount -o bind $mp ${sdkroot}/parentroot/$mp
+	    mount --bind $mp ${sdkroot}/parentroot/$mp
 	done
     fi
 
     mkdir -p ${sdkroot}/lib/modules/`uname -r`
-    mount -o bind /lib/modules/`uname -r` ${sdkroot}/lib/modules/`uname -r`
+    mount --bind /lib/modules/`uname -r` ${sdkroot}/lib/modules/`uname -r`
 }
 
 prepare_etc() {
@@ -132,7 +132,7 @@ prepare_user() {
     if [[ $bind_mount_home == "yes" ]] ; then
 	echo "Mounting home directory"
 	mkdir -p ${sdkroot}${HOMEDIR}
-	mount -o bind ${HOMEDIR} ${sdkroot}${HOMEDIR}
+	mount --bind ${HOMEDIR} ${sdkroot}${HOMEDIR}
     fi
     echo "$user ALL=NOPASSWD: ALL" > ${sdkroot}/etc/sudoers.d/$user
     chmod 0440 ${sdkroot}/etc/sudoers.d/$user
