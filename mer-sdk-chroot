@@ -9,8 +9,8 @@
 usage()
 {
     cat <<EOF
-    usage: sudo $1 [-u <user>] [-m <all|none|home>] [-r <SDK root path>]
-       The Mer chroot SDK 
+    usage: sudo <enter|on|off> $1 [-u <user>] [-m <all|none|home>] [-r <SDK root path>]
+       The Mer chroot SDK
 
        -u  System user to link into SDK (not needed if using sudo)
        -m  Devices to bind mount from host: none, all (default)
@@ -35,7 +35,7 @@ bind_mount_home="yes";
 while getopts "u:m:r:" opt; do
     case $opt in
 	u ) user=$OPTARG;;
-	m ) 
+	m )
 	    case $OPTARG in
 		all) ;;
 		home)
@@ -78,15 +78,15 @@ if [[ -z $user ]] ; then
     exit 1
 fi
 
-# Exit if variables not set
+# From now on, exit if variables not set
 set -u
 
 # Make sure normal users can use any dirs we make
 umask 022
 
 # What devices do we want to mount from the host?
-mountpoints=$(grep "^/" /proc/self/mounts | cut -f2 -d" " | sort)
-mountpoints_r=$(grep "^/" /proc/self/mounts | cut -f2 -d" " | sort -r)
+mountpoints=$(grep "^/" /proc/self/mounts | grep -v bind | cut -f2 -d" " | sort)
+mountpoints_r=$(grep "^/" /proc/self/mounts | grep -v bind | cut -f2 -d" " | sort -r)
 
 prepare_mountpoints() {
     echo "Mounting system directories..."
@@ -124,13 +124,13 @@ prepare_etc() {
 }
 
 prepare_user() {
-    # getent is probably best for user data 
+    # getent is probably best for user data
     sed -i -e "/^${user}:/d" ${sdkroot}/etc/passwd
     getent passwd $user >> ${sdkroot}/etc/passwd
+    HOMEDIR=$(getent passwd $user | cut -f6 -d:)
 
     if [[ $bind_mount_home == "yes" ]] ; then
 	echo "Mounting home directory"
-	HOMEDIR=$(getent passwd $user | cut -f6 -d:)
 	mkdir -p ${sdkroot}${HOMEDIR}
 	mount -o bind ${HOMEDIR} ${sdkroot}${HOMEDIR}
     fi
@@ -138,15 +138,14 @@ prepare_user() {
     chmod 0440 ${sdkroot}/etc/sudoers.d/$user
 }
 
-user_hooks() {
+run_user_hooks() {
     if [[ $bind_mount_home == "yes" ]] ; then
-	[[ -e $HOMEDIR/.mersdkrc ]] && . $HOMEDIR/.mersdkrc
 	[[ $(type -t enter_sdk) == "function" ]] && {
 	    echo "User entry hook"
 	    enter_sdk
 	}
     fi
-}    
+}
 
 err_cleanup() {
     echo
@@ -188,7 +187,7 @@ cleanup () {
     try_umount ${sdkroot}/lib/modules/`uname -r`
 
     if [[ $bind_mount_devices == "yes" ]] ; then
-	echo "Unmounting / & data directories..."
+	echo "Unmounting / & data directories... ${mountpoints_r}"
         # umount in reverse order
 	for mp in ${mountpoints_r}; do
 	    try_umount ${sdkroot}/parentroot/$mp
@@ -214,39 +213,85 @@ cleanup () {
     fi
 }
 
-trap "err_cleanup; exit" INT TERM EXIT
+ensure_not_mounted() {
+    [[ -e ${sdkroot}/.skdoptions ]] && {
+	cat <<EOF
+This SDK ( ${sdkroot} ) is already mounted.
+If you are sure this is not an error and /proc/self/mounts has no mountpoints under it then remove ${sdkroot}/.skdoptions and try again.
+EOF
+	exit 1;
+    }
 
-prepare_user
+}
+ensure_mounted() {
+    [[ -e ${sdkroot}/.skdoptions ]] || {
+	cat <<EOF
+This SDK ( ${sdkroot} ) does not appear to be mounted.
+Have you run $0 mount?
 
-# host / and data and /proc and similar
-prepare_mountpoints
+(Check /proc/self/mounts to be sure.)
+EOF
+	exit 1;
+    }
+}
+stash_mount_options() {
+    cat <<EOF > ${sdkroot}/.skdoptions
+bind_mount_devices="${bind_mount_devices}"
+bind_mount_home="${bind_mount_home}"
+user="${user}"
+HOMEDIR="${HOMEDIR}"
+EOF
+}
+get_mount_options() {
+    [[ -e ${sdkroot}/.skdoptions ]] && {
+	source ${sdkroot}/.skdoptions
+	rm ${sdkroot}/.skdoptions
+    }
+}
 
-# resolv.conf and ssl certs
-prepare_etc
+setup_user_hooks(){
+    # Access any user hooks
+    [[ -e $HOMEDIR/.mersdkrc ]] && . $HOMEDIR/.mersdkrc
+}
 
-# Any commands the user wants to run
-user_hooks
 
-# setarch is used so uname -a will report i386 - this allows osc to
-# work
-echo "Entering chroot as $user"
-setarch i386 chroot ${sdkroot} su - $user
+action=${1:-enter}
 
-# Call cleanup manually - if an error occurs then warn and retry
-cleanup
+case "$action" in
+    enter )
+        # setarch is used so uname -a will report i386 - this allows
+        # osc to work
+	ensure_mounted
+	echo "Entering chroot as $user"
+	setarch i386 chroot ${sdkroot} su - $user
+	;;
+    mount  )
+	ensure_not_mounted
+	trap "err_cleanup; exit" INT TERM EXIT
+	prepare_user          # in /etc/passwd
+        prepare_mountpoints   # host / and data and /proc and similar
+	prepare_etc           # resolv.conf and ssl certs
+	setup_user_hooks
+	run_user_hooks
+	stash_mount_options   # for use when umounting
 
-trap - INT TERM EXIT
-
-# Issues
-
-# mic needs psmisc
-# need:
-# editor
-# sudo
-# build
-
-# Zypper issues:
-# Do we need: ??
-# rm /var/lib/rpm/__db.00*
-# rpm --rebuilddb
-#
+	cat <<EOF
+${sdkroot} is now setup with mountpoints to make it
+easier to use as a Mer SDK.
+EOF
+	trap - INT TERM EXIT
+	;;
+    umount )
+	ensure_mounted
+	get_mount_options
+	setup_user_hooks
+	trap "err_cleanup; exit" INT TERM EXIT
+        # Call cleanup manually - if an error occurs then warn and
+        # retry
+	cleanup
+	trap - INT TERM EXIT
+	;;
+    * )
+	echo "$action not recognised"
+	;;
+esac
