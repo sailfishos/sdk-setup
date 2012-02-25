@@ -93,7 +93,7 @@ umask 022
 prepare_mountpoints() {
     # Setup sdkroot as a bind mountpoint on itself to permit
     # --make-unbindable
-    mount --bind $sdkroot $sdkroot
+    mount --bind $sdkroot/ $sdkroot/
     mount --make-unbindable $sdkroot
 
     echo "Mounting system directories..."
@@ -166,8 +166,10 @@ warn_umount(){
 
 try_umount() {
     mountpoint=$1
+    shift
     trap "warn_umount" ERR
-    umount $mountpoint
+    echo umounting $mountpoint
+    umount "$@" $mountpoint
     trap - ERR
 }
 
@@ -188,7 +190,10 @@ cleanup () {
     done
 
     # umount the self-bind mount we use to apply the --make-unbindable
-    try_umount ${sdkroot}
+    # When this script is run in umount mode the shell has a
+    # filehandle open into the self-mount for it - this results in a
+    # device busy and hence needs a lazy umount
+    try_umount ${sdkroot}/ -l
 
     # Report any errors found
     if [[ $umounterrs ]]; then
