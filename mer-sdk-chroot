@@ -118,15 +118,7 @@ prepare_mountpoints() {
 
     mkdir -p ${sdkroot}/lib/modules/`uname -r`
     mount --bind /lib/modules/`uname -r` ${sdkroot}/lib/modules/`uname -r`
-}
 
-prepare_etc() {
-    cp /etc/resolv.conf ${sdkroot}/etc/resolv.conf
-
-    [[ -d ${sdkroot}/etc/ssl/certs ]] || {
-	mkdir -p ${sdkroot}/etc/ssl/certs
-	cp -aL /etc/ssl/certs ${sdkroot}/etc/ssl/
-    }
 }
 
 prepare_user() {
@@ -145,14 +137,17 @@ prepare_user() {
     chmod 0440 ${sdkroot}/etc/sudoers.d/$user
 }
 
-run_user_hooks() {
-    if [[ $bind_mount_home == "yes" ]] ; then
-	[[ $(type -t enter_sdk) == "function" ]] && {
-	    echo "User entry hook"
-	    enter_sdk
-	}
-    fi
+prepare_etc() {
+    cp /etc/resolv.conf ${sdkroot}/etc/resolv.conf
+
+    [[ -d ${sdkroot}/etc/ssl/certs ]] || {
+	mkdir -p ${sdkroot}/etc/ssl/certs
+	cp -aL /etc/ssl/certs ${sdkroot}/etc/ssl/
+    }
 }
+
+################################################################
+# Umount
 
 err_cleanup() {
     echo
@@ -182,7 +177,7 @@ try_umount() {
 
 cleanup () {
     [[ $(type -t leave_sdk) == "function" ]] && {
-	echo "User exit hook"
+	echo "Running user exit hook"
 	leave_sdk
     }
 
@@ -243,11 +238,21 @@ get_mount_options() {
     }
 }
 
+################
+
 setup_user_hooks(){
     # Access any user hooks
     [[ -e $HOMEDIR/.mersdkrc ]] && . $HOMEDIR/.mersdkrc
 }
 
+run_user_hook() {
+    hook=$1
+    [[ $(type -t $hook) == "function" ]] && {
+	echo "User hook $hook"
+	$hook
+    }
+}
+################################################################
 
 action=${1:-enter}
 
@@ -256,23 +261,28 @@ case "$action" in
         # setarch is used so uname -a will report i386 - this allows
         # osc to work
 	ensure_mounted
+	setup_user_hooks
 	echo "Entering chroot as $user"
+	run_user_hook enter_sdk
 	setarch i386 chroot ${sdkroot} su - $user
+	run_user_hook leave_sdk
 	;;
+
     mount  )
 	ensure_not_mounted
 	trap "err_cleanup; exit" INT TERM EXIT
-	prepare_user          # in /etc/passwd
         prepare_mountpoints   # host / and data and /proc and similar
+	prepare_user          # in /etc/passwd
+	setup_user_hooks      # (after prepare so HOMEDIR is known)
 	prepare_etc           # resolv.conf and ssl certs
-	setup_user_hooks
-	run_user_hooks
+	run_user_hook mount_sdk
 	stash_mount_options   # for use when umounting
 
 	cat <<EOF
 ${sdkroot} is now setup with mountpoints to make it
 easier to use as a Mer SDK.
 EOF
+
 	trap - INT TERM EXIT
 	;;
     umount )
@@ -282,6 +292,7 @@ EOF
 	trap "err_cleanup; exit" INT TERM EXIT
         # Call cleanup manually - if an error occurs then warn and
         # retry
+	run_user_hook umount_sdk
 	cleanup
 	trap - INT TERM EXIT
 	;;
