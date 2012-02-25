@@ -88,10 +88,6 @@ set -u
 # Make sure normal users can use any dirs we make
 umask 022
 
-# What devices do we want to mount from the host?
-mountpoints=$(grep "^/" /proc/self/mounts | grep -v bind | cut -f2 -d" " | sort)
-mountpoints_r=$(grep "^/" /proc/self/mounts | grep -v bind | cut -f2 -d" " | sort -r)
-
 ################################################################
 # Mount
 prepare_mountpoints() {
