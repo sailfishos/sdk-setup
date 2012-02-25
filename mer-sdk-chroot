@@ -230,7 +230,6 @@ EOF
 get_mount_options() {
     [[ -e ${sdkroot}/.sdkoptions ]] && {
 	source ${sdkroot}/.sdkoptions
-	rm ${sdkroot}/.sdkoptions
     }
 }
 
@@ -257,6 +256,7 @@ case "$action" in
         # setarch is used so uname -a will report i386 - this allows
         # osc to work
 	ensure_mounted
+	get_mount_options
 	setup_user_hooks
 	echo "Entering chroot as $user"
 	run_user_hook enter_sdk
@@ -283,6 +283,7 @@ EOF
     umount )
 	ensure_mounted
 	get_mount_options
+	rm ${sdkroot}/.sdkoptions
 	setup_user_hooks
 	trap "err_cleanup; exit" INT TERM EXIT
         # Call cleanup manually - if an error occurs then warn and
