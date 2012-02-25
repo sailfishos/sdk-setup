@@ -279,6 +279,7 @@ ${sdkroot} is now setup with mountpoints to make it easier to use as a Mer SDK.
 EOF
 	trap - INT TERM EXIT
 	;;
+
     umount )
 	ensure_mounted
 	get_mount_options
