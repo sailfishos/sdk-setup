@@ -136,9 +136,10 @@ prepare_user() {
     HOMEDIR=$(getent passwd $user | cut -f6 -d:)
 
     if [[ $bind_mount_home == "yes" ]] ; then
-	echo "Mounting home directory"
+	echo "Mounting home directory: ${HOMEDIR}"
 	mkdir -p ${sdkroot}${HOMEDIR}
 	mount --bind ${HOMEDIR} ${sdkroot}${HOMEDIR}
+	mount --make-unbindable ${sdkroot}${HOMEDIR}
     fi
     echo "$user ALL=NOPASSWD: ALL" > ${sdkroot}/etc/sudoers.d/$user
     chmod 0440 ${sdkroot}/etc/sudoers.d/$user
