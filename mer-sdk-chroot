@@ -225,8 +225,6 @@ EOF
 }
 stash_mount_options() {
     cat <<EOF > ${sdkroot}/.sdkoptions
-bind_mount_root="${bind_mount_root}"
-bind_mount_home="${bind_mount_home}"
 user="${user}"
 HOMEDIR="${HOMEDIR}"
 EOF
