@@ -9,12 +9,12 @@
 usage()
 {
     cat <<EOF
-    usage: sudo <enter|on|off> $1 [-u <user>] [-m <all|none|home>] [-r <SDK root path>]
+    usage: sudo <enter|on|off> $1 [-u <user>] [-m <all|none|root|home>] [-r <SDK root path>]
        The Mer chroot SDK
 
        -u  System user to link into SDK (not needed if using sudo)
        -m  Devices to bind mount from host: none, all (default)
-           or just $HOME
+           root, home
        -r The root of the SDK to use - normally derived from the
           pathname of $0
 
@@ -30,7 +30,7 @@ fi
 # Use the SUDO value if present
 user=$SUDO_USER || true;
 
-bind_mount_devices="yes";
+bind_mount_root="yes";
 bind_mount_home="yes";
 while getopts "u:m:r:" opt; do
     case $opt in
@@ -39,9 +39,11 @@ while getopts "u:m:r:" opt; do
 	    case $OPTARG in
 		all) ;;
 		home)
-		    bind_mount_devices="no";;
+		    bind_mount_root="no";;
+		root)
+		    bind_mount_home="no";;
 		none)
-		    bind_mount_devices="no";
+		    bind_mount_root="no";
 		    bind_mount_home="no";;
 		*)  echo "Only 'none', 'all' or 'home' are permitted for -m"
 		    usage
@@ -108,7 +110,7 @@ prepare_mountpoints() {
     mount --bind /var/lib/dbus ${sdkroot}/var/lib/dbus
     mount --bind /var/run/dbus ${sdkroot}/var/run/dbus
 
-    if [[ $bind_mount_devices == "yes" ]] ; then
+    if [[ $bind_mount_root == "yes" ]] ; then
 	echo "Mounting / and data directories..."
         # Mount all data partitions present in parent
         # sort them in case there are odd depth-mounts
@@ -195,7 +197,7 @@ cleanup () {
 
     try_umount ${sdkroot}/lib/modules/`uname -r`
 
-    if [[ $bind_mount_devices == "yes" ]] ; then
+    if [[ $bind_mount_root == "yes" ]] ; then
 	echo "Unmounting / & data directories... ${mountpoints_r}"
         # umount in reverse order
 	for mp in ${mountpoints_r}; do
@@ -245,7 +247,7 @@ EOF
 }
 stash_mount_options() {
     cat <<EOF > ${sdkroot}/.skdoptions
-bind_mount_devices="${bind_mount_devices}"
+bind_mount_root="${bind_mount_root}"
 bind_mount_home="${bind_mount_home}"
 user="${user}"
 HOMEDIR="${HOMEDIR}"
