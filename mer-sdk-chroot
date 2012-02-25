@@ -186,32 +186,19 @@ cleanup () {
 	leave_sdk
     }
 
-    if [[ $bind_mount_home == "yes" ]] ; then
-	echo "Unmounting $HOMEDIR"
-	try_umount ${sdkroot}${HOMEDIR}
-    fi
+    # We need to detect all mountpoints inside our chroot.
+    mountpoints_r=$(perl -w -ne "print \"\$1\n\" if m\"^\S* ${sdkroot}(/\S*) \";" /proc/mounts | sort -r)
 
-    try_umount ${sdkroot}/lib/modules/`uname -r`
+    echo "Unmounting all directories... ($(echo \"${mountpoints_r}\" | wc -w) found)"
 
-    if [[ $bind_mount_root == "yes" ]] ; then
-	echo "Unmounting / & data directories... ${mountpoints_r}"
-        # umount in reverse order
-	for mp in ${mountpoints_r}; do
-	    try_umount ${sdkroot}/parentroot/$mp
-	done
-	fi
-    echo "Unmounting system directories..."
+    # umount in reverse order
+    # Report any errors found
+    for mp in ${mountpoints_r}; do
+	try_umount ${sdkroot}$mp/
+    done
 
-    try_umount ${sdkroot}/var/run/dbus
-    try_umount ${sdkroot}/var/lib/dbus
-    try_umount ${sdkroot}/dev/shm
-    try_umount ${sdkroot}/dev/pts
-    try_umount ${sdkroot}/dev
-    try_umount ${sdkroot}/sys
-    try_umount ${sdkroot}/proc/sys/fs/binfmt_misc
-    try_umount ${sdkroot}/proc
-
-    echo "Done."
+    # umount the self-bind mount we use to apply the --make-unbindable
+    try_umount ${sdkroot}
 
     if [[ $umounterrs ]]; then
 	echo
