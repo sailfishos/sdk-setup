@@ -61,6 +61,8 @@ shift $(($OPTIND - 1))
 
 if [[ -z "${sdkroot}" ]] ; then
     sdkroot=$(dirname $(readlink -f $0))
+else
+    sdkroot=$(readlink -f $sdkroot)
 fi
 
 if [[ -f ${sdkroot}/etc/MerSDK ]] ; then
