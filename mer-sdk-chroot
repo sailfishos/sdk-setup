@@ -90,7 +90,14 @@ umask 022
 mountpoints=$(grep "^/" /proc/self/mounts | grep -v bind | cut -f2 -d" " | sort)
 mountpoints_r=$(grep "^/" /proc/self/mounts | grep -v bind | cut -f2 -d" " | sort -r)
 
+################################################################
+# Mount
 prepare_mountpoints() {
+    # Setup sdkroot as a bind mountpoint on itself to permit
+    # --make-unbindable
+    mount --bind $sdkroot $sdkroot
+    mount --make-unbindable $sdkroot
+
     echo "Mounting system directories..."
     mount --bind /proc ${sdkroot}/proc
     mount --bind /proc/sys/fs/binfmt_misc ${sdkroot}/proc/sys/fs/binfmt_misc
