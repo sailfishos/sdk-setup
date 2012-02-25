@@ -198,16 +198,8 @@ cleanup () {
     fi
 }
 
-ensure_not_mounted() {
-    [[ -e ${sdkroot}/.sdkoptions ]] && {
-	cat <<EOF
-This SDK ( ${sdkroot} ) is already mounted.
-If you are sure this is not an error and /proc/self/mounts has no mountpoints under it then remove ${sdkroot}/.sdkoptions and try again.
-EOF
-	exit 1;
-    }
-
-}
+################################################################
+# utility
 ensure_mounted() {
     [[ -e ${sdkroot}/.sdkoptions ]] || {
 	cat <<EOF
@@ -218,6 +210,16 @@ Have you run $0 mount?
 EOF
 	exit 1;
     }
+}
+ensure_not_mounted() {
+    [[ -e ${sdkroot}/.sdkoptions ]] && {
+	cat <<EOF
+This SDK ( ${sdkroot} ) is already mounted.
+If you are sure this is not an error and /proc/self/mounts has no mountpoints under it then remove ${sdkroot}/.sdkoptions and try again.
+EOF
+	exit 1;
+    }
+
 }
 stash_mount_options() {
     cat <<EOF > ${sdkroot}/.sdkoptions
