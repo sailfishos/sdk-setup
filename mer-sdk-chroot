@@ -173,11 +173,6 @@ try_umount() {
 }
 
 cleanup () {
-    [[ $(type -t leave_sdk) == "function" ]] && {
-	echo "Running user exit hook"
-	leave_sdk
-    }
-
     # We need to detect all mountpoints inside our chroot.
     mountpoints_r=$(perl -w -ne "print \"\$1\n\" if m\"^\S* ${sdkroot}(/\S*) \";" /proc/mounts | sort -r)
 
