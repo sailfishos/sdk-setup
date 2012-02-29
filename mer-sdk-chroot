@@ -300,7 +300,7 @@ EOF
 	trap - INT TERM EXIT
 	;;
 
-    umount )
+    umount|unmount )
 	ensure_mounted
 	ensure_active_chroot_list_is_empty
 	get_mount_options
