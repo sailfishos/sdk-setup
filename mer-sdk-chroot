@@ -23,8 +23,9 @@ EOF
 }
 
 if [[ $EUID -ne 0 ]]; then
-    echo "$0 must be run as root - attempting to sudo"
     exec sudo $0 "$@"
+    echo "$0 must be run as root and sudo failed; exiting"
+    exit 1
 fi
 
 # Use the SUDO value if present
