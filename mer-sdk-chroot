@@ -167,6 +167,8 @@ prepare_mountpoints() {
 }
 
 prepare_user() {
+    # remove mer user if present
+    sed -i -d "/^$mer:/d" ${sdkroot}/etc/passwd
     # getent is probably best for user data
     sed -i -e "/^${user}:/d" ${sdkroot}/etc/passwd
     getent passwd $user >> ${sdkroot}/etc/passwd
