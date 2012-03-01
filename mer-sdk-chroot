@@ -122,6 +122,24 @@ if [[ -f ${sdkroot}/etc/MerSDK ]] ; then
     exit 1
 fi
 
+# We need the SDK to be under a --make-unbindable mount otherwise it
+# appears in other SDKs. We also need $sdkroot *not* to be
+# --make-unbindable since things like mic want to make bind mounts in
+# there.
+# We can't just make .. --make-unbindable since it may be something
+# special (eg if the SDK is installed straight into $HOME or / that
+# would break stuff)
+# Solution - force an intermediate 'sdks' directory for now. We could
+# do this in the .ks for chroot SDKs but that gets messy too.
+sdkparent=$(dirname $sdkroot)
+if [[ $(basename $sdkparent) != "sdks" ]] ; then
+    echo "The SDK must be installed into a directory called sdks"
+    echo "maybe:"
+    echo " mkdir $sdkparent/sdks/"
+    echo " mv $sdkroot $sdkparent/sdks/"
+    exit 1
+fi
+
 if [[ -z $user ]] ; then
     echo "$0 expects to be run as root using sudo"
     echo "User could not be obtained from \$SUDO_USER, if running as root,"
@@ -143,7 +161,8 @@ prepare_mountpoints() {
     # Setup sdkroot as a bind mountpoint on itself to permit
     # --make-unbindable
     mount --bind $sdkroot/ $sdkroot/
-    mount --make-unbindable $sdkroot
+    mount --make-unbindable $sdkparent
+    mount --make-private $sdkroot
 
     echo "Mounting system directories..."
     mount --bind /proc ${sdkroot}/proc
