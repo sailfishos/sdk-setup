@@ -1,0 +1,2 @@
+# Ensure this chroot is marked as an SDK
+echo "MerSDK" > /etc/MerSDK
