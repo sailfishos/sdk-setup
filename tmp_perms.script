@@ -1,0 +1,2 @@
+# Fix /tmp sticky bit
+chmmod 1777 /tmp
