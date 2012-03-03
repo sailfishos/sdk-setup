@@ -116,9 +116,10 @@ else
     sdkroot=$(readlink -f $sdkroot)
 fi
 
-if [[ -f ${sdkroot}/etc/MerSDK ]] ; then
-    echo "${sdkroot} is not a Mer SDK root directory"
-    usage
+if [[ ! -f ${sdkroot}/etc/MerSDK ]] ; then
+    echo "${sdkroot} does not look like a Mer SDK rootfs"
+    echo "if you are sure it is, you may mark it by running"
+    echo "echo 'MerSDK' | sudo tee ${sdkroot}/etc/MerSDK"
     exit 1
 fi
 
