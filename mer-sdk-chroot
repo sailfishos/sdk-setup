@@ -158,6 +158,10 @@ umask 022
 ################################################################
 # Mount
 prepare_mountpoints() {
+    # Ensure the parent is a mountpoint in it's own right so it can be
+    # made unbindable
+    grep $sdkparent /proc/mounts > /dev/null || mount --bind $sdkparent/ $sdkparent/
+
     # Setup sdkroot as a bind mountpoint on itself to permit
     # --make-unbindable
     mount --bind $sdkroot/ $sdkroot/
