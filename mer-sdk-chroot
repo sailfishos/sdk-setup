@@ -164,10 +164,11 @@ prepare_mountpoints() {
 
     # Setup sdkroot as a bind mountpoint on itself to permit
     # --make-unbindable
-    mount --make-private $sdkparent
-    mount --bind $sdkroot/ $sdkroot/
-    mount --make-unbindable $sdkparent
-    mount --make-private $sdkroot
+    mount --make-private $sdkparent      # Permit bind mounts below parent so we can...
+    mount --bind $sdkroot/ $sdkroot/     # ... set the SDK dir as a mountpoint.
+    mount --make-unbindable $sdkparent   # Make the parent unbindable again
+    mount --make-private $sdkroot        # but allow bindmounts within the SDK for mic etc
+
 
     echo "Mounting system directories..."
     mount --bind /proc ${sdkroot}/proc
