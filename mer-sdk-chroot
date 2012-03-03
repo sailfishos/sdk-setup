@@ -164,6 +164,7 @@ prepare_mountpoints() {
 
     # Setup sdkroot as a bind mountpoint on itself to permit
     # --make-unbindable
+    mount --make-private $sdkparent
     mount --bind $sdkroot/ $sdkroot/
     mount --make-unbindable $sdkparent
     mount --make-private $sdkroot
