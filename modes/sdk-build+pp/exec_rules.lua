@@ -4,25 +4,19 @@
 
 -- Rule file interface version, mandatory.
 --
-rule_file_interface_version = "102"
+rule_file_interface_version = "203"
 ----------------------------------
-
--- If the permission token exists and contains "root", use fakeroot.
-local fakeroot_ld_preload = ""
-if sb.get_session_perm() == "root" then
-	fakeroot_ld_preload = ":"..host_ld_preload_fakeroot
-end
 
 -- Exec policy rules.
 
 exec_policy_host = {
 	name = "Host",
-	native_app_ld_preload_prefix = host_ld_preload_libsb2..fakeroot_ld_preload,
+	native_app_ld_preload_prefix = host_ld_preload_libsb2,
 }
 
 exec_policy_toolchain = {
 	name = "Toolchain",
-	native_app_ld_preload_prefix = host_ld_preload_libsb2..fakeroot_ld_preload,
+	native_app_ld_preload_prefix = host_ld_preload_libsb2,
 }
 
 -- For target binaries:
@@ -49,7 +43,6 @@ if (conf_target_sb2_installed) then
 	emulate_mode_target_ld_library_path_prefix = conf_target_ld_so_library_path
 else
 	emulate_mode_target_ld_library_path_prefix =
-		host_ld_library_path_libfakeroot ..
 		host_ld_library_path_prefix ..
 		host_ld_library_path_libsb2
 	emulate_mode_target_ld_library_path_suffix =
@@ -71,7 +64,7 @@ local exec_policy_target = {
 	native_app_locale_path = conf_target_locale_path,
 	native_app_gconv_path = conf_target_gconv_path,
 
-	native_app_ld_preload_prefix = host_ld_preload..fakeroot_ld_preload,
+	native_app_ld_preload_prefix = host_ld_preload,
 }
 
 --
@@ -100,7 +93,6 @@ if ((tools_root ~= nil) and conf_tools_sb2_installed) then
 	-- end
 else
 	emulate_mode_tools_ld_library_path_prefix =
-		host_ld_library_path_libfakeroot ..
 		host_ld_library_path_prefix ..
 		host_ld_library_path_libsb2
 	emulate_mode_tools_ld_library_path_suffix =
@@ -125,7 +117,7 @@ local exec_policy_tools = {
 	native_app_locale_path = conf_tools_locale_path,
 	native_app_gconv_path = conf_tools_gconv_path,
 
-	native_app_ld_preload_prefix = host_ld_preload..fakeroot_ld_preload,
+	native_app_ld_preload_prefix = host_ld_preload,
 
 	script_log_level = "debug",
 	script_log_message = "SCRIPT from tools",
@@ -144,7 +136,7 @@ local exec_policy_tools_perl = {
 	native_app_ld_library_path_prefix = emulate_mode_tools_ld_library_path_prefix,
 	native_app_ld_library_path_suffix = emulate_mode_tools_ld_library_path_suffix,
 
-	native_app_ld_preload_prefix = host_ld_preload..fakeroot_ld_preload,
+	native_app_ld_preload_prefix = host_ld_preload,
 
 	native_app_locale_path = conf_tools_locale_path,
 	native_app_gconv_path = conf_tools_gconv_path,
@@ -166,7 +158,7 @@ local exec_policy_tools_python = {
 	native_app_ld_library_path_prefix = emulate_mode_tools_ld_library_path_prefix,
 	native_app_ld_library_path_suffix = emulate_mode_tools_ld_library_path_suffix,
 
-	native_app_ld_preload_prefix = host_ld_preload..fakeroot_ld_preload,
+	native_app_ld_preload_prefix = host_ld_preload,
 
 	native_app_locale_path = conf_tools_locale_path,
 	native_app_gconv_path = conf_tools_gconv_path,
@@ -177,36 +169,6 @@ local exec_policy_tools_python = {
 	script_set_argv0_to_mapped_interpreter = true,
 }
 
-if (tools == "/") then
-	tools_prefix = ""
-else
-	tools_prefix = tools
-end
-
-
--- Note that the real path (mapped path) is used when looking up rules!
-exec_policy_rules = {
-		-- Target binaries:
-		{prefix = target_root, exec_policy_name = "Target"},
-
-		-- Tools. at least qemu might be used from there.
-		{prefix = tools_prefix .. "/usr/bin/perl",
-		 exec_policy_name = "Tools-perl"},
-		{prefix = tools_prefix .. "/usr/bin/python",
-		 exec_policy_name = "Tools-python"},
-
-                -- the toolchain, if not from Tools:
-                {dir = sbox_target_toolchain_dir, exec_policy_name = "Toolchain"},
-
-                -- the home directory is expected to contain target binaries:
-                {dir = sbox_user_home_dir, exec_policy_name = "Target"},
-
-		-- Rule isn't active if tools_root is not set.
-		{prefix = tools_root, exec_policy_name = "Tools"},
-
-		-- DEFAULT RULE (must exist):
-		{prefix = "/", exec_policy_name = "Host"}
-}
 
 -- This table lists all exec policies - this is used when the current
 -- process wants to locate the currently active policy

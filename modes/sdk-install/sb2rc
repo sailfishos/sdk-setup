@@ -20,23 +20,22 @@ case "$sb2rc_mode" in
 	starting)
 		# Make sure /var/log/apt exists, needed when 
 		# running as "sb2 -eR":
-		if [ "$SBOX_SESSION_PERM" = "root" -a \
+		if [ "$SBOX_ROOT_SIMULATION" = "root" -a \
 		     -d $SBOX_TARGET_ROOT/var/log ]; then
 			if [ ! -d $SBOX_TARGET_ROOT/var/log/apt ]; then
 				mkdir $SBOX_TARGET_ROOT/var/log/apt
 			fi
 		fi
+		;;
 
+	mode_settings)
 		# If $CREATE_ARGVMODS_USR_BIN_RULES is not empty, some 
 		# mapping rules will be automatically generated for
 		# programs that belong to the toolchain.
-		# Value of this variable will be used as the default 
-		# mapping rule.
-		###### CREATE_ARGVMODS_USR_BIN_RULES="-- return"
 		;;
 
 	wrapper_list)
-		SBOX_WRAPPERS="gdb ldconfig"
+		SBOX_WRAPPERS="gdb ldconfig fakeroot"
 		;;
 
 	*)
