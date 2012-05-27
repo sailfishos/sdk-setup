@@ -337,25 +337,19 @@ ensure_active_chroot_list_is_empty() {
     pids=$(ls $sdkroot/.active_chroots/)
     stillused=""
     [[ -z "$pids" ]] || {
-	echo "There appears to be $(echo $pids | wc -w) chroot(s) still using this SDK"
-	echo "Process(es): $pids"
 	for pid in $pids; do
-		if [[ -d /proc/$pid ]]
-		then
-			if [[ `ls -l /proc/${pid}/fd | grep -w "${sdkroot}"` ]]
-			then
-				stillused="$stillused $pid"
-			else
-				rm $sdkroot/.active_chroots/$pid
-			fi
-		else
-			rm $sdkroot/.active_chroots/$pid
-		fi
+	    if [[ -d /proc/$pid ]] && [[ `ls -l /proc/${pid}/fd | grep -w "${sdkroot}"` ]] ; then
+		stillused="$stillused $pid"
+	    else
+		rm $sdkroot/.active_chroots/$pid
+	    fi
 	done
 	[[ -z "$stillused" ]] || {
-		echo "Process(es) $stillused are still in use, exiting..."
-		exit 1;
+	    echo "There appears to be $(wc -w <<< $stillused) chroot(s) still using this SDK"
+	    echo "Process(es) $stillused    are still in use, exiting without unmounting..."
+	    exit 1;
 	}
+    }
 }
 
 ################################################################
