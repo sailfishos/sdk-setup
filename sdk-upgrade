@@ -42,7 +42,11 @@ done
 [[ $CORE ]] || CORE=$(curl -Ss http://releases.merproject.org/releases/$PRE-release)
 [[ $SDK ]] || SDK=$(curl -Ss http://repo.pub.meego.com/releases/Mer-Tools/$PRE-release)
 
-mv /etc/zypp/repos.d/mer-tools-i486.repo /etc/zypp/repos.d/mer-tools-i486.repo-pre-$CORE
+backup() {
+    [ -f $1 ] && mv $1 $1$2
+}
+
+backup /etc/zypp/repos.d/mer-tools-i486.repo -pre-$CORE
 
 cat <<EOF > /etc/zypp/repos.d/mer-tools-i486.repo
 [mer-tools-i486]
@@ -60,7 +64,7 @@ gpgcheck=0
 enabled=0
 EOF
 
-mv /etc/zypp/repos.d/mer-core.repo /etc/zypp/repos.d/mer-core.repo.pre-$CORE
+backup /etc/zypp/repos.d/mer-core.repo -pre-$CORE
 cat <<EOF > /etc/zypp/repos.d/mer-core.repo 
 [mer-core]
 name=mer-core
@@ -77,7 +81,7 @@ gpgcheck=0
 enabled=0
 EOF
 
-mv /etc/zypp/repos.d/mer-cross-tools.repo /etc/zypp/repos.d/mer-cross-tools.repo.pre-$CORE
+backup /etc/zypp/repos.d/mer-cross-tools.repo -pre-$CORE
 cat <<EOF > /etc/zypp/repos.d/mer-cross-tools.repo
 [mer-cross-tools]
 name=mer-cross-tools
@@ -94,6 +98,17 @@ gpgcheck=0
 enabled=0
 EOF
 
-echo "Now run:"
-echo "sudo zypper ref"
-echo "sudo zypper up"
+[ -f /etc/zypp/repos.d/mer-tools-testing-i486.repo ] && {
+    cat <<EOF
+You have a repo for the Mer:Tools:Testing project.
+This is very volatile and could lead to breakage in your SDK.
+You should remove it unless you know you need it. Run:
+   sudo rm /etc/zypp/repos.d/mer-tools-testing-i486.repo
+EOF
+}
+
+cat <<EOF
+Now run:
+  sudo zypper ref
+  sudo zypper up
+EOF
