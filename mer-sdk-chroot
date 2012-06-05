@@ -9,9 +9,9 @@
 usage()
 {
     cat <<EOF
-    usage: $0 [<enter>] [-u <user>] [-r <SDK root path>]
-           $0 mount [-u <user>] [-m <all|none|root|home>] [-r <SDK root path>]
-           $0 umount [-r <SDK root path>]
+    usage: $0 [-u <user>] [-r <SDK root path>] [enter]
+           $0 [-u <user>] [-m <all|none|root|home>] [-r <SDK root path>]  mount 
+           $0 [-r <SDK root path>] umount
 
        This is the Mer chroot SDK.
        For information see http://wiki.merproject.org/wiki/Platform_SDK

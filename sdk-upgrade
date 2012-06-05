@@ -9,7 +9,7 @@ PRE="latest"
 usage()
 {
     cat <<EOF
-    usage: $1 
+    usage: $1 [--next] [--core <release>] [--sdk <release>]
 
      Update the zypper repos to point to the latest, next or specified
      Mer / SDK releases
