@@ -10,6 +10,7 @@ usage()
 {
     cat <<EOF
     usage: $0 [-u <user>] [-r <SDK root path>] [enter]
+           $0 [-u <user>] [-r <SDK root path>] exec <command> <args> ..
            $0 [-u <user>] [-m <all|none|root|home>] [-r <SDK root path>]  mount 
            $0 [-r <SDK root path>] umount
 
@@ -18,6 +19,7 @@ usage()
 
        The SDK has 3 commands:
           enter (default)
+          exec
           mount
           umount
 
@@ -27,6 +29,10 @@ usage()
          Must be preceded by a 'mount' to setup the SDK.
          May be used in multiple terminals and simply enters the
          chroot
+
+      exec
+         Used to execute an arbitrary command from within the SDK chroot
+         environment.
 
       mount
          Used to setup the SDK mountpoints. Only needed once per login
@@ -81,6 +87,12 @@ user=$SUDO_USER || true;
 
 bind_mount_root="yes";
 bind_mount_home="yes";
+
+if [ "${1:0:1}" != "-" ]; then
+    action="$1"
+    shift
+fi
+
 while getopts "u:m:r:" opt; do
     case $opt in
 	u ) user=$OPTARG;;
@@ -354,7 +366,7 @@ ensure_active_chroot_list_is_empty() {
 
 ################################################################
 
-action=${1:-enter}
+action=${action:-enter}
 
 case "$action" in
     enter )
@@ -370,6 +382,27 @@ case "$action" in
 	rm_pid_from_active_chroot_list
 	run_user_hook leave_sdk
 	;;
+
+    exec )
+    ensure_mounted
+    get_mount_options
+    setup_user_hooks
+    run_user_hook enter_sdk
+    add_pid_to_active_chroot_list
+
+    if [ "${1:-command-unset}" = "command-unset" ]; then
+        echo "You must supply a command to exec"
+        usage
+        exit 1
+    fi
+
+    setarch i386 chroot "${sdkroot}" su -s /bin/bash -l $user -- -c "exec $*"
+    retval=$?
+
+    rm_pid_from_active_chroot_list
+    run_user_hook leave_sdk
+    exit $retval
+    ;;
 
     mount  )
 	ensure_not_mounted
