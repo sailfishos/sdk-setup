@@ -6,13 +6,15 @@
 # Mer/SDK for now)
 PRE="latest"
 
+if [[ $UID -ne 0 ]]; then echo "$0 must be run as root"; exit 1; fi
+
 usage()
 {
     cat <<EOF
     usage: $1 [--next] [--core <release>] [--sdk <release>]
 
      Update the zypper repos to point to the latest, next or specified
-     Mer / SDK releases
+     Mer / SDK releases. It does not run zypper ref or zypper up.
 
      By default checks
         http://releases.merproject.org/releases/latest-release
