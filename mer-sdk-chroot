@@ -229,10 +229,6 @@ prepare_etc() {
     rm -f ${sdkroot}/etc/resolv.conf
     ln -s /parentroot/etc/resolv.conf ${sdkroot}/etc/resolv.conf
 
-    [[ -d ${sdkroot}/etc/ssl/certs ]] || {
-	mkdir -p ${sdkroot}/etc/ssl/certs
-	cp -aL /etc/ssl/certs ${sdkroot}/etc/ssl/
-    }
 }
 
 ################################################################
