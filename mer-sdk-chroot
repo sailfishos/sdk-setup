@@ -17,7 +17,7 @@ usage()
        This is the Mer chroot SDK.
        For information see http://wiki.merproject.org/wiki/Platform_SDK
 
-       The SDK has 3 commands:
+       The SDK has 4 commands:
           enter (default)
           exec
           mount
@@ -32,7 +32,8 @@ usage()
 
       exec
          Used to execute an arbitrary command from within the SDK chroot
-         environment.
+         environment. The environment variable MERSDK is set to 1 to allow
+         SDK detection.
 
       mount
          Used to setup the SDK mountpoints. Only needed once per login
@@ -88,6 +89,7 @@ user=$SUDO_USER || true;
 bind_mount_root="yes";
 bind_mount_home="yes";
 
+# Support the action being given as the first non-option arg
 if [ "${1:0:1}" != "-" ]; then
     action="$1"
     shift
@@ -367,44 +369,38 @@ ensure_active_chroot_list_is_empty() {
 ################################################################
 
 action=${action:-enter}
+retval=0
 
 case "$action" in
-    enter )
+    enter | exec )
         # setarch is used so uname -a will report i386 - this allows
         # osc to work
 	ensure_mounted
 	get_mount_options
 	setup_user_hooks
-	echo "Entering chroot as $user"
 	run_user_hook enter_sdk
 	add_pid_to_active_chroot_list
-	setarch i386 chroot ${sdkroot} su -s /bin/bash -l $user -- -c "exec bash --init-file /mer-bash-setup -i"
+	case "$action" in
+	    enter )
+		echo "Entering chroot as $user"
+		setarch i386 chroot ${sdkroot} /bin/su -s /bin/bash -l $user -- -c "exec bash --init-file /mer-bash-setup -i"
+		;;
+	    exec )
+		if [[ ! $1 ]]; then
+		    echo "You must supply a command to exec"
+		    usage
+		    retval=1
+		else
+		    setarch i386 chroot "${sdkroot}" /bin/su -s /bin/bash -l $user -- -c "export MERSDK=1; $*"
+		    retval=$?
+		fi
+		;;
+	esac
 	rm_pid_from_active_chroot_list
 	run_user_hook leave_sdk
 	;;
 
-    exec )
-    ensure_mounted
-    get_mount_options
-    setup_user_hooks
-    run_user_hook enter_sdk
-    add_pid_to_active_chroot_list
-
-    if [ "${1:-command-unset}" = "command-unset" ]; then
-        echo "You must supply a command to exec"
-        usage
-        exit 1
-    fi
-
-    setarch i386 chroot "${sdkroot}" su -s /bin/bash -l $user -- -c "exec $*"
-    retval=$?
-
-    rm_pid_from_active_chroot_list
-    run_user_hook leave_sdk
-    exit $retval
-    ;;
-
-    mount  )
+    mount )
 	ensure_not_mounted
 	trap "err_cleanup; exit" INT TERM EXIT
         prepare_mountpoints   # host / and data and /proc and similar
@@ -437,3 +433,5 @@ EOF
 	echo "$action not recognised"
 	;;
 esac
+
+exit $retval
