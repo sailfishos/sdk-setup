@@ -229,6 +229,14 @@ prepare_etc() {
     rm -f ${sdkroot}/etc/resolv.conf
     ln -s /parentroot/etc/resolv.conf ${sdkroot}/etc/resolv.conf
 
+    # Fixup old SDKs with broken /etc/mtab since this won't be fixed
+    # by any package updates
+    if [[ ! -L ${sdkroot}/etc/mtab ]]; then
+	echo "The /etc/mtab file in the SDK is not a symbolic link - forcing it to link to /proc/self/mounts to fix https://bugs.merproject.org/show_bug.cgi?id=385"
+	rm -f ${sdkroot}/etc/mtab
+	ln -s /proc/self/mounts ${sdkroot}/etc/mtab
+    fi
+
 }
 
 ################################################################
