@@ -439,15 +439,6 @@ emulate_mode_rules_home = {
 		-- Default: Not mapped, R/W access.
 		{dir = "/home", use_orig_path = true},
 }
-emulate_mode_rules_everything = {
-		{dir = "/everything", use_orig_path = true},
-}
-emulate_mode_rules_maemo = {
-		{dir = "/maemo", use_orig_path = true},
-}
-emulate_mode_rules_mer = {
-		{dir = "/mer", use_orig_path = true},
-}
 
 emulate_mode_rules_opt = {
 		-- for rpmlint:
@@ -536,9 +527,6 @@ emulate_mode_rules = {
 		-- -----------------------------------------------
 		-- home directories:
 		{dir = "/home", rules = emulate_mode_rules_home},
-		{dir = "/everything", rules = emulate_mode_rules_everything},
-		{dir = "/maemo", rules = emulate_mode_rules_maemo},
-		{dir = "/mer", rules = emulate_mode_rules_mer},
 		-- -----------------------------------------------
 
 		{dir = "/usr", rules = emulate_mode_rules_usr},
