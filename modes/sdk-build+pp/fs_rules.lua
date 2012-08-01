@@ -693,6 +693,12 @@ local tools_rules = {
 		{prefix = "/", rules = emulate_mode_rules},
 }
 
+-- Import Mer common functions
+dofile("/usr/share/scratchbox2/modes/mer-common.lua")
+
+-- Now run ~/.sbrules
+run_sbrules()
+
 if (tools_root ~= nil) and (tools_root ~= "/") then
         -- Tools root is set.
 	fs_mapping_rules = tools_rules
