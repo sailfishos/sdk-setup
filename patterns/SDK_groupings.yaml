@@ -6,6 +6,7 @@ Packages:
     - mer-kickstarter
     - psmisc
     - qemu-usermode-static
+    - repomd-pattern-builder
 Summary: Mer image creation
 ...
 ---
@@ -72,7 +73,8 @@ Description: Mer ruby development
 Name: Mer-ruby-development
 Packages:
     - ruby
-    - swig
+    - ruby19-devel
+    - rubygem-gem2rpm
 Summary: Mer python development
 ...
 ---
