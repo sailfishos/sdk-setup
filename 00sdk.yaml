@@ -1,0 +1,91 @@
+# This yaml file creates the kickstarts for the SDK images
+#
+# It produces ks files that work against both the final released
+# version of the Tools project and against the OBS repository.  This
+# provides confidence that a release built against the final release
+# will behave consistently with an OBS trial build.
+#
+# It currently makes use of the BUILD_ID to define which Mer release
+# to use and the target Tools release is hardcoded
+#
+# Ideally kickstarter will be extended to support multiple 'defines'
+# such as MER_RELEASE and TOOLS_RELEASE
+
+ExternalConfigs:
+  - /usr/share/kickstarter-configs/mer
+
+RepositoryURLVariables:
+  TOOLS_RELEASE: 6.0.2
+  TOOLS_ARCH: i486
+  MER_RELEASE: 0.20120719.1
+  MER_ARCH: i486
+  "@BUILD_ID@": 0.20120719.1
+
+Repositories:
+  - Name: mer-tools
+    Url:  http://repo.pub.meego.com/releases/Mer-Tools/TOOLS_RELEASE/builds/TOOLS_ARCH/packages/
+  - Name: mer-cross-tools
+    Url:  http://releases.merproject.org/releases/MER_RELEASE/builds/MER_ARCH/cross/
+
+# This should default to --save for all individual configurations
+RepositoryOptions: --save
+
+# Common tasks that will be used in images
+# This is not processed in addition to Mer Base System, it overwrites
+# values (like PostScripts)
+Mer SDK core:
+  ExtraPackages:
+    - sudo
+    - vim
+    - net-tools
+# Remove this until we rename it python-M2Crypto
+    - "-m2crypto"
+  PostScripts:
+    - mtab.script
+    - tmp_perms.script
+    - sdk_stamp.script
+
+# This should permit mount bind of /home or something
+Mer chroot setup:
+  ExtraPackages:
+    - sdk-chroot
+
+# Virtualisation specific setup
+Mer VM setup:
+  ExtraPackages:
+    - sdk-vm
+
+Mer Base SDK:
+  ExtraPackages:
+      - "@Mer-development-tools"
+      - "@Mer-image-creation"
+      - "@Mer-OBS-development"
+
+Configurations:
+  - Name: mer-sdk-i486-chroot-sb2-armv6l
+    Active: True
+    Repos:
+      - mer-tools
+      - mer-cross-tools
+    Inherit:
+      - Generic X86 architecture
+      - Mer Base System
+      - Mer SDK core
+      - Mer Base SDK
+      - Mer chroot setup
+    ExtraPackages:
+      - "@Mer-SB2-armv6l"
+    FileName: mer-sb2sdk-i486-chroot-armv6l
+
+  - Name: mer-sdk-i486-chroot
+    Active: True
+    Repos:
+      - mer-tools
+      - mer-cross-tools
+    Inherit:
+      - Generic X86 architecture
+      - Mer Base System
+      - Mer SDK core
+      - Mer Base SDK
+      - Mer chroot setup
+    FileName: mer-sdk-i486-chroot

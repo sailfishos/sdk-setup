@@ -19,7 +19,6 @@ Packages:
     - gdb
     - binutils
     - automake
-    - kernel-devel
     - git
     - patch
 Summary: Mer development tools
