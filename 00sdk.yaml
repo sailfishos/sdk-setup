@@ -34,19 +34,27 @@ RepositoryOptions: --save
 # This is not processed in addition to Mer Base System, it overwrites
 # values (like PostScripts)
 Mer SDK core:
+  Repos:
+    - mer-tools
+    - mer-cross-tools
   ExtraPackages:
     - sudo
     - vim
     - net-tools
 # Remove this until we rename it python-M2Crypto
     - "-m2crypto"
+# Standard tools
+    - "@Mer-development-tools"
+    - "@Mer-image-creation"
+    - "@Mer-OBS-development"
   PostScripts:
     - mtab.script
     - tmp_perms.script
     - sdk_stamp.script
 
-# This should permit mount bind of /home or something
 Mer chroot setup:
+  Inherit:
+    - Mer SDK core
   ExtraPackages:
     - sdk-chroot
 
@@ -55,37 +63,73 @@ Mer VM setup:
   ExtraPackages:
     - sdk-vm
 
-Mer Base SDK:
-  ExtraPackages:
-      - "@Mer-development-tools"
-      - "@Mer-image-creation"
-      - "@Mer-OBS-development"
-
 Configurations:
+  - Name: mer-sdk-i486-chroot
+    Active: True
+    Inherit:
+      - Generic X86 architecture
+      - Mer Base System
+      - Mer chroot setup
+    FileName: mer-sdk-i486-chroot
+
+  - Name: mer-sdk-i486-chroot-full
+    Active: True
+    Inherit:
+      - Generic X86 architecture
+      - Mer Base System
+      - Mer chroot setup
+    ExtraPackages:
+      - "@Mer-SB2-armv6l"
+      - "@Mer-SB2-armv7l"
+      - "@Mer-SB2-armv7hl"
+      - "@Mer-SB2-mipsel"
+      - "@Mer-debug-tools"
+      - "@Mer-testing-tools"
+      - "@Mer-python-development"
+      - "@Mer-ruby-development"
+    FileName: mer-sdk-i486-chroot-full
+
   - Name: mer-sdk-i486-chroot-sb2-armv6l
     Active: True
-    Repos:
-      - mer-tools
-      - mer-cross-tools
     Inherit:
       - Generic X86 architecture
       - Mer Base System
       - Mer SDK core
-      - Mer Base SDK
       - Mer chroot setup
     ExtraPackages:
       - "@Mer-SB2-armv6l"
     FileName: mer-sb2sdk-i486-chroot-armv6l
 
-  - Name: mer-sdk-i486-chroot
+  - Name: mer-sdk-i486-chroot-sb2-armv7l
     Active: True
-    Repos:
-      - mer-tools
-      - mer-cross-tools
     Inherit:
       - Generic X86 architecture
       - Mer Base System
       - Mer SDK core
-      - Mer Base SDK
       - Mer chroot setup
-    FileName: mer-sdk-i486-chroot
+    ExtraPackages:
+      - "@Mer-SB2-armv7l"
+    FileName: mer-sb2sdk-i486-chroot-armv7l
+
+  - Name: mer-sdk-i486-chroot-sb2-armv7el
+    Active: True
+    Inherit:
+      - Generic X86 architecture
+      - Mer Base System
+      - Mer SDK core
+      - Mer chroot setup
+    ExtraPackages:
+      - "@Mer-SB2-armv7el"
+    FileName: mer-sb2sdk-i486-chroot-armv7el
+
+  - Name: mer-sdk-i486-chroot-sb2-mipsel
+    Active: True
+    Inherit:
+      - Generic X86 architecture
+      - Mer Base System
+      - Mer SDK core
+      - Mer chroot setup
+    ExtraPackages:
+      - "@Mer-SB2-mipsel"
+    FileName: mer-sb2sdk-i486-chroot-mipsel
+
