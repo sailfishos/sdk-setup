@@ -110,6 +110,9 @@ EOF
 }
 
 cat <<EOF
+Core repos point at version: $CORE
+Tools repos point at version: $SDK
+
 Now run:
   sudo zypper ref
   sudo zypper up
