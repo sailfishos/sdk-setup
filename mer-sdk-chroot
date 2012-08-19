@@ -212,6 +212,9 @@ prepare_user() {
     # getent is probably best for user data
     sed -i -e "/^${user}:/d" ${sdkroot}/etc/passwd
     getent passwd $user >> ${sdkroot}/etc/passwd
+    group=$(getent passwd $user | cut -f4 -d:)
+    sed -i -e "/^[^:]*:[^:]*:${group}:/d" ${sdkroot}/etc/group
+    getent group $group >> ${sdkroot}/etc/group
     HOMEDIR=$(getent passwd $user | cut -f6 -d:)
 
     if [[ $bind_mount_home == "yes" ]] ; then
