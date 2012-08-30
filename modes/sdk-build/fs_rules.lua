@@ -552,6 +552,9 @@ local tools_rules = {
 -- Import Mer common functions
 dofile("/usr/share/scratchbox2/modes/mer-common.lua")
 
+-- Define /parentroot as being outside, like /home
+use_outside_path("/parentroot")
+
 -- Now run ~/.sbrules
 run_sbrules()
 
