@@ -111,7 +111,7 @@ Configurations:
       - "@Mer-SB2-armv7l"
     FileName: mer-sb2sdk-i486-chroot-armv7l
 
-  - Name: mer-sdk-i486-chroot-sb2-armv7el
+  - Name: mer-sdk-i486-chroot-sb2-armv7hl
     Active: True
     Inherit:
       - Generic X86 architecture
@@ -119,8 +119,8 @@ Configurations:
       - Mer SDK core
       - Mer chroot setup
     ExtraPackages:
-      - "@Mer-SB2-armv7el"
-    FileName: mer-sb2sdk-i486-chroot-armv7el
+      - "@Mer-SB2-armv7hl"
+    FileName: mer-sb2sdk-i486-chroot-armv7hl
 
   - Name: mer-sdk-i486-chroot-sb2-mipsel
     Active: True
