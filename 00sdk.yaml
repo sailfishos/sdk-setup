@@ -12,14 +12,15 @@
 # such as MER_RELEASE and TOOLS_RELEASE
 
 ExternalConfigs:
+  - /usr/share/kickstarter-configs
   - /usr/share/kickstarter-configs/mer
 
 RepositoryURLVariables:
   TOOLS_RELEASE: 6.0.2
   TOOLS_ARCH: i486
-  MER_RELEASE: 0.20120719.1
   MER_ARCH: i486
-  "@BUILD_ID@": 0.20120719.1
+  MER_RELEASE: 0.20120816.1
+  "@BUILD_ID@": 0.20120816.1
 
 Repositories:
   - Name: mer-tools
