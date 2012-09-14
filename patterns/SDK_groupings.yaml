@@ -143,6 +143,17 @@ Packages:
 Summary: Mer SB2 armv7hl
 ...
 ---
+Description: Mer SB2 armv7tnhl
+Name: Mer-SB2-armv7tnhl
+Packages:
+    - sdk-sb2-config
+    - qemu-usermode
+    - cross-armv7tnhl-gcc
+    - cross-armv7tnhl-binutils
+    - mpc
+Summary: Mer SB2 armv7tnhl
+...
+---
 Description: Mer SB2 mipsel
 Name: Mer-SB2-mipsel
 Packages:
