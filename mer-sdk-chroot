@@ -172,6 +172,13 @@ umask 022
 
 ################################################################
 # Mount
+mount_bind() {
+    if [[ ! -d ${sdkroot}$1 ]]; then
+	echo "Directory $1 is missing in SDK root - please report this bug"
+	mkdir -p ${sdkroot}$1
+    fi
+    mount --bind $1 ${sdkroot}$1
+}
 prepare_mountpoints() {
     # Ensure the parent is a mountpoint in it's own right so it can be
     # made unbindable
@@ -184,16 +191,15 @@ prepare_mountpoints() {
     mount --make-unbindable $sdkparent   # Make the parent unbindable again
     mount --make-private $sdkroot        # but allow bindmounts within the SDK for mic etc
 
-
     echo "Mounting system directories..."
-    mount --bind /proc ${sdkroot}/proc
-    mount --bind /proc/sys/fs/binfmt_misc ${sdkroot}/proc/sys/fs/binfmt_misc
-    mount --bind /sys ${sdkroot}/sys
-    mount --bind /dev ${sdkroot}/dev
-    mount --bind /dev/pts ${sdkroot}/dev/pts
-    mount --bind /dev/shm/ ${sdkroot}/dev/shm/
-    mount --bind /var/lib/dbus ${sdkroot}/var/lib/dbus
-    mount --bind /var/run/dbus ${sdkroot}/var/run/dbus
+    mount_bind /proc
+    mount_bind /proc/sys/fs/binfmt_misc
+    mount_bind /sys
+    mount_bind /dev
+    mount_bind /dev/pts
+    mount_bind /dev/shm
+    mount_bind /var/lib/dbus
+    mount_bind /var/run/dbus
 
     if [[ $bind_mount_root == "yes" ]] ; then
 	echo "Mounting / as /parentroot"
@@ -202,7 +208,7 @@ prepare_mountpoints() {
     fi
 
     mkdir -p ${sdkroot}/lib/modules/`uname -r`
-    mount --bind /lib/modules/`uname -r` ${sdkroot}/lib/modules/`uname -r`
+    mount_bind /lib/modules/`uname -r`
 
 }
 
