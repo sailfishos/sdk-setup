@@ -1,2 +1,4 @@
+## tmp_perms.script from sdk-kickstarter-configs package
 # Fix /tmp sticky bit
 chmod 1777 /tmp
+# end tmp_perms.script
