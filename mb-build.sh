@@ -1,0 +1,102 @@
+#!/bin/bash
+# Copyright (C) 2012 Jolla Ltd.
+# Contact: Robin Burchell <robin.burchell@jollamobile.com>
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#
+# - Redistributions of source code must retain the above copyright
+#   notice, this list of conditions and the following disclaimer.
+# - Redistributions in binary form must reproduce the above copyright
+#   notice, this list of conditions and the following disclaimer in
+#   the documentation and/or other materials provided with the
+#   distribution.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+# ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+# LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+# POSSIBILITY OF SUCH DAMAGE.
+
+function error() {
+    echo "ERROR: $*"
+    exit 1
+}
+
+TARGET=""
+
+while test $# -gt 0; do
+    case "$1" in
+        "-t" | "--target")
+            TARGET="$2"
+            shift
+        ;;
+        "-d" | "--enable-debug")
+            ENABLE_DEBUG=1
+        ;;
+        *)
+            if [[ "$1" =~ ^- ]] ; then
+                error "Unknown option"
+            else
+                SPEC=$1
+            fi
+        ;;
+    esac
+    shift
+done
+
+if [ -z "$TARGET" ]; then
+    error "you must specify a sb2 target (-t) to build against"
+fi
+
+if [ -z "$SPEC" ]; then
+    error "path to specfile must be given"
+fi
+
+if [ "$SPEC" == "--help" ]; then
+    echo "mb build -t sb2_targetname /path/to/spec"
+    echo " does an incremental build for the given sb2_targetname on a given specfile, with the source taken from the current working directory"
+    echo " "
+    echo " If you want debugsource and debuginfo packages, pass -d or --enable-debug"
+    exit 0
+fi
+
+echo "Building $SPEC for $TARGET"
+
+PACKAGE=`grep Name: "$SPEC" | cut -b6- | tr -d " "`
+
+echo "Setting up temporary specfile for $PACKAGE from $SPEC"
+cp $SPEC ~/temp.spec
+
+sed -i s/Source0.*/Source0:$PACKAGE.tar.bz2/g ~/temp.spec
+sed -i s/setup\ -q\ -n.*/setup\ -q\ -n\ $PACKAGE/g ~/temp.spec
+
+echo "rsyncing source..."
+mkdir -p ~/rpmbuild/SOURCES
+mkdir -p ~/rpmbuild/BUILD
+
+# workaround for RPM insisting we have a "tarball"
+echo "this is more than 13 bytes" > ~/rpmbuild/SOURCES/$PACKAGE.tar.bz2
+rsync --exclude=".git" -rvt . ~/rpmbuild/BUILD/$PACKAGE
+# TODO: read this from spec, not all packages have extra Sources
+cp ./rpm/* ~/rpmbuild/SOURCES
+
+echo "run rpmbuild"
+# TODO: debug_package define disables debugsource/debuginfo packages, which
+# is incredibly fast, but user may sometimes want them...
+if [ "$ENABLE_DEBUG" == 1 ]; then
+    sb2 -t "$TARGET" rpmbuild --skip-prep -bb ~/temp.spec
+else
+    sb2 -t "$TARGET" rpmbuild --skip-prep -bb ~/temp.spec -D 'debug_package %{nil}'
+fi
+
+rm ~/temp.spec
+
