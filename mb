@@ -26,14 +26,109 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
+function error() {
+    echo "ERROR: $*"
+    exit 1
+}
+
+clean() {
+    SPEC=$1
+
+    if [ -z "$SPEC" ]; then
+	error "path to specfile must be given"
+    fi
+
+    if [ "$SPEC" == "--help" ]; then
+	echo "mb clean /path/to/spec"
+	echo " removes all traces of the build tree, and copies source over from scratch"
+	exit 0
+    fi
+    
+    PACKAGE=`grep Name: "$SPEC" | cut -b6- | tr -d " "`
+    echo "Cleaning $PACKAGE ($SPEC)"
+    rm -rv ~/rpmbuild/BUILD/$PACKAGE
+}
+
+build() {
+    TARGET=""
+
+    while test $# -gt 0; do
+	case "$1" in
+            "-t" | "--target")
+		TARGET="$2"
+		shift
+		;;
+            "-d" | "--enable-debug")
+		ENABLE_DEBUG=1
+		;;
+            *)
+		if [[ "$1" =~ ^- ]] ; then
+                    error "Unknown option"
+		else
+                    SPEC=$1
+		fi
+		;;
+	esac
+	shift
+    done
+
+    if [ -z "$TARGET" ]; then
+	error "you must specify a sb2 target (-t) to build against"
+    fi
+
+    if [ -z "$SPEC" ]; then
+	error "path to specfile must be given"
+    fi
+    
+    if [ "$SPEC" == "--help" ]; then
+	echo "mb build -t sb2_targetname /path/to/spec"
+	echo " does an incremental build for the given sb2_targetname on a given specfile, with the source taken from the current working directory"
+	echo " "
+	echo " If you want debugsource and debuginfo packages, pass -d or --enable-debug"
+	exit 0
+    fi
+
+    echo "Building $SPEC for $TARGET"
+
+    PACKAGE=`grep Name: "$SPEC" | cut -b6- | tr -d " "`
+
+    echo "Setting up temporary specfile for $PACKAGE from $SPEC"
+    cp $SPEC ~/temp.spec
+
+    sed -i s/Source0.*/Source0:$PACKAGE.tar.bz2/g ~/temp.spec
+    sed -i s/setup\ -q\ -n.*/setup\ -q\ -n\ $PACKAGE/g ~/temp.spec
+
+    echo "rsyncing source..."
+    mkdir -p ~/rpmbuild/SOURCES
+    mkdir -p ~/rpmbuild/BUILD
+
+    # workaround for RPM insisting we have a "tarball"
+    echo "this is more than 13 bytes" > ~/rpmbuild/SOURCES/$PACKAGE.tar.bz2
+    rsync --exclude=".git" -rvt . ~/rpmbuild/BUILD/$PACKAGE
+    # TODO: read this from spec, not all packages have extra Sources
+    cp ./rpm/* ~/rpmbuild/SOURCES
+
+    echo "run rpmbuild"
+    # TODO: debug_package define disables debugsource/debuginfo packages, which
+    # is incredibly fast, but user may sometimes want them...
+    if [ "$ENABLE_DEBUG" == 1 ]; then
+	sb2 -t "$TARGET" rpmbuild --skip-prep -bb ~/temp.spec
+    else
+	sb2 -t "$TARGET" rpmbuild --skip-prep -bb ~/temp.spec -D 'debug_package %{nil}'
+    fi
+
+    rm ~/temp.spec
+}
+
+
 case "$1" in
     "build")
         shift
-        env mb-build.sh "$@"
+	build "$@"
         ;;
     "clean")
         shift
-        env mb-clean.sh "$@"
+        clean "$@"
         ;;
     *)
         ME=`basename $0`
