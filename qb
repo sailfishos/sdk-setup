@@ -1,0 +1,118 @@
+#!/bin/bash
+
+# quickbuild script
+#
+
+# Issues:
+# * Remove [target] if we can determine what last build-target was (maybe cache it?)
+
+usage() {
+    cat <<EOF
+
+   usage: $0 [-g] [ -h | --help ] [target]
+
+   This script makes it easy to quickly reuse "osc build" to regenerate
+   rpms based on a local source tree.
+
+   It makes the following assumptions:
+   * the current directory name is the same as the package name
+     (Usually the directory created when doing osc co <project> <package>)
+   * the directory contains an subdirectory with the unpacked source
+     whose name is the same as the rpmbuild directory
+   * to use -d the device has keyless ssh setup and the rpms will be
+     upgraded (rpm -U), not installed (rpm -i)
+
+  It supports some options:
+
+   -g : By default --disable-debuginfo is set. Using -g removes it and
+        allows debufg packages to build
+
+   -d <host/IP> : if given then attempt to scp/ssh the resultant rpms
+      to the host/IP
+EOF
+}
+# futures
+#
+# for gitpkg
+# if .git/ and .osc/ are present then assume gitpkg
+# if branch is pkg-* then copy over the packaging (and assume src unchanged?)
+# else copy over the src (and assume spec unchanged?)
+#
+# if rpm/ present
+# if there is an rpm/ dir then copy the contents as packaging
+
+debug="--disable-debuginfo"
+DEPLOYIP=""
+
+while [[ $# -gt 0 ]] ; do
+    case $1 in
+	-h | --help )
+	    usage; exit 1;;
+	-g ) debug="" ; shift;;
+	-d ) DEPLOYIP=$2; shift;shift;;
+	* )  target=$1 ; shift ;;
+    esac
+done
+
+package=${PWD##*/} # basenane of CWD
+
+if ! [[ -d .osc ]]; then
+    echo "This is not an OSC directory."
+    usage
+    exit 1
+fi
+
+# Make sure we have exactly one $package<something>/ dir which we'll
+# assume is src
+srcdir=$(find * -maxdepth 0 -type d -name ${package}\*)
+numsrc=$(find * -maxdepth 0 -type d -name ${package}\* | wc -l)
+
+if [[ $numsrc -eq 0 ]]; then
+    if [[ -d src ]]; then
+	srcdir="src"
+	echo "No package<something>/ dir; falling back to src/ dir"
+    else
+	echo "There is no src directory called ${package}<something>"
+	usage
+	exit 1
+    fi
+fi
+if [[ $numsrc -gt 1 ]]; then
+    echo "There are multiple src directories called ${package}<something> - this script requires there to be just one."
+    usage
+    exit 1
+fi
+
+# If there's a build log then there's a build root... good approximation anyhow
+offline="-o"
+if ! osc lbl >/dev/null 2>&1 ; then
+    echo "No existing chroot - doing a normal (online) build"
+    echo
+    offline=""
+fi
+
+# Now do the build itself we
+osc build $offline $debug --rebuild --rsync-src=$srcdir --rsync-dest=/home/abuild/rpmbuild/BUILD/$srcdir $target 2>&1 | tee /tmp/qb.log
+
+if [[ $DEPLOYIP ]]; then
+
+    # Find the rpms
+    rpm=$(tail -1 /tmp/qb.log)
+    if ! [[ ${rpm: -3:3} == "rpm" ]]; then # last line of build log shows /path/to/rpms/package.rpm
+	echo "The build does not apear to have produced any rpms - not deploying"
+	usage
+	exit 1
+    fi
+
+    rpmdir=${rpm%/*.rpm} # strip the rpm filename itself
+    [[ -d $rpmdir ]] || { echo "Couldn't identify the rpm results dir (got $rpmdir)"; exit 1 ; }
+
+    ssh root@${DEPLOYIP} rm -rf /tmp/qb \; mkdir /tmp/qb
+    echo "copying rpms from ${rpmdir} to device"
+    scp ${rpmdir}/*.rpm root@${DEPLOYIP}:/tmp/qb/
+    echo "installing rpms on device"
+    ssh root@${DEPLOYIP} rpm -U --force /tmp/qb/*rpm 
+    # --force is needed to upgrade even if -release number
+    # of the rpm version is low
+fi
+
