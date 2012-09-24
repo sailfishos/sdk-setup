@@ -89,8 +89,10 @@ build() {
     fi
 
     echo "Building $SPEC for $TARGET"
-
     PACKAGE=`grep Name: "$SPEC" | cut -b6- | tr -d " "`
+
+    echo "Checking dependencies..."
+    grep --color=never BuildRequires "$SPEC" | sed -e '/^#.*$/d' | gawk -F: '{ print $2 }' | tr ',' ' ' | xargs sb2 -t "$TARGET" -m sdk-install -R zypper in
 
     echo "Setting up temporary specfile for $PACKAGE from $SPEC"
     cp $SPEC ~/temp.spec
