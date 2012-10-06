@@ -19,8 +19,8 @@ RepositoryURLVariables:
   TOOLS_RELEASE: 6.0.2
   TOOLS_ARCH: i486
   MER_ARCH: i486
-  MER_RELEASE: 0.20120816.1
-  "@BUILD_ID@": 0.20120816.1
+  MER_RELEASE: 0.20120920.1
+  "@BUILD_ID@": 0.20120920.1
 
 Repositories:
   - Name: mer-tools
