@@ -1,0 +1,13 @@
+## vbox_image.script from sdk-kickstarter-configs package
+cat <<EOF
+
+mic will produce a raw image file which needs converting to a vmdk file
+to be used with VirtualBox.
+
+To do the conversion run the following command on your host machine:
+
+  sudo qemu-img convert -O vmdk mer-sdk-i486-vm-sda.raw mer-sdk-i486-vm-sda.vmdk
+
+
+EOF
+# end vbox_image.script

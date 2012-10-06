@@ -1,0 +1,9 @@
+## vmuser.script from sdk-kickstarter-configs package
+
+# This should be done by virtualbox
+/usr/sbin/groupadd -r vboxsf >/dev/null 2>&1 || true 
+/usr/sbin/useradd --uid 1001 --create-home --user-group --groups vboxsf mersdk
+
+echo "home     /home/mersdk     vboxsf defaults  0 0" >> /etc/fstab
+
+# end vmuser.script

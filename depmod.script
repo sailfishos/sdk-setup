@@ -1,0 +1,7 @@
+## depmod.script from sdk-kickstarter-configs package
+echo "Running depmod for:"
+for v in /lib/modules/* ; do
+  echo "  Kernel $(basename $v)"
+  /sbin/depmod -a $(basename $v)
+done
+# end depmod.script

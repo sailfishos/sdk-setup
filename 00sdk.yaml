@@ -27,27 +27,30 @@ Repositories:
     Url:  http://repo.pub.meego.com/releases/Mer-Tools/TOOLS_RELEASE/builds/TOOLS_ARCH/packages/
   - Name: mer-cross-tools
     Url:  http://releases.merproject.org/releases/MER_RELEASE/builds/MER_ARCH/cross/
+  - Name: mer-adaptation-vm
+    Url:  http://repo.pub.meego.com/CE:/Adaptation:/x86-generic/Mer_Core_i486/
 
 # This should default to --save for all individual configurations
 RepositoryOptions: --save
 
 # Common tasks that will be used in images
-# This is not processed in addition to Mer Base System, it overwrites
-# values (like PostScripts)
 Mer SDK core:
   Repos:
     - mer-tools
     - mer-cross-tools
+  Groups:
+# SSH/DHCP etc
+    - Mer Connectivity
+# Standard tools
+    - Mer-development-tools
+    - Mer-image-creation
+    - Mer-OBS-development
   ExtraPackages:
     - sudo
     - vim
     - net-tools
 # Remove this until we rename it python-M2Crypto
     - "-m2crypto"
-# Standard tools
-    - "@Mer-development-tools"
-    - "@Mer-image-creation"
-    - "@Mer-OBS-development"
   PostScripts:
     - mtab.script
     - tmp_perms.script
@@ -61,8 +64,27 @@ Mer chroot setup:
 
 # Virtualisation specific setup
 Mer VM setup:
+  Inherit:
+    - Mer SDK core
+  PartSize: 1000
+  Repos:
+    - mer-adaptation-vm
+
   ExtraPackages:
     - sdk-vm
+    - kernel-adaptation-pc
+    - acpid
+    - linux-firmware
+    - openssh-server
+    - virtualbox-guest-modules
+    - virtualbox-guest-tools
+  PostScripts:
+    # Ensure that we depmod the vbox modules
+    - depmod.script
+    # mic doesn't make vmdk so emit a message explaining how to do this
+    - vbox_image.script
+    # Prepare the SDK user and home
+    - vmuser.script
 
 Configurations:
   - Name: mer-sdk-i486-chroot
@@ -134,3 +156,11 @@ Configurations:
       - "@Mer-SB2-mipsel"
     FileName: mer-sb2sdk-i486-chroot-mipsel
 
+  - Name: mer-sdk-i486-vm
+    Active: True
+    Inherit:
+      - Generic X86 architecture
+      - Mer Base System
+      - Mer SDK core
+      - Mer VM setup
+    FileName: mer-sdk-i486-vm
