@@ -52,9 +52,9 @@ Mer SDK core:
 # Remove this until we rename it python-M2Crypto
     - "-m2crypto"
   PostScripts:
-    - mtab.script
-    - tmp_perms.script
-    - sdk_stamp.script
+    - scripts/mtab.script
+    - scripts/tmp_perms.script
+    - scripts/sdk_stamp.script
 
 Mer chroot setup:
   Inherit:
@@ -80,11 +80,11 @@ Mer VM setup:
     - virtualbox-guest-tools
   PostScripts:
     # Ensure that we depmod the vbox modules
-    - depmod.script
+    - scripts/depmod.script
     # mic doesn't make vmdk so emit a message explaining how to do this
-    - vbox_image.script
+    - scripts/vbox_image.script
     # Prepare the SDK user and home
-    - vmuser.script
+    - scripts/vmuser.script
 
 Configurations:
   - Name: mer-sdk-i486-chroot
