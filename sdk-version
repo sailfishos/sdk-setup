@@ -23,6 +23,8 @@ usage()
         http://repo.pub.meego.com/releases/Mer-Tools/latest-release
      --next : Check for the 'next' release instead of 'latest'
 
+     --go : actually run the zypper upgrade after --latest
+
 EOF
     return 0
 }
@@ -111,11 +113,17 @@ EOF
 }
 
 do_update() {
-    cat <<EOF
+    if [[ $INSTALL ]]; then
+	echo "Running update"
+	sudo zypper ref
+	sudo zypper up
+    else
+	cat <<EOF
 Now run:
   sudo zypper ref
   sudo zypper up
 EOF
+    fi
 }
 
 # Main
@@ -145,6 +153,7 @@ while [[ $1 ]] ; do
 	    [[ $CORE ]] || CORE=$(curl -Ss http://releases.merproject.org/releases/$PRE-release)
 	    [[ $SDK ]] || SDK=$(curl -Ss http://repo.pub.meego.com/releases/Mer-Tools/$PRE-release)
 	    ;;
+	--go )   INSTALL=1;;
     esac
     shift
 done
