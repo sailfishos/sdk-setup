@@ -1,0 +1,23 @@
+#  This file is part of Mer SDK.
+#
+
+[Unit]
+Description=SDK Information
+Documentation=http://wiki.merproject.org/Platform_SDK
+After=systemd-user-sessions.service plymouth-quit-wait.service multi-user.target network.target
+
+[Service]
+Environment=HOME=/root
+WorkingDirectory=/root
+ExecStartPre=-/bin/plymouth quit
+ExecStartPre=-/usr/bin/sleep 4
+ExecStartPre=-/usr/bin/clear
+ExecStartPre=-/bin/echo 'Welcome to the Mer SDK. Use "right-ctrl F2" to get a login prompt.'
+ExecStartPre=-/bin/echo
+ExecStartPre=-/bin/echo 'Your VM SDK IP address is:'
+ExecStart=-/bin/bash -c "sleep 3; ip addr show dev eth0 | grep inet\  | cut -f6 -d' '"
+#ExecStart=-/sbin/sulogin
+StandardInput=tty-force
+StandardOutput=inherit
+StandardError=inherit
+
