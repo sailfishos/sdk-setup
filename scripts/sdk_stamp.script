@@ -1,4 +1,0 @@
-## sdk_stamp.script from sdk-kickstarter-configs package
-# Ensure this chroot is marked as an SDK
-echo "MerSDK" > /etc/MerSDK
-# end sdk_stamp.script

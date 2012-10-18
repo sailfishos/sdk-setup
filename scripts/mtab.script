@@ -1,6 +1,0 @@
-## mtab.script from sdk-kickstarter-configs package
-# Normally /etc/mtab is provided by systemd
-#
-rm -f /etc/mtab
-ln -s /proc/self/mounts /etc/mtab
-# end mtab.script
