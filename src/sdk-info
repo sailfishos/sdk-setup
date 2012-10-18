@@ -1,0 +1,23 @@
+#!/bin/bash
+
+TIMEOUT=10
+DEV=eth0
+
+cnt=0
+echo waiting for IP
+while (( $cnt < $TIMEOUT )); do
+    IP=$(/sbin/ip -4 addr show dev $DEV scope global | grep "inet"  | cut -f6 -d' ' | cut -f1 -d'/' )
+    [[ $IP ]] && break
+    sleep 1;
+    (( cnt++ ))
+    IP="Unknown"
+done
+
+/usr/bin/clear
+cat << EOF
+Welcome to the Mer SDK. Use "right-ctrl F2" to get a login prompt.
+
+Your VM SDK IP address is:
+  $IP
+EOF
+
