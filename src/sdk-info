@@ -17,7 +17,34 @@ done
 cat << EOF
 Welcome to the Mer SDK. Use "right-ctrl F2" to get a login prompt.
 
-Your VM SDK IP address is:
-  $IP
+Your VM SDK IP address is:  $IP
+
+Note that if you have configured VirtualBox to use NAT for this VM you
+should use
+  ssh -p 2222 root@localhost
+
+Mounting shared folders....
 EOF
+
+fail=
+if VBoxControl -nologo sharedfolder list | grep ' home$' > /dev/null 2>&1 ; then
+    mount -tvboxsf -o"rw,exec,uid=1001,gid=1001,dev"  home /home/mersdk || fail=1
+else
+    echo 'Failed to mount shared folder "home"'
+    fail=1
+fi
+if VBoxControl -nologo sharedfolder list | grep ' targets$' > /dev/null 2>&1 ; then
+    mount -tvboxsf -o"rw,exec,uid=1001,gid=1001,dev"  targets /srv/mer/targets || fail=1
+else
+    echo 'Failed to mount shared folder "targets"'
+    fail=1
+fi
+
+if [[ $fail ]]; then
+    VBoxControl -nologo sharedfolder list
+    echo "Please see https://wiki.merproject.org/wiki/Platform_SDK_on_VirtualBox"
+    echo "for instructions on setting up"
+else
+    echo mounted home and targets succesfully
+fi
 
