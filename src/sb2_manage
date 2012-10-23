@@ -1,0 +1,129 @@
+#!/bin/bash
+
+# This is a helper script for the Mer SDK to manage sb2 target and
+# toolchain installation
+
+
+usage()
+{
+    cat <<EOF
+    usage: 
+           $0 --toolchain --list
+           $0 --toolchain --install <arch>
+           $0 --toolchain --remove <arch>
+
+           $0 --target --name <name> --install <url>
+           $0 --target --name <name> --remove
+           $0 --target --name <name> --upgrade
+ 
+           $0 --hostname --get
+           $0 --hostname --set
+
+       This is the Mer SDK VM manager
+       For information see https://wiki.merproject.org/wiki/Platform_SDK_on_VirtualBox
+       It is primarily intended for use by the SDK web interface.
+
+       The SDK has 2 modes to manage 
+          --toolchain : the SB2 toolchains installed in the VM
+          --target : the SB2 targets installed in the VM
+
+       Toolchain mode
+           --list: lists installed toolchains from 
+           $0 --toolchain --install <arch>
+           $0 --toolchain --remove <arch>
+
+
+EOF
+    [[ $1 == "--exit" ]] && { exit 1; }
+    return 0
+}
+
+if [[ $EUID -ne 0 ]]; then
+    exec sudo $0 "$@"
+    echo "$0 must be run as root and sudo failed; exiting"
+    exit 1
+fi
+
+# From now on, exit if variables not set
+set -u
+
+# Make sure normal users can use any dirs we make
+umask 022
+
+
+################################################################'
+# toolchain
+
+# Our toolchains are available through zypper as Mer-SB2-* patterns
+
+get_toolchains() {
+    while IFS='| ' read installed pkg dummy; do
+	echo "${pkg},${installed}"
+    done <<< "$(zypper search -t pattern Mer-SB2-* | grep Mer-SB2)"
+}
+
+ensure_installed() {
+    get_toolchains | egrep -s "$0,i$"
+}
+
+ensure_uninstalled() {
+    get_toolchains | egrep -s "$0,$"    
+}
+
+install_toolchain() {
+    pkg=$0
+    if ensure_uninstalled $pkg; then
+	sudo zypper --non-interactive install -t pattern $pkg
+    fi
+}
+
+remove_toolchain() {
+    pkg=$0
+    if ensure_installed $pkg; then
+	sudo zypper --non-interactive remove -t pattern $pkg
+    fi
+}
+
+################################################################
+# Targets
+
+get_targets() {
+    sb2-config -l
+}
+
+# Download and install a rootfs
+add_target_rootfs() {
+    echo Adding a rootfs
+}
+
+# Use osc to create
+add_target_spec() {
+    echo Adding a spec
+}
+
+################################################################
+# utility
+
+################
+
+################################################################
+# Main
+
+if ! [[ $1 ]]; then
+    usage --exit
+fi
+
+case "$1" in
+    --toolchain )
+	shift
+	manage_toolchain "$@"
+	;;
+    --target )
+	shift
+	manage_toolchain "$@"
+	;;
+    * )
+	echo "$1 not recognised"
+	usage --exit
+	;;
+esac
