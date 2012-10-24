@@ -15,7 +15,7 @@ usage()
            $0 --target --name <name> --install <url>
            $0 --target --name <name> --remove
            $0 --target --name <name> --upgrade
- 
+
            $0 --hostname --get
            $0 --hostname --set
 
@@ -23,14 +23,9 @@ usage()
        For information see https://wiki.merproject.org/wiki/Platform_SDK_on_VirtualBox
        It is primarily intended for use by the SDK web interface.
 
-       The SDK has 2 modes to manage 
+       The SDK has 2 modes to manage
           --toolchain : the SB2 toolchains installed in the VM
           --target : the SB2 targets installed in the VM
-
-       Toolchain mode
-           --list: lists installed toolchains from 
-           $0 --toolchain --install <arch>
-           $0 --toolchain --remove <arch>
 
 
 EOF
@@ -63,25 +58,55 @@ get_toolchains() {
 }
 
 ensure_installed() {
-    get_toolchains | egrep -s "$0,i$"
+    get_toolchains | egrep -s "^$1,i$"
 }
 
 ensure_uninstalled() {
-    get_toolchains | egrep -s "$0,$"    
+    get_toolchains | egrep -s "^$1,$"
 }
 
 install_toolchain() {
-    pkg=$0
+    pkg=$1
     if ensure_uninstalled $pkg; then
 	sudo zypper --non-interactive install -t pattern $pkg
+    else
+	echo "Toolchain $pkg doesn't exist or is already installed- can not install."
+	exit 2
     fi
 }
 
 remove_toolchain() {
-    pkg=$0
+    pkg=$1
     if ensure_installed $pkg; then
 	sudo zypper --non-interactive remove -t pattern $pkg
+    else
+	echo "Toolchain $pkg is not installed - can not remove."
+	exit 2
     fi
+}
+
+manage_toolchain() {
+    if ! [[ $1 ]]; then
+	usage --exit
+    fi
+
+    case "$1" in
+	--list )
+	    get_toolchains
+	    ;;
+	--install )
+	    shift
+	    install_toolchain $@
+	    ;;
+	--remove )
+	    shift
+	    remove_toolchain "$@"
+	    ;;
+	* )
+	    echo "$1 not recognised"
+	    usage --exit
+	    ;;
+    esac
 }
 
 ################################################################
