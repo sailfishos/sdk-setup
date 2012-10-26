@@ -7,30 +7,22 @@
 usage()
 {
     cat <<EOF
-    usage: 
+    usage (keep the arguments order): 
+
            $0 --toolchain --list
            $0 --toolchain --install <arch>
            $0 --toolchain --remove <arch>
 
-           $0 --target --name <name> --install <url>
-           $0 --target --name <name> --remove
-           $0 --target --name <name> --upgrade
- 
-           $0 --hostname --get
-           $0 --hostname --set
+           $0 --target --list
+           $0 --target --install <name> <toolchain> <url>
+           $0 --target --remove  <name>
+
+           $0 --sdk --version
+           $0 --sdk --upgrade
 
        This is the Mer SDK VM manager
        For information see https://wiki.merproject.org/wiki/Platform_SDK_on_VirtualBox
        It is primarily intended for use by the SDK web interface.
-
-       The SDK has 2 modes to manage 
-          --toolchain : the SB2 toolchains installed in the VM
-          --target : the SB2 targets installed in the VM
-
-       Toolchain mode
-           --list: lists installed toolchains from 
-           $0 --toolchain --install <arch>
-           $0 --toolchain --remove <arch>
 
 
 EOF
@@ -63,43 +55,182 @@ get_toolchains() {
 }
 
 ensure_installed() {
-    get_toolchains | egrep -s "$0,i$"
+    get_toolchains | egrep -s "^$1,i$" >/dev/null
 }
 
-ensure_uninstalled() {
-    get_toolchains | egrep -s "$0,$"    
+ensure_installable() {
+    get_toolchains | egrep -s "^$1,$" >/dev/null
 }
 
 install_toolchain() {
-    pkg=$0
-    if ensure_uninstalled $pkg; then
-	sudo zypper --non-interactive install -t pattern $pkg
+    pkg=$1
+    if ensure_installable $pkg; then
+	zypper --non-interactive install -t pattern $pkg
+    else
+	echo "Toolchain $pkg doesn't exist or is already installed- can not install."
+	exit 2
     fi
 }
 
 remove_toolchain() {
-    pkg=$0
+    pkg=$1
     if ensure_installed $pkg; then
-	sudo zypper --non-interactive remove -t pattern $pkg
+	zypper --non-interactive remove -t pattern $pkg
+    else
+	echo "Toolchain $pkg is not installed - can not remove."
+	exit 2
     fi
+}
+
+manage_toolchains() {
+    if ! [[ $1 ]]; then
+	usage --exit
+    fi
+
+    case "$1" in
+	--list )
+	    get_toolchains
+	    ;;
+	--install )
+	    shift
+	    install_toolchain "$@"
+	    ;;
+	--remove )
+	    shift
+	    remove_toolchain "$@"
+	    ;;
+	* )
+	    echo "$1 not recognised"
+	    usage --exit
+	    ;;
+    esac
 }
 
 ################################################################
 # Targets
 
 get_targets() {
-    sb2-config -l
+    if sudo -u mersdk sb2-config -l 2>&1 | grep 'sb2-init' >/dev/null ; then
+	exit 0
+    else
+	sudo -u mersdk sb2-config -l
+    fi
 }
 
 # Download and install a rootfs
-add_target_rootfs() {
-    echo Adding a rootfs
+install_target() {
+    name=$1 #FIXME: check name validity
+    toolchain=$2
+    url=$3 #FIXME: check url validity
+    echo Making sure the right toolchain exists
+    if ! ensure_installed $toolchain; then
+	install_toolchain $toolchain
+    fi
+
+    echo Downloading target
+    echo "curl $url > /srv/mer/targets/$name.tar.bz2"
+    curl "$url" > /srv/mer/targets/$name.tar.bz2
+    curl_status=$?
+    if [ \( $curl_status -ne 0 \) -o \( $(stat -c %s /srv/mer/targets/$name.tar.bz2) -lt 10000 \) ]; then #hash check anybody?
+	echo "Download failed"
+	return 3
+    fi
+
+    mkdir /fuck_hardlinks/
+    cd /fuck_hardlinks/
+
+    echo Decompressing target
+    tar jxf /srv/mer/targets/$name.tar.bz2 
+
+    echo Relocating target
+    mkdir /srv/mer/targets/$name
+    rsync -a /fuck_hardlinks/ /srv/mer/targets/$name/
+    chown -R mersdk /srv/mer/targets/$name
+
+    rm -rf /fuck_hardlinks/
+    rm /srv/mer/targets/$name.tar.bz2
+
+    cd /srv/mer/targets/$name
+
+    transparency=""
+    compiler="/usr/bin/gcc"
+
+    if echo $toolchain | grep \\-arm; then
+	architecture=$(echo $toolchain | tr '-' '\n' | tail -n 1)
+	transparency="-c /usr/bin/qemu-arm-dynamic"
+	compiler="/opt/cross/bin/$architecture-meego-linux-gnueabi-gcc"
+    fi
+
+    sudo -u mersdk sb2-init -L "--sysroot=/" -C "--sysroot=/" $transparency -m sdk-build -n -N -t / $name $compiler
 }
 
-# Use osc to create
-add_target_spec() {
-    echo Adding a spec
+remove_target() {
+    name=$1
+    if [ -d /home/mersdk/.scratchbox2/$name ]; then
+	rm -r /home/mersdk/.scratchbox2/$name
+	rm -rf /srv/mer/targets/$name/
+    else
+	echo "Target not installed - can't delete"
+	exit 2
+    fi
 }
+
+
+manage_targets() {
+    if ! [[ $1 ]]; then
+	usage --exit
+    fi
+
+    case "$1" in
+	--list )
+	    get_targets
+	    ;;
+	--install )
+	    shift
+	    install_target "$@"
+	    ;;
+	--remove )
+	    shift
+	    remove_target "$@"
+	    ;;
+	* )
+	    echo "$1 not recognised"
+	    usage --exit
+	    ;;
+    esac
+}
+
+################################################################
+# SDK
+
+get_sdk_version() {
+    sdk-version
+}
+
+upgrade_sdk() {
+    sdk-version --latest --go
+}
+
+manage_sdk() {
+    if ! [[ $1 ]]; then
+	usage --exit
+    fi
+
+    case "$1" in
+	--version )
+	    get_sdk_version
+	    ;;
+	--upgrade )
+	    shift
+	    upgrade_sdk "$@"
+	    ;;
+	* )
+	    echo "$1 not recognised"
+	    usage --exit
+	    ;;
+    esac
+}
+
 
 ################################################################
 # utility
@@ -116,11 +247,15 @@ fi
 case "$1" in
     --toolchain )
 	shift
-	manage_toolchain "$@"
+	manage_toolchains "$@"
 	;;
     --target )
 	shift
-	manage_toolchain "$@"
+	manage_targets "$@"
+	;;
+    --sdk )
+	shift
+	manage_sdk "$@"
 	;;
     * )
 	echo "$1 not recognised"
