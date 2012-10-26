@@ -17,9 +17,8 @@ usage()
            $0 --target --install <name> <toolchain> <url>
            $0 --target --remove  <name>
 
-           $0 --hostname --get
-           $0 --hostname --set
-
+           $0 --sdk --version
+           $0 --sdk --upgrade
 
        This is the Mer SDK VM manager
        For information see https://wiki.merproject.org/wiki/Platform_SDK_on_VirtualBox
@@ -201,6 +200,37 @@ manage_targets() {
     esac
 }
 
+################################################################
+# SDK
+
+get_sdk_version() {
+    sdk-version
+}
+
+upgrade_sdk() {
+    sdk-version --latest --go
+}
+
+manage_sdk() {
+    if ! [[ $1 ]]; then
+	usage --exit
+    fi
+
+    case "$1" in
+	--version )
+	    get_sdk_version
+	    ;;
+	--upgrade )
+	    shift
+	    upgrade_sdk "$@"
+	    ;;
+	* )
+	    echo "$1 not recognised"
+	    usage --exit
+	    ;;
+    esac
+}
+
 
 ################################################################
 # utility
@@ -222,6 +252,10 @@ case "$1" in
     --target )
 	shift
 	manage_targets "$@"
+	;;
+    --sdk )
+	shift
+	manage_sdk "$@"
 	;;
     * )
 	echo "$1 not recognised"

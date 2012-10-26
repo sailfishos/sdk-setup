@@ -115,8 +115,8 @@ EOF
 do_update() {
     if [[ $INSTALL ]]; then
 	echo "Running update"
-	sudo zypper ref
-	sudo zypper up
+	sudo zypper -n ref
+	sudo zypper -n up
     else
 	cat <<EOF
 Now run:
@@ -151,7 +151,15 @@ while [[ $1 ]] ; do
 	    shift ;;
 	--next | --latest ) UPDATE=1; PRE=${1#--}
 	    [[ $CORE ]] || CORE=$(curl -Ss http://releases.merproject.org/releases/$PRE-release)
+	    CORE_STATUS=$?
 	    [[ $SDK ]] || SDK=$(curl -Ss http://repo.pub.meego.com/releases/Mer-Tools/$PRE-release)
+	    SDK_STATUS=$?
+	    CORE_LEN=$( echo $CORE | wc -c )
+	    SDK_LEN=$( echo $CORE | wc -c )
+	    if [ \( $CORE_STATUS -ne 0 \) -o \( $SDK_STATUS -ne 0 \) -o \( $CORE_LEN -lt 5 \) -o \( $CORE_LEN -gt 20 \) -o \( $SDK_LEN -lt 3 \) -o \( $SDK_LEN -gt 20 \) ]; then
+		echo "couldn't fetch $PRE release version, aborting"
+		exit 2
+	    fi
 	    ;;
 	--go )   INSTALL=1;;
     esac
