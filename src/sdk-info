@@ -3,6 +3,8 @@
 TIMEOUT=10
 DEV=eth0
 
+echo 3 > /proc/sys/kernel/printk
+
 cnt=0
 echo waiting for IP
 while (( $cnt < $TIMEOUT )); do
@@ -13,38 +15,51 @@ while (( $cnt < $TIMEOUT )); do
     IP="Unknown"
 done
 
+/usr/bin/chvt 3
+/usr/bin/setterm -powersave off -blank 0
 /usr/bin/clear
+
+/bin/echo -en '\033]P7B1BFDB'
+/bin/echo -en '\033]P0011130'
+/usr/bin/tput cup 25 0
+/usr/bin/ply-image
+
 cat << EOF
-Welcome to the Mer SDK. Use "right-ctrl F2" to get a login prompt.
+  Welcome to the Mer SDK. 
 
-Your VM SDK IP address is:  $IP
+  Use "right-ctrl F2" to get a login prompt.
+ 
+  Your VM SDK IP address is:  $IP
 
-Note that if you have configured VirtualBox to use NAT for this VM you
-should use
-  ssh -p 2222 root@localhost
+  Note that if you have configured VirtualBox to use NAT for this VM you
+  should use
+    ssh -p 2222 root@localhost
 
-Mounting shared folders....
+  Mounting shared folders....
 EOF
 
 fail=
 if VBoxControl -nologo sharedfolder list | grep ' home$' > /dev/null 2>&1 ; then
     mount -tvboxsf -o"rw,exec,uid=1001,gid=1001,dev"  home /home/mersdk || fail=1
 else
-    echo 'Failed to mount shared folder "home"'
+    echo '  Failed to mount shared folder "home"'
     fail=1
 fi
 if VBoxControl -nologo sharedfolder list | grep ' targets$' > /dev/null 2>&1 ; then
     mount -tvboxsf -o"rw,exec,uid=1001,gid=1001,dev"  targets /srv/mer/targets || fail=1
 else
-    echo 'Failed to mount shared folder "targets"'
+    echo '  Failed to mount shared folder "targets"'
     fail=1
 fi
 
 if [[ $fail ]]; then
     VBoxControl -nologo sharedfolder list
-    echo "Please see https://wiki.merproject.org/wiki/Platform_SDK_on_VirtualBox"
-    echo "for instructions on setting up"
+    echo "  Please see https://wiki.merproject.org/wiki/Platform_SDK_on_VirtualBox"
+    echo "  for instructions on setting up"
 else
-    echo mounted home and targets succesfully
+    echo "  mounted home and targets succesfully"
 fi
+
+/bin/echo -en '\033]R'
+
 
