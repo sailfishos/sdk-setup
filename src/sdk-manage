@@ -127,20 +127,28 @@ install_target() {
 	install_toolchain $toolchain
     fi
 
-    echo Downloading target
-    echo "curl $url > /srv/mer/targets/$name.tar.bz2"
-    curl "$url" > /srv/mer/targets/$name.tar.bz2
-    curl_status=$?
-    if [ \( $curl_status -ne 0 \) -o \( $(stat -c %s /srv/mer/targets/$name.tar.bz2) -lt 10000 \) ]; then #hash check anybody?
-	echo "Download failed"
-	return 3
+    if [[ $url = file\:\/\/\/* ]]; then
+	local_file=${url//file\:\/\//}
+    else
+	echo Downloading target
+	echo "curl $url > /srv/mer/targets/$name.tar.bz2"
+	curl "$url" > /srv/mer/targets/$name.tar.bz2
+	curl_status=$?
+	if [ \( $curl_status -ne 0 \) -o \( $(stat -c %s /srv/mer/targets/$name.tar.bz2) -lt 10000 \) ]; then #hash check anybody?
+	    echo "Download failed"
+	    return 3
+	fi
     fi
 
     mkdir /fuck_hardlinks/
     cd /fuck_hardlinks/
 
     echo Decompressing target
-    tar jxf /srv/mer/targets/$name.tar.bz2 
+    if [ $local_file ]; then
+	tar jxf $local_file
+    else
+	tar jxf /srv/mer/targets/$name.tar.bz2
+    fi
 
     echo Relocating target
     mkdir /srv/mer/targets/$name
@@ -148,8 +156,9 @@ install_target() {
     chown -R mersdk /srv/mer/targets/$name
 
     rm -rf /fuck_hardlinks/
-    rm /srv/mer/targets/$name.tar.bz2
-
+    if [ ! $local_file ]; then
+	rm /srv/mer/targets/$name.tar.bz2
+    fi
     cd /srv/mer/targets/$name
 
     transparency=""
