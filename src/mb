@@ -106,7 +106,7 @@ build() {
 
     # workaround for RPM insisting we have a "tarball"
     echo "this is more than 13 bytes" > ~/rpmbuild/SOURCES/$PACKAGE.tar.bz2
-    rsync --exclude=".git" -rvt . ~/rpmbuild/BUILD/$PACKAGE
+    rsync --exclude=".git" -rlvt . ~/rpmbuild/BUILD/$PACKAGE
     # TODO: read this from spec, not all packages have extra Sources
     cp ./rpm/* ~/rpmbuild/SOURCES
 
