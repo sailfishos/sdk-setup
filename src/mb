@@ -51,6 +51,7 @@ clean() {
 
 build() {
     TARGET=""
+    VERBOSE=""
 
     while test $# -gt 0; do
 	case "$1" in
@@ -60,6 +61,9 @@ build() {
 		;;
             "-d" | "--enable-debug")
 		ENABLE_DEBUG=1
+		;;
+            "-v" | "--verbose")
+		VERBOSE=1
 		;;
             *)
 		if [[ "$1" =~ ^- ]] ; then
@@ -106,7 +110,13 @@ build() {
 
     # workaround for RPM insisting we have a "tarball"
     echo "this is more than 13 bytes" > ~/rpmbuild/SOURCES/$PACKAGE.tar.bz2
-    rsync --exclude=".git" -rlvt . ~/rpmbuild/BUILD/$PACKAGE
+
+    RSYNC_OPTIONS=""
+    if [ -n "$VERBOSE" ]; then
+        RSYNC_OPTIONS="-v"
+    fi
+
+    rsync --exclude=".git" $RSYNC_OPTIONS -rlt . ~/rpmbuild/BUILD/$PACKAGE
     # TODO: read this from spec, not all packages have extra Sources
     cp ./rpm/* ~/rpmbuild/SOURCES
 
