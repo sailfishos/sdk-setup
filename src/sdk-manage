@@ -49,9 +49,10 @@ umask 022
 # Our toolchains are available through zypper as Mer-SB2-* patterns
 
 get_toolchains() {
-    while IFS='| ' read installed pkg dummy; do
+    zypper search -t pattern Mer-SB2-* | grep Mer-SB2 | while IFS='| ' read installed pkg dummy; do
 	echo "${pkg},${installed}"
-    done <<< "$(zypper search -t pattern Mer-SB2-* | grep Mer-SB2)"
+    done 
+    return ${PIPESTATUS[0]}
 }
 
 ensure_installed() {
@@ -66,6 +67,7 @@ install_toolchain() {
     pkg=$1
     if ensure_installable $pkg; then
 	zypper --non-interactive install -t pattern $pkg
+	return $?
     else
 	echo "Toolchain $pkg doesn't exist or is already installed- can not install."
 	exit 2
@@ -76,6 +78,7 @@ remove_toolchain() {
     pkg=$1
     if ensure_installed $pkg; then
 	zypper --non-interactive remove -t pattern $pkg
+	return $?
     else
 	echo "Toolchain $pkg is not installed - can not remove."
 	exit 2
@@ -90,14 +93,17 @@ manage_toolchains() {
     case "$1" in
 	--list )
 	    get_toolchains
+	    return $?
 	    ;;
 	--install )
 	    shift
 	    install_toolchain "$@"
+	    return $?
 	    ;;
 	--remove )
 	    shift
 	    remove_toolchain "$@"
+	    return $?
 	    ;;
 	* )
 	    echo "$1 not recognised"
