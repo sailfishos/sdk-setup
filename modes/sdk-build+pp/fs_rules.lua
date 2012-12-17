@@ -191,8 +191,6 @@ emulate_mode_rules_bin = {
 		 actions=accelerated_program_actions},
 		{path="/bin/rmdir",
 		 actions=accelerated_program_actions},
-		{path="/bin/rpm",
-		 actions=accelerated_program_actions},
 		{path="/bin/sed",
 		 actions=accelerated_program_actions},
 		{path="/bin/sh",
@@ -211,12 +209,6 @@ emulate_mode_rules_bin = {
 		 replace_by = session_dir .. "/wrappers." .. active_mapmode .. "/pwd",
 		 protection_readonly_fs_always},
 
-		-- rpm rules
-		{path = "/bin/rpm",
-		 func_class = FUNC_CLASS_EXEC,
-		 actions = accelerated_program_actions},
-		-- end of rpm rules
-		
 		{name = "/bin default rule", dir = "/bin", map_to = target_root,
 		 protection = readonly_fs_if_not_root}
 }
@@ -451,13 +443,6 @@ emulate_mode_rules_usr_bin = {
 		{name = "/usr/bin autorules", dir = "/usr/bin", rules = argvmods_rules_for_usr_bin,
 		 virtual_path = true}, -- don't reverse these.
 
-		-- rpm rules
-		{prefix = "/usr/bin/rpm",
-		 func_class = FUNC_CLASS_EXEC,
-		 actions = accelerated_program_actions},
-
-		-- end of rpm rules
-
 		-- some "famous" scripts:
 		-- (these may have embedded version numbers in
 		-- the names => uses prefix rules for matching)
@@ -519,10 +504,6 @@ usr_share_rules = {
 
 emulate_mode_rules_usr = {
 		{name = "/usr/bin branch", dir = "/usr/bin", rules = emulate_mode_rules_usr_bin},
-                {path = "/usr/lib/rpm/elfdeps", actions=accelerated_program_actions},
-                {path = "/usr/lib/rpm/debugedit", actions=accelerated_program_actions},
-                {path = "/usr/lib/rpm/javadeps", actions=accelerated_program_actions},
-                {path = "/usr/lib/rpm/rpmdeps", actions=accelerated_program_actions},
 
 		-- gdb wants to have access to our dynamic linker also,
 		-- /usr/lib/libsb2/wrappers/*, etc.

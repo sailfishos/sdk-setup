@@ -133,12 +133,6 @@ emulate_mode_rules_bin = {
 		 func_class = FUNC_CLASS_EXEC,
 		 actions = accelerated_program_actions},
 
-		-- rpm rules
-		{path = "/bin/rpm",
-		 func_class = FUNC_CLASS_EXEC,
-		 actions = accelerated_program_actions},
-		-- end of rpm rules
-		
 		{name = "/bin default rule", dir = "/bin", map_to = target_root,
 		 protection = readonly_fs_if_not_root}
 }
@@ -196,15 +190,6 @@ emulate_mode_rules_usr_bin = {
 		{path = "/usr/bin/sb2-session", use_orig_path = true,
 		 protection = readonly_fs_always},
 
-		-- rpm rules
-		{prefix = "/usr/bin/rpm",
-		 func_class = FUNC_CLASS_EXEC,
-		 actions = accelerated_program_actions},
-		{path = "/usr/bin/zypper",
-		 func_class = FUNC_CLASS_EXEC,
-		 actions = accelerated_program_actions},
-
-		-- end of rpm rules
 		{name = "/usr/bin default rule", dir = "/usr/bin", map_to = target_root,
 		protection = readonly_fs_if_not_root}
 }
