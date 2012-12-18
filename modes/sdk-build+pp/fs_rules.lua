@@ -553,7 +553,6 @@ emulate_mode_rules_var = {
 		protection = readonly_fs_always},
 
 		--
-		{dir = "/var/run", map_to = session_dir},
 		{dir = "/var/tmp", replace_by = var_tmp_dir_dest},
 
 		{dir = "/var", map_to = target_root,
