@@ -93,7 +93,7 @@ build() {
     fi
 
     echo "Building $SPEC for $TARGET"
-    PACKAGE=`grep Name: "$SPEC" | cut -b6- | tr -d " "`
+    PACKAGE=`grep Name: "$SPEC" | cut -b6- | tr -d " \t"`
 
     echo "Checking dependencies..."
     grep --color=never BuildRequires "$SPEC" | sed -e '/^#.*$/d' | gawk -F: '{ print $2 }' | tr ',' ' ' | xargs sb2 -t "$TARGET" -m sdk-install -R zypper in
