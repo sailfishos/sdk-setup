@@ -280,6 +280,13 @@ try_umount() {
 }
 
 cleanup () {
+    if [[ $bind_mount_root == "yes" ]] ; then
+        # Before umouting be sure that we don't have any shared binds 
+        # in parentroot otherwise the host system mounts will be also 
+        # umounted.
+        mount --make-rprivate ${sdkroot}/parentroot
+    fi
+
     # We need to detect all mountpoints inside our chroot.
     mountpoints_r=$(perl -w -ne "print \"\$1\n\" if m\"^\S* ${sdkroot}(/\S*) \";" /proc/mounts | sort -r)
 
