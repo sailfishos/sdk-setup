@@ -9,38 +9,23 @@
 usage()
 {
     cat <<EOF
-    usage: $0 [-u <user>] [-r <SDK root path>] [enter]
-           $0 [-u <user>] [-r <SDK root path>] exec <command> <args> ..
-           $0 [-u <user>] [-m <all|none|root|home>] [-r <SDK root path>]  mount 
-           $0 [-r <SDK root path>] umount
+    usage: $0 [-u <user>] [-m <all|none|root|home>] [-r <SDK root path>] [<command> <args> ..]
+           $0 -h
 
        This is the Mer chroot SDK.
        For information see http://wiki.merproject.org/wiki/Platform_SDK
 
-       The SDK has 4 commands:
-          enter (default)
-          exec
-          mount
-          umount
-
-      enter
-         Used to enter the SDK and begin working. The SDK bash shell is a
+      If command is not present,
+         used to enter the SDK and begin working. The SDK bash shell is a
          login shell. See below for .profile handling
          Must be preceded by a 'mount' to setup the SDK.
          May be used in multiple terminals and simply enters the
          chroot
 
-      exec
-         Used to execute an arbitrary command from within the SDK chroot
+      If command is present,
+         used to execute an arbitrary command from within the SDK chroot
          environment. The environment variable MERSDK is set to 1 to allow
          SDK detection.
-
-      mount
-         Used to setup the SDK mountpoints. Only needed once per login
-         session
-
-      umount
-         Used to clean up the SDK mountpoints before removing the SDK.
 
       Options:
 
@@ -49,6 +34,7 @@ usage()
            root, home
        -r The root of the SDK to use - normally derived from the
           pathname of $0
+       -h  Show this help
 
       Profile
 
@@ -83,17 +69,17 @@ if [[ $EUID -ne 0 ]]; then
     exit 1
 fi
 
+if cmp -s /proc/$PPID/mountinfo /proc/self/mountinfo; then
+    exec unshare -m -- "$0" "$@"
+    echo "$0 must be run in private namespace and unshare failed; exiting"
+    exit 1
+fi
+
 # Use the SUDO value if present
 user=$SUDO_USER || true;
 
 bind_mount_root="yes";
 bind_mount_home="yes";
-
-# Support the action being given as the first non-option arg
-if [ "${1:0:1}" != "-" ]; then
-    action="$1"
-    shift
-fi
 
 while getopts "u:m:r:" opt; do
     case $opt in
@@ -113,7 +99,7 @@ while getopts "u:m:r:" opt; do
 		    exit 1;;
 	    esac ;;
 	r ) sdkroot=$OPTARG;;
-	\? ) usage
+	h|\? ) usage
             exit 1;;
 	: ) echo "Option -$OPTARG requires an argument." >&2
 	    usage
@@ -137,21 +123,9 @@ if [[ ! -f ${sdkroot}/etc/MerSDK ]] ; then
     exit 1
 fi
 
-# We need the SDK to be under a --make-unbindable mount otherwise it
-# appears in other SDKs. We also need $sdkroot *not* to be
-# --make-unbindable since things like mic want to make bind mounts in
-# there.
-# We can't just make .. --make-unbindable since it may be something
-# special (eg if the SDK is installed straight into $HOME or / that
-# would break stuff)
-# Solution - force an intermediate 'sdks' directory for now. We could
-# do this in the .ks for chroot SDKs but that gets messy too.
-sdkparent=$(dirname $sdkroot)
-if [[ $(basename $sdkparent) != "sdks" ]] ; then
-    echo "The SDK must be installed into a directory called sdks"
-    echo "maybe:"
-    echo " mkdir $sdkparent/sdks/"
-    echo " mv $sdkroot $sdkparent/sdks/"
+sdkparent="$(df -P "$sdkroot/" | tail -1 | awk '{print $NF}')"
+if [ -z  "$sdkparent" ] ; then
+    echo "Unable to determine mount mouint of filesystem containing \"$sdkroot\""
     exit 1
 fi
 
@@ -180,16 +154,8 @@ mount_bind() {
     mount --bind $1 ${sdkroot}$1
 }
 prepare_mountpoints() {
-    # Ensure the parent is a mountpoint in it's own right so it can be
-    # made unbindable
-    grep $sdkparent /proc/mounts > /dev/null || mount --bind $sdkparent/ $sdkparent/
-
-    # Setup sdkroot as a bind mountpoint on itself to permit
-    # --make-unbindable
-    mount --make-private $sdkparent      # Permit bind mounts below parent so we can...
-    mount --bind $sdkroot/ $sdkroot/     # ... set the SDK dir as a mountpoint.
-    mount --make-unbindable $sdkparent   # Make the parent unbindable again
-    mount --make-private $sdkroot        # but allow bindmounts within the SDK for mic etc
+    # Make parent mountpoint not shared with parent namespace
+    mount --make-slave "$sdkparent/"
 
     echo "Mounting system directories..."
     mount_bind /proc
@@ -249,104 +215,6 @@ prepare_etc() {
 
 }
 
-################################################################
-# Umount
-
-err_cleanup() {
-    echo
-    echo 'Something went wrong during cleanup.'
-    echo 'Retrying umounts but manual check is required'
-    echo '- press return to confirm'
-    echo
-    read dummy
-    # Now retry cleanup
-    set +e
-    cleanup
-}
-
-umounterrs=""
-warn_umount(){
-    echo
-    echo "Error executing umount of $mountpoint"
-    umounterrs="$umounterrs\n$mountpoint"
-}
-
-try_umount() {
-    mountpoint=$1
-    shift
-    trap "warn_umount" ERR
-    umount "$@" $mountpoint
-    trap - ERR
-}
-
-cleanup () {
-    if [[ $bind_mount_root == "yes" ]] ; then
-        # Before umouting be sure that we don't have any shared binds 
-        # in parentroot otherwise the host system mounts will be also 
-        # umounted.
-        mount --make-rprivate ${sdkroot}/parentroot
-    fi
-
-    # We need to detect all mountpoints inside our chroot.
-    mountpoints_r=$(perl -w -ne "print \"\$1\n\" if m\"^\S* ${sdkroot}(/\S*) \";" /proc/mounts | sort -r)
-
-    echo "Unmounting all directories... ($(echo \"${mountpoints_r}\" | wc -w) found)"
-
-    # umount in reverse order
-    for mp in ${mountpoints_r}; do
-	try_umount ${sdkroot}$mp/
-    done
-
-    # umount the self-bind mount we use to apply the --make-unbindable
-    # When this script is run in umount mode the shell has a
-    # filehandle open into the self-mount for it - this results in a
-    # device busy and hence needs a lazy umount
-    try_umount ${sdkroot}/ -l
-
-    # Report any errors found
-    if [[ $umounterrs ]]; then
-	echo
-	echo "Errors encountered when unmounting the following mountpoints"
-	echo -e $umounterrs
-    fi
-}
-
-################################################################
-# utility
-ensure_mounted() {
-    if ! grep " $sdkroot " /proc/mounts > /dev/null; then
-	cat <<EOF
-This SDK ( ${sdkroot} ) does not appear to be mounted yet - attempting mount:
-EOF
-	if $0 mount; then
-	    return
-	else
-	    echo "Mounting failed, not entering SDK"
-	    exit 1;
-	fi
-    fi
-}
-ensure_not_mounted() {
-    if grep " $sdkroot " /proc/mounts > /dev/null; then
-	cat <<EOF
-This SDK ( ${sdkroot} ) is already mounted.
-If you are sure this is not an error and /proc/self/mounts has no mountpoints under it then remove ${sdkroot}/.sdkoptions and try again.
-EOF
-	exit 1;
-    fi
-}
-stash_mount_options() {
-    cat <<EOF > ${sdkroot}/.sdkoptions
-user="${user}"
-HOMEDIR="${HOMEDIR}"
-EOF
-}
-get_mount_options() {
-    [[ -e ${sdkroot}/.sdkoptions ]] && {
-	source ${sdkroot}/.sdkoptions
-    }
-}
-
 ################
 
 setup_user_hooks(){
@@ -392,71 +260,66 @@ ensure_active_chroot_list_is_empty() {
 
 ################################################################
 
-action=${action:-enter}
 retval=0
 cwd=$(pwd)
 
-case "$action" in
-    enter | exec )
-        # setarch is used so uname -a will report i386 - this allows
-        # osc to work
-	ensure_mounted
-	get_mount_options
-	setup_user_hooks
-	run_user_hook enter_sdk
-	add_pid_to_active_chroot_list
-	case "$action" in
-	    enter )
-		echo "Entering chroot as $user"
-		setarch i386 chroot ${sdkroot} /bin/su -s /bin/bash -l $user -- -c "if [ -d $cwd ]; then cd $cwd; fi; exec bash --init-file /mer-bash-setup -i"
-		;;
-	    exec )
-		if [[ ! $1 ]]; then
-		    echo "You must supply a command to exec"
-		    usage
-		    retval=1
-		else
-		    setarch i386 chroot "${sdkroot}" /bin/su -s /bin/bash -l $user -- -c "export MERSDK=1; $*"
-		    retval=$?
-		fi
-		;;
-	esac
-	rm_pid_from_active_chroot_list
-	run_user_hook leave_sdk
-	;;
+# For back compatibility abort on 'mount/umount' and warn on 'enter' 
+if [[ $# == 1 ]]; then
+    case $1 in
+	mount|umount )
+	    cat <<EOF
+ERROR: the mer-sdk-chroot command no longer needs or supports 'mount/umount/enter'
+Just enter the SDK using:
+ $0
 
-    mount )
-	ensure_not_mounted
-	trap "err_cleanup; exit" INT TERM EXIT
-        prepare_mountpoints   # host / and data and /proc and similar
-	prepare_user          # in /etc/passwd
-	setup_user_hooks      # (after prepare so HOMEDIR is known)
-	prepare_etc           # resolv.conf and ssl certs
-	run_user_hook mount_sdk
-	stash_mount_options   # for use when umounting
-
-	cat <<EOF
-${sdkroot} is now setup with mountpoints to make it easier to use as a Mer SDK.
+SDK mount/umount is handled automatically and safely.
 EOF
-	trap - INT TERM EXIT
-	;;
+	    exit 1;;
+	enter )
+	    cat <<EOF
+WARNING: sdk 'enter' is deprecated. Just enter the SDK using:
+  $0
 
-    umount|unmount )
-	ensure_mounted
-	ensure_active_chroot_list_is_empty
-	get_mount_options
-	rm ${sdkroot}/.sdkoptions
-	setup_user_hooks
-	trap "err_cleanup; exit" INT TERM EXIT
-        # Call cleanup manually - if an error occurs then warn and
-        # retry
-	run_user_hook umount_sdk
-	cleanup
-	trap - INT TERM EXIT
+Entering the SDK as requested
+EOF
+	    shift;;
+    esac
+fi
+
+prepare_mountpoints   # host / and data and /proc and similar
+prepare_user          # in /etc/passwd
+setup_user_hooks      # (after prepare so HOMEDIR is known)
+prepare_etc           # resolv.conf and ssl certs
+run_user_hook mount_sdk
+run_user_hook enter_sdk
+add_pid_to_active_chroot_list
+
+case "$#" in
+    0 )
+	echo "Entering chroot as $user"
+	setarch i386 chroot ${sdkroot} /bin/su -s /bin/bash -l $user -- -c "if [ -d $cwd ]; then cd $cwd; fi; exec bash --init-file /mer-bash-setup -i"
 	;;
     * )
-	echo "$action not recognised"
+	if [[ $1 == 'exec' ]]; then
+	    cat <<EOF
+	    WARN: sdk 'exec' is deprecated. Just execute SDK commands using:
+  $0 <cmd> <args>
+  
+Executing commands as requested
+EOF
+	    shift # Remove the offending 'exec'
+	fi
+	if [[ ! $1 ]]; then
+	    echo "You must supply a command to exec"
+	    usage
+	    retval=1
+	else
+	    setarch i386 chroot "${sdkroot}" /bin/su -s /bin/bash -l $user -- -c "export MERSDK=1;if [ -d $cwd ]; then cd $cwd; fi; $*"
+	    retval=$?
+	fi
 	;;
 esac
+rm_pid_from_active_chroot_list
+run_user_hook leave_sdk
 
 exit $retval
