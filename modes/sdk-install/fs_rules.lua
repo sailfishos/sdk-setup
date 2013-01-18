@@ -133,6 +133,12 @@ emulate_mode_rules_bin = {
 		 func_class = FUNC_CLASS_EXEC,
 		 actions = accelerated_program_actions},
 
+		-- rpm rules
+		{path = "/bin/rpm",
+		 func_class = FUNC_CLASS_EXEC,
+		 actions = accelerated_program_actions},
+		-- end of rpm rules
+		
 		{name = "/bin default rule", dir = "/bin", map_to = target_root,
 		 protection = readonly_fs_if_not_root}
 }
@@ -190,12 +196,59 @@ emulate_mode_rules_usr_bin = {
 		{path = "/usr/bin/sb2-session", use_orig_path = true,
 		 protection = readonly_fs_always},
 
+		-- rpm and zypper rules (zypper uses libsolv-tools now)
+		{prefix = "/usr/bin/rpm",
+		 func_class = FUNC_CLASS_EXEC,
+		 actions = accelerated_program_actions},
+		{path = "/usr/bin/zypper",
+		 func_class = FUNC_CLASS_EXEC,
+		 actions = accelerated_program_actions},
+		{path = "/usr/bin/deltainfoxml2solv",
+		 func_class = FUNC_CLASS_EXEC,
+		 actions = accelerated_program_actions},
+		{path = "/usr/bin/dumpsolv",
+		 func_class = FUNC_CLASS_EXEC,
+		 actions = accelerated_program_actions},
+		{path = "/usr/bin/installcheck",
+		 func_class = FUNC_CLASS_EXEC,
+		 actions = accelerated_program_actions},
+		{path = "/usr/bin/mergesolv",
+		 func_class = FUNC_CLASS_EXEC,
+		 actions = accelerated_program_actions},
+		{path = "/usr/bin/repomdxml2solv",
+		 func_class = FUNC_CLASS_EXEC,
+		 actions = accelerated_program_actions},
+		{path = "/usr/bin/rpmdb2solv",
+		 func_class = FUNC_CLASS_EXEC,
+		 actions = accelerated_program_actions},
+		{path = "/usr/bin/rpmmd2solv",
+		 func_class = FUNC_CLASS_EXEC,
+		 actions = accelerated_program_actions},
+		{path = "/usr/bin/rpms2solv",
+		 func_class = FUNC_CLASS_EXEC,
+		 actions = accelerated_program_actions},
+		{path = "/usr/bin/testsolv",
+		 func_class = FUNC_CLASS_EXEC,
+		 actions = accelerated_program_actions},
+		{path = "/usr/bin/updateinfoxml2solv",
+		 func_class = FUNC_CLASS_EXEC,
+		 actions = accelerated_program_actions},
+
+		-- end of rpm rules
 		{name = "/usr/bin default rule", dir = "/usr/bin", map_to = target_root,
 		protection = readonly_fs_if_not_root}
 }
 
 emulate_mode_rules_usr = {
 		{name = "/usr/bin branch", dir = "/usr/bin", rules = emulate_mode_rules_usr_bin},
+                {path = "/usr/lib/rpm/elfdeps", func_class = FUNC_CLASS_EXEC,
+		 actions=accelerated_program_actions},
+                {path = "/usr/lib/rpm/debugedit", func_class = FUNC_CLASS_EXEC,
+		 actions=accelerated_program_actions},
+                {path = "/usr/lib/rpm/javadeps", func_class = FUNC_CLASS_EXEC,
+		 actions=accelerated_program_actions},
+                {path = "/usr/lib/rpm/rpmdeps", func_class = FUNC_CLASS_EXEC,
+		 actions=accelerated_program_actions},
 
 		-- gdb wants to have access to our dynamic linker also,
 		-- /usr/lib/libsb2/wrappers/*, etc.
