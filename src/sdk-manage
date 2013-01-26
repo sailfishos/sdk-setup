@@ -147,11 +147,12 @@ install_target() {
 	fi
     fi
 
-    mkdir /fuck_hardlinks/
-    if [ $? -ne 0 ]; then echo "Couldn't create /fuck_hardlinks/ directory. Delete it if it already exists, and make sure this script has right to create it."; return 6; fi
-    cd /fuck_hardlinks/
-    if [ $? -ne 0 ]; then echo "Couldn't enter /fuck_hardlinks/ directory. This shouldn't happen :)"; return 7; fi
+    mkdir /drop_hardlinks/
+    if [ $? -ne 0 ]; then echo "Couldn't create /drop_hardlinks/ directory. Delete it if it already exists, and make sure this script has right to create it."; return 6; fi
+    cd /drop_hardlinks/
+    if [ $? -ne 0 ]; then echo "Couldn't enter /drop_hardlinks/ directory. This shouldn't happen :)"; return 7; fi
 
+    echo
     echo Decompressing target
 
     if [ -n "$local_file" ]; then
@@ -166,19 +167,19 @@ install_target() {
 	else
 	    echo "Couldn't unpack target image"
 	fi
-	rm -rf /fuck_hardlinks/
+	rm -rf /drop_hardlinks/
 	return 4
     fi
 
     echo Relocating target
     mkdir "/srv/mer/targets/$name"
-    if [ $? -ne 0 ]; then  rm -rf /fuck_hardlinks/; echo "Couldn't create target directory, aborting."; return 5; fi
-    rsync -a /fuck_hardlinks/ "/srv/mer/targets/$name/"
+    if [ $? -ne 0 ]; then  rm -rf /drop_hardlinks/; echo "Couldn't create target directory, aborting."; return 5; fi
+    rsync -a /drop_hardlinks/ "/srv/mer/targets/$name/"
     if [ $? -ne 0 ]; then  echo "Rsync didn't exactly run as intended, expect problems."; fi
     chown -R mersdk "/srv/mer/targets/$name"
     if [ $? -ne 0 ]; then  echo "Chown of target dir failed, your target may not work properly."; fi
 
-    rm -rf /fuck_hardlinks/
+    rm -rf /drop_hardlinks/
     if [ ! $local_file ]; then
 	rm "/srv/mer/targets/$name.tar.bz2"
     fi
