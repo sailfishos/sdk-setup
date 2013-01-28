@@ -17,6 +17,10 @@ usage()
            $0 --target --install <name> <toolchain> <url>
            $0 --target --remove  <name>
 
+           $0 --devel --list <target>
+           $0 --devel --install <target> <devel package list>
+           $0 --devel --remove <target> <devel package list>
+
            $0 --sdk --version
            $0 --sdk --upgrade
 
@@ -103,6 +107,73 @@ manage_toolchains() {
 	--remove )
 	    shift
 	    remove_toolchain "$@"
+	    return $?
+	    ;;
+	* )
+	    echo "$1 not recognised"
+	    usage --exit
+	    ;;
+    esac
+}
+
+################################################################'
+# Devel packages
+
+# Our devel packages are available through zypper as -devel packages :)
+
+assert_target_and_setup() {
+    if ! [[ -f /home/mersdk/.scratchbox2/$target/sb2.config ]]; then
+	echo "Target $target is not a valid Scratchbox2 target"
+	exit 1
+    fi
+    set +u
+    . /home/mersdk/.scratchbox2/$target/sb2.config
+    set -u
+}
+
+t_zypper() {
+    (
+	cd $SBOX_TARGET_ROOT
+	echo "sb2 -t $target -m sdk-install -R zypper $@"
+	sudo -u mersdk sb2 -t $target -m sdk-install -R zypper "$@"
+    )
+}
+
+get_develpkgs() {
+    t_zypper search -- -devel
+    t_zypper search -- -devel | while IFS='| ' read installed pkg dummy; do
+	echo "${pkg},${installed}"
+    done 
+    return ${PIPESTATUS[0]}
+}
+
+manage_develpkgs() {
+    if ! [[ {$1:-} ]]; then
+	usage --exit
+    fi
+
+    case "$1" in
+	--list )
+	    shift
+	    target=$1
+	    assert_target_and_setup
+	    get_develpkgs $target
+	    return $?
+	    ;;
+	--install )
+	    shift
+	    target=$1
+	    assert_target_and_setup
+	    shift
+	    t_zypper --non-interactive install "$@"
+	    return $?
+	    ;;
+	--remove )
+	    shift
+	    target=$1
+	    assert_target_and_setup
+	    shift
+	    t_zypper --non-interactive remove "$@"
 	    return $?
 	    ;;
 	* )
@@ -273,7 +344,7 @@ manage_sdk() {
 ################################################################
 # Main
 
-if ! [[ $1 ]]; then
+if ! [[ ${1:-} ]]; then
     usage --exit
 fi
 
@@ -285,6 +356,10 @@ case "$1" in
     --target )
 	shift
 	manage_targets "$@"
+	;;
+    --devel )
+	shift
+	manage_develpkgs "$@"
 	;;
     --sdk )
 	shift
