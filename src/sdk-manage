@@ -209,6 +209,7 @@ install_target() {
     url=$3 #FIXME: check url validity
     echo Making sure the right toolchain exists
     if ! ensure_installed $toolchain; then
+	echo "Installing required toolchain: $toolchain"
 	install_toolchain $toolchain
     fi
 
@@ -226,10 +227,11 @@ install_target() {
 	fi
     fi
 
-    mkdir /drop_hardlinks/
-    if [ $? -ne 0 ]; then echo "Couldn't create /drop_hardlinks/ directory. Delete it if it already exists, and make sure this script has right to create it."; return 6; fi
-    cd /drop_hardlinks/
-    if [ $? -ne 0 ]; then echo "Couldn't enter /drop_hardlinks/ directory. This shouldn't happen :)"; return 7; fi
+    # Virtualbox shared folders don't work too well at the moment
+    # Unpack targets to a private area within the VM
+    rm -rf /srv/mer/targets/$name
+    mkdir -p /srv/mer/targets/$name
+    mkdir -p /host_targets/$name
 
     echo
     echo Decompressing target
@@ -246,23 +248,20 @@ install_target() {
 	else
 	    echo "Couldn't unpack target image"
 	fi
-	rm -rf /drop_hardlinks/
+	rm -rf /srv/mer/targets/$name
+
 	return 4
     fi
 
-    echo Relocating target
-    mkdir "/srv/mer/targets/$name"
-    if [ $? -ne 0 ]; then  rm -rf /drop_hardlinks/; echo "Couldn't create target directory, aborting."; return 5; fi
-    rsync -a /drop_hardlinks/ "/srv/mer/targets/$name/"
-    if [ $? -ne 0 ]; then  echo "Rsync didn't exactly run as intended, expect problems."; fi
-    chown -R mersdk "/srv/mer/targets/$name"
-    if [ $? -ne 0 ]; then  echo "Chown of target dir failed, your target may not work properly."; fi
+    chown -R mersdk /srv/mer/targets/$name
 
-    rm -rf /drop_hardlinks/
-    if [ ! $local_file ]; then
-	rm "/srv/mer/targets/$name.tar.bz2"
-    fi
-    cd "/srv/mer/targets/$name"
+    echo Synchronising target with host
+    # This could be minimised in the future if sf is not fixed
+    rsync -a --copy-links --delete /srv/mer/targets/$name/. /host_targets/$name/.
+
+    [ $? -ne 0 ] && echo "Rsync didn't exactly run as intended, expect problems."
+
+    [[ ! $local_file ]] && rm "/srv/mer/targets/$name.tar.bz2"
 
     echo Setting up SB2
 
@@ -293,7 +292,8 @@ remove_target() {
     name=$1
     if [ -d /home/mersdk/.scratchbox2/$name ]; then
 	rm -r /home/mersdk/.scratchbox2/$name
-	rm -rf /srv/mer/targets/$name/
+	rm -rf /srv/mer/targets/$name
+	rm -rf /host_targets/$name
     else
 	echo "Target not installed - can't delete"
 	exit 2
