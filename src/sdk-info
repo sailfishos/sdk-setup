@@ -46,7 +46,7 @@ else
     fail=1
 fi
 if VBoxControl -nologo sharedfolder list | grep ' targets$' > /dev/null 2>&1 ; then
-    mount -tvboxsf -o"rw,exec,uid=1001,gid=1001,dev,ttl=60000"  targets /srv/mer/targets || fail=1
+    mount -tvboxsf -o"rw,exec,uid=1001,gid=1001,dev,ttl=60000"  targets /host_targets || fail=1
 else
     echo '  Failed to mount shared folder "targets"'
     fail=1
