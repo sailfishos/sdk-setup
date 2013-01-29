@@ -257,7 +257,7 @@ install_target() {
 
     echo Synchronising target with host
     # This could be minimised in the future if sf is not fixed
-    rsync -a --copy-links --delete /srv/mer/targets/$name/. /host_targets/$name/.
+    rsync -a --no-devices --no-specials --copy-links --delete /srv/mer/targets/$name/. /host_targets/$name/.
 
     [ $? -ne 0 ] && echo "Rsync didn't exactly run as intended, expect problems."
 
