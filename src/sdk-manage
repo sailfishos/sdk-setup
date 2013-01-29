@@ -163,7 +163,9 @@ manage_develpkgs() {
 	    target=$1
 	    assert_target_and_setup
 	    shift
+	    t_zypper --non-interactive ref
 	    t_zypper --non-interactive install "$@"
+	    synchronise_target $target
 	    return $?
 	    ;;
 	--remove )
@@ -172,6 +174,7 @@ manage_develpkgs() {
 	    assert_target_and_setup
 	    shift
 	    t_zypper --non-interactive remove "$@"
+	    synchronise_target $target
 	    return $?
 	    ;;
 	* )
@@ -197,6 +200,11 @@ assert_target_name_valid() {
     	echo "Target name '$1' is not a valid Scratchbox2 target name"
 	exit 1
     fi
+}
+
+synchronise_target() {
+    # This could be minimised in the future if sf is not fixed
+    rsync -a --no-devices --no-specials --copy-links --delete /srv/mer/targets/$1/. /host_targets/$1/.
 }
 
 # Download and install a rootfs
@@ -253,8 +261,7 @@ install_target() {
     chown -R mersdk /srv/mer/targets/$name
 
     echo Synchronising target with host
-    # This could be minimised in the future if sf is not fixed
-    rsync -a --no-devices --no-specials --copy-links --delete /srv/mer/targets/$name/. /host_targets/$name/.
+    synchronise_target $name
 
     [ $? -ne 0 ] && echo "Rsync didn't exactly run as intended, expect problems."
 
