@@ -204,7 +204,11 @@ assert_target_name_valid() {
 
 synchronise_target() {
     # This could be minimised in the future if sf is not fixed
-    rsync -a --no-devices --no-specials --copy-links --delete /srv/mer/targets/$1/. /host_targets/$1/.
+    # Ignore errors as we sometimes have dangling symlinks and
+    # still want to keep clean
+    rsync -a --no-devices --no-specials --copy-links \
+          --delete --ignore-errors \
+	  /srv/mer/targets/$1/. /host_targets/$1/.
 }
 
 # Download and install a rootfs
