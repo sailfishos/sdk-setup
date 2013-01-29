@@ -40,13 +40,13 @@ EOF
 
 fail=
 if VBoxControl -nologo sharedfolder list | grep ' home$' > /dev/null 2>&1 ; then
-    mount -tvboxsf -o"rw,exec,uid=1001,gid=1001,dev"  home /home/mersdk || fail=1
+    mount -tvboxsf -o"rw,exec,uid=1001,gid=1001,dev,ttl=60000"  home /home/mersdk || fail=1
 else
     echo '  Failed to mount shared folder "home"'
     fail=1
 fi
 if VBoxControl -nologo sharedfolder list | grep ' targets$' > /dev/null 2>&1 ; then
-    mount -tvboxsf -o"rw,exec,uid=1001,gid=1001,dev"  targets /srv/mer/targets || fail=1
+    mount -tvboxsf -o"rw,exec,uid=1001,gid=1001,dev,ttl=60000"  targets /srv/mer/targets || fail=1
 else
     echo '  Failed to mount shared folder "targets"'
     fail=1
