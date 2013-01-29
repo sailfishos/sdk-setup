@@ -187,10 +187,9 @@ manage_develpkgs() {
 # Targets
 
 get_targets() {
-    if sudo -i -u mersdk sb2-config -l 2>&1 | grep 'sb2-init' >/dev/null ; then
-	exit 0
-    else
-	sudo -i -u mersdk sb2-config -l
+    tgts=$(sudo -i -u mersdk sb2-config -l 2>&1)
+    if ! grep 'sb2-init' <<< "$tgts" >/dev/null ; then
+	echo "$tgts"
     fi
 }
 
