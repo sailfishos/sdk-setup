@@ -134,14 +134,12 @@ assert_target_and_setup() {
 t_zypper() {
     (
 	cd $SBOX_TARGET_ROOT
-	echo "sb2 -t $target -m sdk-install -R zypper $@"
 	sudo -i -u mersdk sb2 -t $target -m sdk-install -R zypper "$@"
     )
 }
 
 get_develpkgs() {
-    t_zypper search -- -devel
-    t_zypper search -- -devel | while IFS='| ' read installed pkg dummy; do
+    t_zypper search -- -devel | tail -n +6 | while IFS='| ' read installed pkg dummy; do
 	echo "${pkg},${installed}"
     done 
     return ${PIPESTATUS[0]}
