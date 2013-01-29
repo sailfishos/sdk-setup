@@ -264,16 +264,29 @@ install_target() {
     fi
     cd "/srv/mer/targets/$name"
 
-    transparency=""
-    compiler="/usr/bin/gcc"
+    echo Setting up SB2
 
-    if echo $toolchain | grep \\-arm; then
-	architecture=$(echo $toolchain | tr '-' '\n' | tail -n 1)
-	transparency="-c /usr/bin/qemu-arm-dynamic"
-	compiler="/opt/cross/bin/$architecture-meego-linux-gnueabi-gcc"
-    fi
+    cd /srv/mer/targets/$name
+
+    case $toolchain in
+	*-arm*)
+	    architecture=$(echo $toolchain | tr '-' '\n' | tail -n 1)
+	    transparency="-c /usr/bin/qemu-arm-dynamic"
+	    compiler="/opt/cross/bin/$architecture-meego-linux-gnueabi-gcc"
+	    ;;
+	*-mipsel)
+	    transparency="-c /usr/bin/qemu-mipsel-dynamic"
+	    compiler="/opt/cross/bin/mipsel-meego-linux-gnu-gcc"
+	    ;;
+	*-i486*)
+	    transparency=""
+	    compiler="/opt/cross/bin/i486-meego-linux-gnu-gcc"
+	    ;;
+    esac
 
     sudo -u mersdk sb2-init -L "--sysroot=/" -C "--sysroot=/" $transparency -m sdk-build -n -N -t / "$name" $compiler
+
+    echo Target $name now setup
 }
 
 remove_target() {
