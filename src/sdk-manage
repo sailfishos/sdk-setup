@@ -194,9 +194,17 @@ get_targets() {
     fi
 }
 
+assert_target_name_valid() {
+    pat=" |\"|'"
+    if [[ $1 =~ $pat ]] || [[ ! $1 ]]; then
+    	echo "Target name '$1' is not a valid Scratchbox2 target name"
+	exit 1
+    fi
+}
+
 # Download and install a rootfs
 install_target() {
-    name=$1 #FIXME: check name validity
+    name=$1
     toolchain=$2
     url=$3 #FIXME: check url validity
     echo Making sure the right toolchain exists
@@ -281,20 +289,22 @@ remove_target() {
 
 
 manage_targets() {
-    if ! [[ $1 ]]; then
+    if ! [[ ${1:-} ]]; then
 	usage --exit
     fi
 
-    case "$1" in
+    case "${1:-}" in
 	--list )
 	    get_targets
 	    ;;
 	--install )
 	    shift
+	    assert_target_name_valid ${1:-}
 	    install_target "$@"
 	    ;;
 	--remove )
 	    shift
+	    assert_target_name_valid ${1:-}
 	    remove_target "$@"
 	    ;;
 	* )
