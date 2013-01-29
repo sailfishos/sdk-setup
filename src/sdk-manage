@@ -135,7 +135,7 @@ t_zypper() {
     (
 	cd $SBOX_TARGET_ROOT
 	echo "sb2 -t $target -m sdk-install -R zypper $@"
-	sudo -u mersdk sb2 -t $target -m sdk-install -R zypper "$@"
+	sudo -i -u mersdk sb2 -t $target -m sdk-install -R zypper "$@"
     )
 }
 
@@ -187,10 +187,10 @@ manage_develpkgs() {
 # Targets
 
 get_targets() {
-    if sudo -u mersdk sb2-config -l 2>&1 | grep 'sb2-init' >/dev/null ; then
+    if sudo -i -u mersdk sb2-config -l 2>&1 | grep 'sb2-init' >/dev/null ; then
 	exit 0
     else
-	sudo -u mersdk sb2-config -l
+	sudo -i -u mersdk sb2-config -l
     fi
 }
 
@@ -283,7 +283,7 @@ install_target() {
 	    ;;
     esac
 
-    sudo -u mersdk sb2-init -L "--sysroot=/" -C "--sysroot=/" $transparency -m sdk-build -n -N -t / "$name" $compiler
+    sudo -i -u mersdk sb2-init -L "--sysroot=/" -C "--sysroot=/" $transparency -m sdk-build -n -N -t / "$name" $compiler
 
     echo Target $name now setup
 }
