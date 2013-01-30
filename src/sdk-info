@@ -15,12 +15,20 @@ while (( $cnt < $TIMEOUT )); do
     IP="Unknown"
 done
 
-/usr/bin/chvt 3
+/usr/bin/chvt 1
 /usr/bin/setterm -powersave off -blank 0
 /usr/bin/clear
 
-/bin/echo -en '\033]P7B1BFDB'
-/bin/echo -en '\033]P0011130'
+# This sets the font colour
+if [ -e /etc/sysconfig/splashfontcol ]; then
+   # put 2 echo commands in here to customise as vendor
+   . /etc/sysconfig/splashfontcol
+else
+# last 6 digits of the echos are RRGGBB
+  /bin/echo -en '\033]P7B1BFDB' # fg
+  /bin/echo -en '\033]P0011130' # bg
+fi
+
 /usr/bin/tput cup 25 0
 /usr/bin/ply-image
 
