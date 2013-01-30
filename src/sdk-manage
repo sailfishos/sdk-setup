@@ -133,8 +133,7 @@ assert_target_and_setup() {
 
 t_zypper() {
     (
-	cd $SBOX_TARGET_ROOT
-	sudo -i -u mersdk sb2 -t $target -m sdk-install -R zypper "$@"
+	sudo -i -u mersdk bash -c "cd $SBOX_TARGET_ROOT ; sb2 -t $target -m sdk-install -R zypper $@"
     )
 }
 
@@ -291,7 +290,7 @@ install_target() {
 	    ;;
     esac
 
-    sudo -i -u mersdk sb2-init -L "--sysroot=/" -C "--sysroot=/" $transparency -m sdk-build -n -N -t / "$name" $compiler
+    sudo -i -u mersdk bash -c "cd $PWD; sb2-init -L \"--sysroot=/\" -C \"--sysroot=/\" $transparency -m sdk-build -n -N -t / $name $compiler"
 
     echo Target $name now setup
 }
