@@ -134,12 +134,12 @@ assert_target_and_setup() {
 
 t_zypper() {
     (
-	sudo -i -u mersdk bash -c "cd $SBOX_TARGET_ROOT ; sb2 -t $target -m sdk-install -R zypper $@"
+	sudo -i -u mersdk bash -c "cd $SBOX_TARGET_ROOT ; sb2 -t $target -m sdk-install -R zypper $*"
     )
 }
 
 get_develpkgs() {
-    t_zypper search -- -devel | tail -n +6 | while IFS='| ' read installed pkg dummy; do
+    t_zypper search -- -devel 2>&1 | sed '0,/---------/d' | while IFS='| ' read installed pkg dummy; do
 	echo "${pkg},${installed}"
     done 
     return ${PIPESTATUS[0]}
