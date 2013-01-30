@@ -242,6 +242,8 @@ install_target() {
     mkdir -p /srv/mer/targets/$name
     mkdir -p /host_targets/$name
 
+    cd /srv/mer/targets/$name
+    
     echo
     echo Decompressing target
 
@@ -272,8 +274,6 @@ install_target() {
     [[ ! $local_file ]] && rm "/srv/mer/targets/$name.tar.bz2"
 
     echo Setting up SB2
-
-    cd /srv/mer/targets/$name
 
     case $toolchain in
 	*-arm*)
