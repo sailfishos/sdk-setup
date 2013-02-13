@@ -33,7 +33,7 @@ fi
 /usr/bin/ply-image
 
 cat << EOF
-  Welcome to the Mer SDK. 
+  Welcome to the Mer build machine.
 
   Use "right-ctrl F2" to get a login prompt.
  
