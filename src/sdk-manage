@@ -17,6 +17,7 @@ usage()
            $0 --target --install <name> <toolchain> <url>
            $0 --target --remove  <name>
            $0 --target --sync  <name>
+           $0 --target --import  <name>
 
            $0 --devel --list <target>
            $0 --devel --install <target> <devel package list>
@@ -216,6 +217,18 @@ synchronise_target() {
 	  /srv/mer/targets/$1/. /host_targets/$1/.
 }
 
+import_target() {
+    # This could be minimised in the future if sf is not fixed
+    # Ignore errors as we sometimes have dangling symlinks and
+    # still want to keep clean
+    if ! [ -d /host_targets/$1 ]; then
+	echo No host target called $1
+    fi
+    rsync -a --no-devices --no-specials --copy-links \
+          --delete --ignore-errors \
+	  /host_targets/$1 /srv/mer/targets/$1
+}
+
 # Download and install a rootfs
 install_target() {
     name=$1
@@ -337,6 +350,11 @@ manage_targets() {
 	    shift
 	    assert_target_name_valid ${1:-}
 	    synchronise_target "$@"
+	    ;;
+	--import )
+	    shift
+	    assert_target_name_valid ${1:-}
+	    import_target "$@"
 	    ;;
 	* )
 	    echo "$1 not recognised"
