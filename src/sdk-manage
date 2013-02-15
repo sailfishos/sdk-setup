@@ -250,6 +250,7 @@ install_target() {
 	curl_status=$?
 	if [ \( $curl_status -ne 0 \) -o \( $(stat -c %s "/srv/mer/targets/$name.tar.bz2") -lt 10000 \) ]; then #hash check anybody?
 	    echo "Download failed"
+	    rm -f "/srv/mer/targets/$name.tar.bz2"
 	    return 3
 	fi
     fi
