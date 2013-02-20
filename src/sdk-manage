@@ -212,7 +212,7 @@ synchronise_target() {
     if ! [ -d /srv/mer/targets/$1 ]; then
 	echo No target called $1
     fi
-    rsync -a --no-devices --no-specials --copy-links \
+    rsync -a --no-devices --no-specials \
           --delete --ignore-errors \
 	  /srv/mer/targets/$1/. /host_targets/$1/.
 }
@@ -224,7 +224,7 @@ import_target() {
     if ! [ -d /host_targets/$1 ]; then
 	echo No host target called $1
     fi
-    rsync -a --no-devices --no-specials --copy-links \
+    rsync -a --no-devices --no-specials \
           --delete --ignore-errors \
 	  /host_targets/$1 /srv/mer/targets/$1
 }
