@@ -35,13 +35,12 @@ fi
 cat << EOF
   Welcome to the Mer build machine.
 
-  Use "right-ctrl F2" to get a login prompt.
+  Use "right-ctrl F2" to get a console login prompt.
  
   Your VM SDK IP address is:  $IP
 
-  Note that if you have configured VirtualBox to use NAT for this VM you
-  should use
-    ssh -p 2222 root@localhost
+  This VM should be accessible using the mer-qt-creator-rsa key
+    ssh -p 2222 -i ~/.ssh/mer-qt-creator-rsa root@localhost
 
   Mounting shared folders....
 EOF
