@@ -214,7 +214,7 @@ synchronise_target() {
     fi
     rsync -a --no-devices --no-specials \
           --delete --ignore-errors \
-	  /srv/mer/targets/$1/. /host_targets/$1/.
+	  /srv/mer/targets/$1 /host_targets/$1
 }
 
 import_target() {
