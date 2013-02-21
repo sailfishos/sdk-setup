@@ -140,7 +140,7 @@ t_zypper() {
 }
 
 get_develpkgs() {
-    t_zypper search -- -devel 2>&1 | sed '0,/---------/d' | while IFS='| ' read installed pkg dummy; do
+    t_zypper --no-refresh search -- -devel 2>&1 | sed '0,/---------/d' | while IFS='| ' read installed pkg dummy; do
 	if [[ ${pkg%-devel} != ${pkg} ]]; then
 		echo "${pkg},${installed}"
 	fi
@@ -166,8 +166,7 @@ manage_develpkgs() {
 	    target=$1
 	    assert_target_and_setup
 	    shift
-	    t_zypper --non-interactive ref
-	    t_zypper --non-interactive install "$@"
+	    t_zypper --non-interactive --no-refresh install "$@"
 	    synchronise_target $target
 	    return $?
 	    ;;
@@ -176,7 +175,7 @@ manage_develpkgs() {
 	    target=$1
 	    assert_target_and_setup
 	    shift
-	    t_zypper --non-interactive remove "$@"
+	    t_zypper --non-interactive --no-refresh remove "$@"
 	    synchronise_target $target
 	    return $?
 	    ;;
@@ -311,6 +310,12 @@ install_target() {
     esac
 
     sudo -i -u mersdk bash -c "cd $PWD; sb2-init -L \"--sysroot=/\" -C \"--sysroot=/\" $transparency -m sdk-build -n -N -t / $name $compiler"
+
+    # Now refresh target repos
+    echo refreshing target repositories
+    target=$name
+    assert_target_and_setup
+    t_zypper --non-interactive ref
 
     echo Target $name now setup
 }
