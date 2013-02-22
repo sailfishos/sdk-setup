@@ -244,12 +244,13 @@ install_target() {
 	local_file=${url//file\:\/\//}
     else
 	echo Downloading target
-	echo "curl $url > /srv/mer/targets/$target.tar.bz2"
-	curl "$url" > "/srv/mer/targets/$target.tar.bz2"
+	local_file=/srv/mer/targets/$target.tar.bz2
+	echo "curl $url > $local_file"
+	curl "$url" > $local_file
 	curl_status=$?
 	if [ \( $curl_status -ne 0 \) -o \( $(stat -c %s "/srv/mer/targets/$target.tar.bz2") -lt 10000 \) ]; then #hash check anybody?
 	    echo "Download failed"
-	    rm -f "/srv/mer/targets/$target.tar.bz2"
+	    rm -f $local_file
 	    return 3
 	fi
     fi
@@ -263,13 +264,8 @@ install_target() {
     cd /srv/mer/targets/$target
     
     echo
-    echo Decompressing target
-
-    if [ -n "$local_file" ]; then
-	tar jxf "$local_file"
-    else
-	tar jxf "/srv/mer/targets/$target.tar.bz2"
-    fi
+    echo Unpacking target
+    tar jxf "$local_file"
     
     if [ $? -ne 0 ]; then
 	if [ "$( df --sync / | tr -s ' ' | tail -n 1 | cut -d ' ' -f 4 )" -lt 10000 ]; then
