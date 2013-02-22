@@ -16,6 +16,7 @@ usage()
            $0 --target --list
            $0 --target --install <name> <toolchain> <url>
            $0 --target --remove  <name>
+           $0 --target --refresh <target>
            $0 --target --sync  <name>
            $0 --target --import  <name>
 
@@ -124,6 +125,7 @@ manage_toolchains() {
 # Our devel packages are available through zypper as -devel packages :)
 
 assert_target_and_setup() {
+    assert_target_name_valid $target
     if ! [[ -f /home/mersdk/.scratchbox2/$target/sb2.config ]]; then
 	echo "Target $target is not a valid Scratchbox2 target"
 	exit 1
@@ -358,6 +360,12 @@ manage_targets() {
 	    shift
 	    assert_target_name_valid ${1:-}
 	    import_target "$@"
+	    ;;
+	--refresh )
+	    shift
+	    target=${1:-}
+	    assert_target_and_setup
+	    t_zypper --non-interactive refresh
 	    ;;
 	* )
 	    echo "$1 not recognised"
