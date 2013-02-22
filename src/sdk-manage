@@ -197,11 +197,12 @@ get_targets() {
 }
 
 assert_target_name_valid() {
-    pat=" |\"|'|/"
-    if [[ $1 =~ $pat ]] || [[ ! $1 ]]; then
-    	echo "Target name '$1' is not a valid Scratchbox2 target name"
-	exit 1
+    pat='^[-[:alnum:]_.]*$'
+    if [[ $1 ]] && [[ $1 =~ $pat ]] ; then
+	return
     fi
+    echo "Target name '$1' is not a valid Scratchbox2 target name"
+    exit 1
 }
 
 synchronise_target() {
