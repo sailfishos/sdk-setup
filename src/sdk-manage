@@ -32,7 +32,7 @@ usage()
 
 
 EOF
-    [[ $1 == "--exit" ]] && { exit 1; }
+    [[ ${1:-} == "--exit" ]] && { exit 1; }
     return 0
 }
 
@@ -156,14 +156,14 @@ manage_develpkgs() {
     case "$1" in
 	--list )
 	    shift
-	    target=$1
+	    target=${1:-}
 	    assert_target_and_setup
 	    get_develpkgs $target
 	    return $?
 	    ;;
 	--install )
 	    shift
-	    target=$1
+	    target=${1:-}
 	    assert_target_and_setup
 	    shift
 	    t_zypper --non-interactive --no-refresh install "$@"
@@ -172,7 +172,7 @@ manage_develpkgs() {
 	    ;;
 	--remove )
 	    shift
-	    target=$1
+	    target=${1:-}
 	    assert_target_and_setup
 	    shift
 	    t_zypper --non-interactive --no-refresh remove "$@"
