@@ -214,9 +214,11 @@ synchronise_target() {
     if ! [ -d /srv/mer/targets/$1 ]; then
 	echo No target called $1
     fi
+    echo "Syncronising target to host"
     rsync -a --no-devices --no-specials \
           --delete --ignore-errors \
 	  /srv/mer/targets/$1/ /host_targets/$1
+    echo "Sync completed"
 }
 
 import_target() {
@@ -281,7 +283,7 @@ install_target() {
 	return 4
     fi
 
-    chown -R mersdk /srv/mer/targets/$target
+    chown -R mersdk:mersdk /srv/mer/targets/$target
 
     echo Synchronising target with host
     synchronise_target $target
