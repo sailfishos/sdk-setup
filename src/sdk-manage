@@ -3,6 +3,10 @@
 # This is a helper script for the Mer SDK to manage sb2 target and
 # toolchain installation
 
+sdk_user=mersdk
+mer_targets=/srv/mer/targets
+host_targets=/host_targets
+sbox2dir=/home/$sdk_user/.scratchbox2
 
 usage()
 {
@@ -126,18 +130,18 @@ manage_toolchains() {
 
 assert_target_and_setup() {
     assert_target_name_valid $target
-    if ! [[ -f /home/mersdk/.scratchbox2/$target/sb2.config ]]; then
+    if ! [[ -f $sbox2dir/$target/sb2.config ]]; then
 	echo "Target $target is not a valid Scratchbox2 target"
 	exit 1
     fi
     set +u
-    . /home/mersdk/.scratchbox2/$target/sb2.config
+    . $sbox2dir/$target/sb2.config
     set -u
 }
 
 t_zypper() {
     (
-	sudo -i -u mersdk bash -c "cd $SBOX_TARGET_ROOT ; sb2 -t $target -m sdk-install -R zypper $*"
+	sudo -i -u $sdk_user bash -c "cd $SBOX_TARGET_ROOT ; sb2 -t $target -m sdk-install -R zypper $*"
     )
 }
 
@@ -192,7 +196,7 @@ manage_develpkgs() {
 # Targets
 
 get_targets() {
-    tgts=$(sudo -i -u mersdk sb2-config -l 2>&1)
+    tgts=$(sudo -i -u $sdk_user sb2-config -l 2>&1)
     if ! grep 'sb2-init' <<< "$tgts" >/dev/null ; then
 	echo "$tgts"
     fi
@@ -211,13 +215,13 @@ synchronise_target() {
     # This could be minimised in the future if sf is not fixed
     # Ignore errors as we sometimes have dangling symlinks and
     # still want to keep clean
-    if ! [ -d /srv/mer/targets/$1 ]; then
+    if ! [ -d $mer_targets/$1 ]; then
 	echo No target called $1
     fi
-    echo "Syncronising target to host"
+    echo "Synchronising target to host"
     rsync -a --no-devices --no-specials \
           --delete --ignore-errors \
-	  /srv/mer/targets/$1/ /host_targets/$1
+	  $mer_targets/$1/ $host_targets/$1
     echo "Sync completed"
 }
 
@@ -225,12 +229,12 @@ import_target() {
     # This could be minimised in the future if sf is not fixed
     # Ignore errors as we sometimes have dangling symlinks and
     # still want to keep clean
-    if ! [ -d /host_targets/$1 ]; then
+    if ! [ -d $host_targets/$1 ]; then
 	echo No host target called $1
     fi
     rsync -a --no-devices --no-specials \
           --delete --ignore-errors \
-	  /host_targets/$1/ /srv/mer/targets/$1
+	  $host_targets/$1/ $mer_targets/$1
 }
 
 # Download and install a rootfs
@@ -249,11 +253,11 @@ install_target() {
 	local_file=${url//file\:\/\//}
     else
 	echo Downloading target
-	local_file=/srv/mer/targets/$target.tar.bz2
+	local_file=$mer_targets/$target.tar.bz2
 	echo "curl $url > $local_file"
 	curl "$url" > $local_file
 	curl_status=$?
-	if [ \( $curl_status -ne 0 \) -o \( $(stat -c %s "/srv/mer/targets/$target.tar.bz2") -lt 10000 \) ]; then #hash check anybody?
+	if [ \( $curl_status -ne 0 \) -o \( $(stat -c %s "$mer_targets/$target.tar.bz2") -lt 10000 \) ]; then #hash check anybody?
 	    echo "Download failed"
 	    rm -f $local_file
 	    return 3
@@ -262,11 +266,11 @@ install_target() {
 
     # Virtualbox shared folders don't work too well at the moment
     # Unpack targets to a private area within the VM
-    rm -rf /srv/mer/targets/$target
-    mkdir -p /srv/mer/targets/$target
-    mkdir -p /host_targets/$target
+    rm -rf $mer_targets/$target
+    mkdir -p $mer_targets/$target
+    mkdir -p $host_targets/$target
 
-    cd /srv/mer/targets/$target
+    cd $mer_targets/$target
     
     echo
     echo Unpacking target
@@ -278,19 +282,19 @@ install_target() {
 	else
 	    echo "Couldn't unpack target image"
 	fi
-	rm -rf /srv/mer/targets/$target
+	rm -rf $mer_targets/$target
 
 	return 4
     fi
 
-    chown -R mersdk:mersdk /srv/mer/targets/$target
+    chown -R $sdk_user:$sdk_user $mer_targets/$target
 
     echo Synchronising target with host
     synchronise_target $target
 
     [ $? -ne 0 ] && echo "Rsync didn't exactly run as intended, expect problems."
 
-    [[ ! $local_file ]] && rm "/srv/mer/targets/$target.tar.bz2"
+    [[ ! $local_file ]] && rm "$mer_targets/$target.tar.bz2"
 
     echo Setting up SB2
 
@@ -310,7 +314,7 @@ install_target() {
 	    ;;
     esac
 
-    sudo -i -u mersdk bash -c "cd $PWD; sb2-init -L \"--sysroot=/\" -C \"--sysroot=/\" $transparency -m sdk-build -n -N -t / $target $compiler"
+    sudo -i -u $sdk_user bash -c "cd $PWD; sb2-init -L \"--sysroot=/\" -C \"--sysroot=/\" $transparency -m sdk-build -n -N -t / $target $compiler"
 
     # Now refresh target repos
     echo refreshing target repositories
@@ -323,10 +327,10 @@ install_target() {
 
 remove_target() {
     target=$1
-    if [ -d /home/mersdk/.scratchbox2/$target ]; then
-	rm -r /home/mersdk/.scratchbox2/$target
-	rm -rf /srv/mer/targets/$target
-	rm -rf /host_targets/$target
+    if [ -d $sbox2dir/$target ]; then
+	rm -r $sbox2dir/$target
+	rm -rf $mer_targets/$target
+	rm -rf $host_targets/$target
     else
 	echo "Target not installed - can't delete"
 	exit 2
