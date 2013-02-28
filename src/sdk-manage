@@ -274,7 +274,7 @@ install_target() {
     
     echo
     echo Unpacking target
-    tar jxf "$local_file"
+    tar xf "$local_file"
     
     if [ $? -ne 0 ]; then
 	if [ "$( df --sync / | tr -s ' ' | tail -n 1 | cut -d ' ' -f 4 )" -lt 10000 ]; then
