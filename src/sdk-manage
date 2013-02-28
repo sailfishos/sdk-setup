@@ -129,7 +129,7 @@ manage_toolchains() {
 # Our devel packages are available through zypper as -devel packages :)
 
 assert_target_and_setup() {
-    assert_target_name_valid $target
+    assert_target_name_valid "$target"
     if ! [[ -f $sbox2dir/$target/sb2.config ]]; then
 	echo "Target $target is not a valid Scratchbox2 target"
 	exit 1
@@ -203,11 +203,17 @@ get_targets() {
 }
 
 assert_target_name_valid() {
+    if [[ $# -lt 1 ]] || [[ -z $1 ]]; then
+      echo "Target name missing."
+      exit 1
+    fi
+
     pat='^[-[:alnum:]_.]*$'
     if [[ $1 ]] && [[ $1 =~ $pat ]] ; then
-	return
+      return
     fi
-    echo "Target name '$1' is not a valid Scratchbox2 target name"
+
+    echo "Target name '$1' is not a valid Scratchbox2 target name."
     exit 1
 }
 
@@ -349,27 +355,27 @@ manage_targets() {
 	    ;;
 	--install )
 	    shift
-	    assert_target_name_valid ${1:-}
+	    assert_target_name_valid "${1:-}"
 	    install_target "$@"
 	    ;;
 	--remove )
 	    shift
-	    assert_target_name_valid ${1:-}
+	    assert_target_name_valid "${1:-}"
 	    remove_target "$@"
 	    ;;
 	--sync )
 	    shift
-	    assert_target_name_valid ${1:-}
+	    assert_target_name_valid "${1:-}"
 	    synchronise_target "$@"
 	    ;;
 	--import )
 	    shift
-	    assert_target_name_valid ${1:-}
+	    assert_target_name_valid "${1:-}"
 	    import_target "$@"
 	    ;;
 	--refresh )
 	    shift
-	    target=${1:-}
+	    target="${1:-}"
 	    assert_target_and_setup
 	    t_zypper --non-interactive refresh
 	    ;;
