@@ -326,7 +326,6 @@ install_target() {
     echo refreshing target repositories
     target=$target
     assert_target_and_setup
-    t_zypper --non-interactive ref
 
     echo Target $target now setup
 }
