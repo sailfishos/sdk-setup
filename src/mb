@@ -103,7 +103,7 @@ build() {
     cp $SPEC ~/temp.spec
 
     sed -i s/Source0.*/Source0:$PACKAGE.tar.bz2/g ~/temp.spec
-    sed -i s/setup\ -q\ -n.*/setup\ -q\ -n\ $PACKAGE/g ~/temp.spec
+    sed -i s/setup\ -q.*/setup\ -q\ -n\ $PACKAGE/g ~/temp.spec
 
     echo "rsyncing source..."
     mkdir -p ~/rpmbuild/SOURCES
