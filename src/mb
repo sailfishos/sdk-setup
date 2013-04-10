@@ -44,7 +44,7 @@ clean() {
 	exit 0
     fi
     
-    PACKAGE=`grep Name: "$SPEC" | cut -b6- | tr -d " "`
+    PACKAGE=$(grep Name: "$SPEC" | cut -b6- | tr -d " ")
     echo "Cleaning $PACKAGE ($SPEC)"
     rm -rv ~/rpmbuild/BUILD/$PACKAGE
 }
@@ -100,7 +100,7 @@ EOF
     fi
     
     echo "Building $SPEC for $TARGET"
-    PACKAGE=`grep Name: "$SPEC" | cut -b6- | tr -d " \t"`
+    PACKAGE=$(grep Name: "$SPEC" | cut -b6- | tr -d " \t")
 
     echo "Checking dependencies..."
     # Note rpm-build is needed in sb2 target as well as it isn't fully accelerated with sb2 yet
@@ -160,7 +160,7 @@ case "$1" in
         clean "$@"
         ;;
     *)
-        ME=`basename $0`
+        ME=$(basename $0)
         echo "$ME: quickly build stuff"
         echo "  $ME build - quickly build a package from the specified spec file from the current source tree"
         echo "  $ME clean - clean a fast build tree (equivilent of 'make clean)"
