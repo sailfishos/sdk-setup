@@ -65,6 +65,10 @@ build() {
             "-v" | "--verbose")
 		VERBOSE=1
 		;;
+            "-j" | "--jobs")
+                JOBS="$2"
+                shift
+                ;;
             *)
 		if [[ "$1" =~ ^- ]] ; then
                     error "Unknown option"
@@ -89,6 +93,8 @@ build() {
 	echo " does an incremental build for the given sb2_targetname on a given specfile, with the source taken from the current working directory"
 	echo " "
 	echo " If you want debugsource and debuginfo packages, pass -d or --enable-debug"
+        echo " "
+        echo " If you want to customise the number of cores used for building, pass -j or --jobs and the number of jobs you want to use."
 	exit 0
     fi
 
@@ -121,13 +127,22 @@ build() {
     # TODO: read this from spec, not all packages have extra Sources
     cp ./rpm/* ~/rpmbuild/SOURCES
 
-    echo "run rpmbuild"
+    if [ -z "$JOBS" ]; then
+        JOBS=$(grep "model n" /proc/cpuinfo | wc -l)
+
+        if [ $? -ne 0 ]; then
+          echo "$0: can't detect CPU count"
+          JOBS=1
+        fi
+    fi
+
+    echo "run rpmbuild with $JOBS jobs"
     # TODO: debug_package define disables debugsource/debuginfo packages, which
     # is incredibly fast, but user may sometimes want them...
     if [ "$ENABLE_DEBUG" == 1 ]; then
-	sb2 -t "$TARGET" rpmbuild --skip-prep -bb ~/temp.spec
+	sb2 -t "$TARGET" rpmbuild --skip-prep -bb ~/temp.spec --define "jobs $JOBS"
     else
-	sb2 -t "$TARGET" rpmbuild --skip-prep -bb ~/temp.spec -D 'debug_package %{nil}'
+	sb2 -t "$TARGET" rpmbuild --skip-prep -bb ~/temp.spec --define 'debug_package %{nil}' --define "jobs $JOBS"
     fi
 
     rm ~/temp.spec
