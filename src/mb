@@ -69,6 +69,17 @@ build() {
                 JOBS="$2"
                 shift
                 ;;
+            "-h" | "--help")
+                cat <<EOF
+mb build -t sb2_targetname /path/to/spec
+ does an incremental build for the given sb2_targetname on a given specfile, with the source taken from the current working directory
+
+ If you want debugsource and debuginfo packages, pass -d or --enable-debug
+
+ If you want to customise the number of cores used for building, pass -j or --jobs and the number of jobs you want to use.
+EOF
+                exit 0
+                ;;
             *)
 		if [[ "$1" =~ ^- ]] ; then
                     error "Unknown option"
@@ -88,16 +99,6 @@ build() {
 	error "path to specfile must be given"
     fi
     
-    if [ "$SPEC" == "--help" ]; then
-	echo "mb build -t sb2_targetname /path/to/spec"
-	echo " does an incremental build for the given sb2_targetname on a given specfile, with the source taken from the current working directory"
-	echo " "
-	echo " If you want debugsource and debuginfo packages, pass -d or --enable-debug"
-        echo " "
-        echo " If you want to customise the number of cores used for building, pass -j or --jobs and the number of jobs you want to use."
-	exit 0
-    fi
-
     echo "Building $SPEC for $TARGET"
     PACKAGE=`grep Name: "$SPEC" | cut -b6- | tr -d " \t"`
 
