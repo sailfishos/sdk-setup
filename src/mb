@@ -34,7 +34,7 @@ function error() {
 clean() {
     SPEC=$1
 
-    if [ -z "$SPEC" ]; then
+    if [[ ! $SPEC ]]; then
 	error "path to specfile must be given"
     fi
 
@@ -53,7 +53,7 @@ build() {
     TARGET=""
     VERBOSE=""
 
-    while test $# -gt 0; do
+    while [[ $1 ]]; do
 	case "$1" in
             "-t" | "--target")
 		TARGET="$2"
@@ -91,11 +91,11 @@ EOF
 	shift
     done
 
-    if [ -z "$TARGET" ]; then
+    if [[ ! $TARGET ]]; then
 	error "you must specify a sb2 target (-t) to build against"
     fi
 
-    if [ -z "$SPEC" ]; then
+    if [[ ! $SPEC ]]; then
 	error "path to specfile must be given"
     fi
     
@@ -128,7 +128,7 @@ EOF
     # TODO: read this from spec, not all packages have extra Sources
     cp ./rpm/* ~/rpmbuild/SOURCES
 
-    if [ -z "$JOBS" ]; then
+    if [[ ! $JOBS ]]; then
         JOBS=$(grep "model n" /proc/cpuinfo | wc -l)
 
         if [ $? -ne 0 ]; then
