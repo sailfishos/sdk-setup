@@ -126,7 +126,7 @@ EOF
 
     rsync --exclude=".git" $RSYNC_OPTIONS -rlt . ~/rpmbuild/BUILD/$PACKAGE
     # TODO: read this from spec, not all packages have extra Sources
-    cp ./rpm/* ~/rpmbuild/SOURCES
+    cp ./${PKGDIR:-rpm}/* ~/rpmbuild/SOURCES
 
     if [[ ! $JOBS ]]; then
         JOBS=$(grep "model n" /proc/cpuinfo | wc -l)
