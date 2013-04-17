@@ -98,6 +98,10 @@ EOF
     if [[ ! $SPEC ]]; then
 	error "path to specfile must be given"
     fi
+
+    if [[ ! -e $SPEC ]]; then
+	error "Given spec files path $SPEC doesn't exist."
+    fi
     
     echo "Building $SPEC for $TARGET"
     PACKAGE=$(grep Name: "$SPEC" | cut -b6- | tr -d " \t")
