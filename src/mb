@@ -113,7 +113,14 @@ EOF
     echo "Setting up temporary specfile for $PACKAGE from $SPEC"
     cp $SPEC ~/temp.spec
 
-    sed -i s/Source0.*/Source0:$PACKAGE.tar.bz2/g ~/temp.spec
+    if [[ "$(grep Source0 ~/temp.spec &> /dev/null;echo $?)" -eq 0 ]]; then
+	sed -i s/Source0.*/Source0:$PACKAGE.tar.bz2/g ~/temp.spec
+    elif [[ "$(grep Source: ~/temp.spec &> /dev/null;echo $?)" -eq 0 ]]; then
+	sed -i s/Source:.*/Source0:$PACKAGE.tar.bz2/g ~/temp.spec
+    else
+	error "Source0 or Source: not found from spec. Can not replace the tarball name."
+    fi
+
     sed -i s/setup\ -q.*/setup\ -q\ -n\ $PACKAGE/g ~/temp.spec
 
     echo "rsyncing source..."
