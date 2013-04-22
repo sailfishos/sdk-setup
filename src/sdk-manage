@@ -7,6 +7,7 @@ sdk_user=mersdk
 mer_targets=/srv/mer/targets
 host_targets=/host_targets
 sbox2dir=/home/$sdk_user/.scratchbox2
+target_xml=${mer_targets}/targets.xml
 
 usage()
 {
@@ -326,6 +327,9 @@ install_target() {
     echo refreshing target repositories
     target=$target
     assert_target_and_setup
+
+    echo Notifying QtCreator of new target
+    updateQtCreatorTargets --name $target --target-xml $target_xml
 
     echo Target $target now setup
 }
