@@ -344,6 +344,9 @@ remove_target() {
 	echo "Target not installed - can't delete"
 	exit 2
     fi
+
+    echo Notifying QtCreator of removed target
+    updateQtCreatorTargets --delete --name $target --target-xml $target_xml
 }
 
 

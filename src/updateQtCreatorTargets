@@ -39,57 +39,95 @@ def sb2_command(sb2, *args):
     if data:
         return data
     raise Exception("'%s' returned no data" % " ".join(args))
-    
-def main(args):
-    name = args.name
+
+def get_xml(args):
     # http://lxml.de/FAQ.html#why-doesn-t-the-pretty-print-option-reformat-my-xml-output
     parser = et.XMLParser(remove_blank_text=True)
     tree = et.parse(args.target_xml, parser)
+
     root = tree.getroot()
 
-    assert_valid_sb2_name(name)
-    
     if int(get_value(root, "MerTarget.Version")) != 2:
         raise Exception("Only version 2 of MerTarget XML is supported")
 
-    num_t = int(get_value(root, "MerTarget.Count"))
+    return root
 
-    data = et.Element("data")
+
+def update(args, root):
+    # Make sure the name is valid
+    assert_valid_sb2_name(args.name)
+
+    # Create a brand new node so we don't leave any junk behind
+    new = et.Element("data")
 
     # See if there is a target using this name already
-    existing = find_target_by_name(root, name)
+    existing = find_target_by_name(root, args.name)
     if et.iselement(existing):
         # if so then what number is it before we remove it
         t_index = existing.find("variable").text.split(".")[1]
-        root[root.index(existing)] = data
+        # replace existing node with new node
+        root[root.index(existing)] = new
     else:
-        root.insert(num_t, data)
+        num_t = int(get_value(root, "MerTarget.Count"))
+        root.insert(num_t, new)
         t_index = num_t
         num_t += 1
+        # Update the target count
+        set_value(root, "MerTarget.Count", "%s" % (num_t))
 
     # Now build the target info
-    var = et.SubElement(data, "variable")
+    var = et.SubElement(new, "variable")
     var.text = "MerTarget.%s" % t_index
-    vm = et.SubElement(data, "valuemap", type="QVariantMap")
-    et.SubElement(vm, "value", type="QString", key="MerTarget.Name").text = name
+    vm = et.SubElement(new, "valuemap", type="QVariantMap")
+    et.SubElement(vm, "value", type="QString", key="MerTarget.Name").text = args.name
     et.SubElement(vm, "value", type="QString", key="MerTarget.GccMachineDump"
-                  ).text = sb2_command(name, "gcc", "-dumpmachine")
+                  ).text = sb2_command(args.name, "gcc", "-dumpmachine")
     et.SubElement(vm, "value", type="QString", key="MerTarget.QmakeQuery"
-                  ).text = sb2_command(name, "qmake", "-query")
+                  ).text = sb2_command(args.name, "qmake", "-query")
 
-    set_value(root, "MerTarget.Count", "%s" % (num_t))
+def delete(args, root):
+    # This says find data/valuemap/value elements with key of MerTarget.Name
+    count = 0
+    found_rm = False
+    for mtd in root.xpath("./data/valuemap/value[@key='MerTarget.Name']/parent::*/parent::data"):
+        var_el = mtd.find("./variable")
+        name_el = mtd.find("./valuemap/value[@key='MerTarget.Name']")
+        if name_el.text == args.name:
+            del root[root.index(mtd)]
+            found_rm = True
+        else:
+            # Update the target count
+            var_el.text = "MerTarget.%d" % count            
+            count += 1
 
+    if not found_rm:
+        print "No target by that name found"
+        sys.exit(1)
+
+    set_value(root, "MerTarget.Count", "%s" % (count))
+
+def save(args,root):
+    # Save XML
     with open(args.target_xml, 'w') as f:
         f.write(et.tostring(root, pretty_print=True))
-    
-                                         
+
+
 parser = argparse.ArgumentParser(description='Updates QtCreator Target XML file with a new Mer Target')
 
 parser.add_argument('--name', required=True,
-                    help="Name of sdk target")
+                    help="Name of SDK Target to add/update (sb2 name)")
+parser.add_argument('--delete', action='store_true',
+                    help="Delete named SDK Target from xml")
 parser.add_argument('--target-xml', required=True,
                     help="The QtCreator Targets xml file")
 
 args = parser.parse_args()
 
-main(args)
+root = get_xml(args)
+
+if args.delete:
+    delete(args, root)
+else:
+    update(args, root)
+
+save(args, root)
