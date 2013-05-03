@@ -176,7 +176,7 @@ while [[ $1 ]] ; do
     shift
 done
 
-if [[ $UPDATE ]]; then
+if [[ $UPDATE || $INSTALL ]]; then
     update_repos
     report_version
     do_update
