@@ -27,12 +27,12 @@ def find_target_by_name(root, name):
             if el.text == name:
                 return el.getparent().getparent()
     except Exception as e:
-        print "Error lookin for target named '%s' in targets xml (%s)" % (name, e)
+        print "Error looking for target named '%s' in targets xml (%s)" % (name, e)
         sys.exit(1)
 
 def assert_valid_sb2_name(name):
     if not os.path.isdir(os.path.expanduser("~/.scratchbox2/%s" % name)):
-        raise Exception("%s is not a valid scratchbox name" % name)
+        raise Exception("%s is not a valid scratchbox2 target name" % name)
 
 def sb2_command(sb2, *args):
     data = subprocess.check_output(["sb2", "-t", sb2] + list(args))
@@ -43,7 +43,23 @@ def sb2_command(sb2, *args):
 def get_xml(args):
     # http://lxml.de/FAQ.html#why-doesn-t-the-pretty-print-option-reformat-my-xml-output
     parser = et.XMLParser(remove_blank_text=True)
-    tree = et.parse(args.target_xml, parser)
+    try:
+        tree = et.parse(args.target_xml, parser)
+    except :
+        print "Error loading %s, used new blank xml" % args.target_xml
+        with open(args.target_xml, "w") as f:
+                f.write(
+"""<qtcreator>
+  <data>
+    <variable>MerTarget.Count</variable>
+    <value type="int">0</value>
+  </data>
+  <data>
+    <variable>MerTarget.Version</variable>
+    <value type="int">2</value>
+  </data>
+</qtcreator>""")
+        tree = et.parse(args.target_xml, parser)
 
     root = tree.getroot()
 
