@@ -96,7 +96,7 @@ def update(args, root):
     var.text = "MerTarget.%s" % t_index
     vm = et.SubElement(new, "valuemap", type="QVariantMap")
     et.SubElement(vm, "value", type="QString", key="MerTarget.Name").text = args.name
-    et.SubElement(vm, "value", type="QString", key="MerTarget.GccMachineDump"
+    et.SubElement(vm, "value", type="QString", key="MerTarget.GccDumpMachine"
                   ).text = sb2_command(args.name, "gcc", "-dumpmachine")
     et.SubElement(vm, "value", type="QString", key="MerTarget.QmakeQuery"
                   ).text = sb2_command(args.name, "qmake", "-query")
