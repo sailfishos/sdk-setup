@@ -1,0 +1,130 @@
+#!/bin/bash
+# Copyright (C) 2013 Jolla Ltd.
+# Contact: David Greaves <david.greaves@jollamobile.com>
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#
+# - Redistributions of source code must retain the above copyright
+#   notice, this list of conditions and the following disclaimer.
+# - Redistributions in binary form must reproduce the above copyright
+#   notice, this list of conditions and the following disclaimer in
+#   the documentation and/or other materials provided with the
+#   distribution.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+# ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+# LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+# POSSIBILITY OF SUCH DAMAGE.
+
+buildroot=$(pwd)/myroot
+
+usage() {
+    cat <<EOF
+usage: $ME -t <target> [-s <specfile>] qmake [<args>] | make [<args>] | install [<args>] | rpm [<args>]
+ 
+  Executes a subset of build commands in the context of an rpmbuild.
+  Typically called from QtCreator to perform qmake/make phases of a project.
+  Note that any other build steps in the .spec file will also be run.
+
+  <specfile> will be looked for in the current rpm/ dir. If there is more than one it must be provided.
+
+  $ME qmake [<args>] : runs qmake in the 'build' phase
+  $ME make [<args>]  : run make in the 'build' phase
+
+  $ME install [<args>] : runs the 'install' phase to install to $buildroot
+  $ME rpm [<args>] : runs the install & rpm-creation phases
+EOF
+}
+
+fatal() {
+    echo "Fatal: $*"
+    exit 1
+}
+
+run_qmake() {
+    eval sb2 -t $target rpmbuild --build-in-place \
+	--dobuild \
+	--define \"qtc_make echo ignoring make\" \
+	--define \"qtc_qmake  qmake $@\" \
+	$spec
+}
+
+run_make() {
+    eval sb2 -t $target rpmbuild --build-in-place \
+	--dobuild \
+	--define \"qtc_wmake echo ignoring qmake\" \
+	--define \"qtc_make  make $@\" \
+	$spec
+}
+
+run_install() {
+    # Install to ./myroot which should be rsync'ed to /opt/sdk/$package on device
+    eval sb2 -t $target rpmbuild --build-in-place \
+	--buildroot=$buildroot \
+	--doinstall \
+	$spec
+}
+
+run_rpm() {
+    eval sb2 -t $target rpmbuild --build-in-place \
+	--buildroot=$buildroot \
+	--doinstall \
+	--dobinary \
+	--docheck \
+	$spec
+}
+
+
+ME=$(basename $0)
+target=""
+pkgdir="./rpm"
+
+while [[ $1 ]]; do
+    case "$1" in
+        "-t" | "--target")
+	    shift
+	    target="$1"
+	    [[ -d ~/.scratchbox2/$target ]] || fatal "$target is an invalid sb2 target"
+	    shift
+	    ;;
+        "-s" )
+	    shift
+	    spec="$1"
+	    [[ ! -f $spec ]] || fatal "$spec doesn't exist"
+	    shift
+	    ;;
+	qmake | make | install | rpm)
+	    cmd=run_$1
+            shift
+	    break 2
+            ;;
+	*)
+	    usage
+	    exit 1
+            ;;
+    esac
+done
+
+if [[ ! $target ]]; then
+    fatal "You must specify an sb2 target"
+fi
+
+if [[ ! $spec ]]; then
+    numspec=$(ls $pkgdir/*spec 2>/dev/null | wc -l)
+    [[ $numspec -gt 1 ]] && fatal "Too many spec files - please use -s to identify which to use"
+    [[ $numspec -eq 0 ]] && fatal "No spec file found in '$pkgdir/' - please use -s to identify which to use"
+    spec=$pkgdir/*.spec
+fi
+
+$cmd "$@"
+
