@@ -60,6 +60,7 @@ assert_spec_supports_mb2() {
 run_qmake() {
     eval sb2 -t $target rpmbuild --build-in-place \
 	--dobuild \
+	--define \"qtc_builddir $(pwd) \" \
 	--define \"qtc_make echo ignoring make\" \
 	--define \"qtc_qmake  qmake $@\" \
 	$spec
@@ -68,6 +69,7 @@ run_qmake() {
 run_make() {
     eval sb2 -t $target rpmbuild --build-in-place \
 	--dobuild \
+	--define \"qtc_builddir $(pwd) \" \
 	--define \"qtc_qmake echo ignoring qmake\" \
 	--define \"qtc_make  make $@\" \
 	$spec
@@ -76,6 +78,7 @@ run_make() {
 run_install() {
     # Install to ./myroot which should be rsync'ed to /opt/sdk/$package on device
     eval sb2 -t $target rpmbuild --build-in-place \
+	--define \"qtc_builddir $(pwd) \" \
 	--buildroot=$buildroot \
 	--doinstall \
 	$spec
@@ -83,6 +86,7 @@ run_install() {
 
 run_rpm() {
     eval sb2 -t $target rpmbuild --build-in-place \
+	--define \"qtc_builddir $(pwd) \" \
 	--buildroot=$buildroot \
 	--doinstall \
 	--dobinary \
