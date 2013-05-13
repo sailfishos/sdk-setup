@@ -31,7 +31,7 @@ buildroot=$(pwd)/myroot
 usage() {
     cat <<EOF
 usage: $ME -t <target> [-s <specfile>] qmake [<args>] | make [<args>] | install [<args>] | rpm [<args>]
- 
+
   Executes a subset of build commands in the context of an rpmbuild.
   Typically called from QtCreator to perform qmake/make phases of a project.
   Note that any other build steps in the .spec file will also be run.
@@ -62,7 +62,7 @@ run_qmake() {
 run_make() {
     eval sb2 -t $target rpmbuild --build-in-place \
 	--dobuild \
-	--define \"qtc_wmake echo ignoring qmake\" \
+	--define \"qtc_qmake echo ignoring qmake\" \
 	--define \"qtc_make  make $@\" \
 	$spec
 }
@@ -100,7 +100,7 @@ while [[ $1 ]]; do
         "-s" )
 	    shift
 	    spec="$1"
-	    [[ ! -f $spec ]] || fatal "$spec doesn't exist"
+	    [[ -f $spec ]] || fatal "$spec doesn't exist"
 	    shift
 	    ;;
 	qmake | make | install | rpm)
@@ -127,4 +127,3 @@ if [[ ! $spec ]]; then
 fi
 
 $cmd "$@"
-
