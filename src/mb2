@@ -51,6 +51,12 @@ fatal() {
     exit 1
 }
 
+assert_spec_supports_mb2() {
+    if ! grep "define qtc_qmake" $spec 2>&1 > /dev/null; then
+	fatal "This specfile does not have the qtc_* macros defined"
+    fi
+}
+
 run_qmake() {
     eval sb2 -t $target rpmbuild --build-in-place \
 	--dobuild \
@@ -125,5 +131,7 @@ if [[ ! $spec ]]; then
     [[ $numspec -eq 0 ]] && fatal "No spec file found in '$pkgdir/' - please use -s to identify which to use"
     spec=$pkgdir/*.spec
 fi
+
+assert_spec_supports_mb2
 
 $cmd "$@"
