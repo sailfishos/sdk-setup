@@ -5,31 +5,6 @@ import argparse
 import os
 import subprocess
 
-def get_value(root, var):
-    try:
-        count = [el for el in root.findall(".//variable") if el.text == var]
-        return count[0].getparent().find("value").text
-    except Exception as e:
-        print "Could not find '%s' in targets xml (%s)" % (var, e)
-        sys.exit(1)
-
-def set_value(root, var, val):
-    try:
-        count = [el for el in root.findall(".//variable") if el.text == var]
-        count[0].getparent().find("value").text = val
-    except Exception as e:
-        print "Could not set '%s' in targets xml (%s)" % (var, e)
-        sys.exit(1)
-
-def find_target_by_name(root, name):
-    try:
-        for el in root.findall(".//value[@key='MerTarget.Name']"):
-            if el.text == name:
-                return el.getparent().getparent()
-    except Exception as e:
-        print "Error looking for target named '%s' in targets xml (%s)" % (name, e)
-        sys.exit(1)
-
 def assert_valid_sb2_name(name):
     if not os.path.isdir(os.path.expanduser("~/.scratchbox2/%s" % name)):
         raise Exception("%s is not a valid scratchbox2 target name" % name)
@@ -37,7 +12,7 @@ def assert_valid_sb2_name(name):
 def sb2_command(sb2, *args):
     data = subprocess.check_output(["sb2", "-t", sb2] + list(args))
     if data:
-        return data
+        return data.strip()
     raise Exception("'%s' returned no data" % " ".join(args))
 
 def get_xml(args):
@@ -48,22 +23,16 @@ def get_xml(args):
     except :
         print "Error loading %s, used new blank xml" % args.target_xml
         with open(args.target_xml, "w") as f:
-                f.write(
-"""<qtcreator>
-  <data>
-    <variable>MerTarget.Count</variable>
-    <value type="int">0</value>
-  </data>
-  <data>
-    <variable>MerTarget.Version</variable>
-    <value type="int">2</value>
-  </data>
-</qtcreator>""")
+                f.write("""<targets version="2">
+</targets>
+""")
         tree = et.parse(args.target_xml, parser)
 
     root = tree.getroot()
 
-    if int(get_value(root, "MerTarget.Version")) != 2:
+    if root.tag != "targets":
+        raise Exception("xml must have <targets> as root element")
+    if int(root.get("version")) != 2:
         raise Exception("Only version 2 of MerTarget XML is supported")
 
     return root
@@ -74,53 +43,26 @@ def update(args, root):
     assert_valid_sb2_name(args.name)
 
     # Create a brand new node so we don't leave any junk behind
-    new = et.Element("data")
+    new = et.Element("target", name=args.name)
 
     # See if there is a target using this name already
-    existing = find_target_by_name(root, args.name)
+    existing =  root.find(".//target[@name='%s']" % args.name)
+
     if et.iselement(existing):
-        # if so then what number is it before we remove it
-        t_index = existing.find("variable").text.split(".")[1]
         # replace existing node with new node
         root[root.index(existing)] = new
     else:
-        num_t = int(get_value(root, "MerTarget.Count"))
-        root.insert(num_t, new)
-        t_index = num_t
-        num_t += 1
-        # Update the target count
-        set_value(root, "MerTarget.Count", "%s" % (num_t))
+        root.append(new)
 
     # Now build the target info
-    var = et.SubElement(new, "variable")
-    var.text = "MerTarget.%s" % t_index
-    vm = et.SubElement(new, "valuemap", type="QVariantMap")
-    et.SubElement(vm, "value", type="QString", key="MerTarget.Name").text = args.name
-    et.SubElement(vm, "value", type="QString", key="MerTarget.GccDumpMachine"
+    et.SubElement(new, "output", name="GccDumpMachine"
                   ).text = sb2_command(args.name, "gcc", "-dumpmachine")
-    et.SubElement(vm, "value", type="QString", key="MerTarget.QmakeQuery"
+    et.SubElement(new, "output", name="QmakeQuery"
                   ).text = sb2_command(args.name, "qmake", "-query")
 
 def delete(args, root):
-    # This says find data/valuemap/value elements with key of MerTarget.Name
-    count = 0
-    found_rm = False
-    for mtd in root.xpath("./data/valuemap/value[@key='MerTarget.Name']/parent::*/parent::data"):
-        var_el = mtd.find("./variable")
-        name_el = mtd.find("./valuemap/value[@key='MerTarget.Name']")
-        if name_el.text == args.name:
-            del root[root.index(mtd)]
-            found_rm = True
-        else:
-            # Update the target count
-            var_el.text = "MerTarget.%d" % count            
-            count += 1
-
-    if not found_rm:
-        print "No target by that name found"
-        sys.exit(1)
-
-    set_value(root, "MerTarget.Count", "%s" % (count))
+    existing = root.find(".//target[@name='%s']" % args.name)
+    del root[root.index(existing)]
 
 def save(args,root):
     # Save XML
