@@ -57,6 +57,15 @@ assert_spec_supports_mb2() {
     fi
 }
 
+ensure_spec_newer_than_yaml() {
+    yaml=$(dirname $spec)/$(basename $spec .spec).yaml
+    [[ -f $yaml ]] || return # User has decided not to use yaml
+    if [[ $yaml -nt $spec ]]; then # -nt is newer than
+	(cd $(dirname $spec); specify -n -N $spec)
+    fi
+}
+
+
 run_qmake() {
     eval sb2 -t $target rpmbuild --build-in-place \
 	--dobuild \
@@ -135,6 +144,8 @@ if [[ ! $spec ]]; then
     [[ $numspec -eq 0 ]] && fatal "No spec file found in '$pkgdir/' - please use -s to identify which to use"
     spec=$pkgdir/*.spec
 fi
+
+ensure_spec_newer_than_yaml
 
 assert_spec_supports_mb2
 
