@@ -17,12 +17,6 @@ else
 	var_tmp_dir_dest = session_dir .. "/var/tmp"
 end
 
-test_first_target_then_host_default_is_target = {
-	{ if_exists_then_map_to = target_root, protection = readonly_fs_always },
-	{ if_exists_then_map_to = "/", protection = readonly_fs_always },
-	{ map_to = target_root, protection = readonly_fs_always }
-}
-
 test_first_usr_bin_default_is_bin__replace = {
 	{ if_exists_then_replace_by = target_root.."/usr/bin", protection = readonly_fs_always },
 	{ replace_by = target_root.."/bin", protection = readonly_fs_always }
@@ -250,11 +244,6 @@ emulate_mode_rules_usr = {
                 {path = "/usr/lib/rpm/rpmdeps", func_class = FUNC_CLASS_EXEC,
 		 actions=accelerated_program_actions},
 
-		-- gdb wants to have access to our dynamic linker also,
-		-- /usr/lib/libsb2/wrappers/*, etc.
-		{dir = "/usr/lib/libsb2", use_orig_path = true,
-		 protection = readonly_fs_always},
-
 		{dir = "/usr", map_to = target_root,
 		protection = readonly_fs_if_not_root}
 }
@@ -395,16 +384,6 @@ emulate_mode_rules = {
 
 		{dir = sbox_dir .. "/share/scratchbox2",
 		 use_orig_path = true},
-
-		-- The real sbox_dir.."/lib/libsb2" must be available:
-		--
-		-- When libsb2 is installed to target we don't want to map
-		-- the path where it is found.  For example gdb needs access
-		-- to the library and dynamic linker, and these may be in
-		-- target_root, or under sbox_dir.."/lib/libsb2", or
-		-- under ~/.scratchbox2.
-		{dir = sbox_dir .. "/lib/libsb2",
-		 actions = test_first_target_then_host_default_is_target},
 
 		-- -----------------------------------------------
 		-- home directories:
