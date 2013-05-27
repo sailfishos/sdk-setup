@@ -1,0 +1,13 @@
+[Unit]
+Description=Targets for QtCreator 
+
+[Mount]
+What=targets
+Where=/host_targets
+Type=vboxsf
+Options=rw,exec,uid=0,gid=0,dev,fmode=555,dmode=555
+DirectoryMode=755
+TimeoutSec=5
+
+[Install]
+WantedBy=sysinit.target
