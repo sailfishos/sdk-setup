@@ -61,7 +61,7 @@ ensure_spec_newer_than_yaml() {
     yaml=$(dirname $spec)/$(basename $spec .spec).yaml
     [[ -f $yaml ]] || return # User has decided not to use yaml
     if [[ $yaml -nt $spec ]]; then # -nt is newer than
-	(cd $(dirname $spec); specify -n -N $spec)
+	(cd $(dirname $spec); specify -n -N $yaml)
     fi
 }
 
