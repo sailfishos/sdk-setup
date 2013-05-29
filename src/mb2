@@ -36,7 +36,11 @@ usage: $ME -t <target> [-s <specfile>] qmake [<args>] | make [<args>] | install 
   Typically called from QtCreator to perform qmake/make phases of a project.
   Note that any other build steps in the .spec file will also be run.
 
-  <specfile> will be looked for in the current rpm/ dir. If there is more than one it must be provided.
+  <specfile> will be looked for in the current rpm/ dir. If there is
+  more than one it must be provided.
+
+  $ME is aware of spectacle and will update the spec file if there is
+  an obvious yaml file which is newer.
 
   $ME qmake [<args>] : runs qmake in the 'build' phase
   $ME make [<args>]  : run make in the 'build' phase
