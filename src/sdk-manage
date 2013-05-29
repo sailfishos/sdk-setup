@@ -12,7 +12,7 @@ target_xml=${host_targets}/targets.xml
 usage()
 {
     cat <<EOF
-    usage (keep the arguments order): 
+    usage (keep the arguments order):
 
            $0 --toolchain --list
            $0 --toolchain --install <arch>
@@ -66,7 +66,7 @@ umask 022
 get_toolchains() {
     zypper search -t pattern Mer-SB2-* | grep Mer-SB2 | while IFS='| ' read installed pkg dummy; do
 	echo "${pkg},${installed}"
-    done 
+    done
     return ${PIPESTATUS[0]}
 }
 
@@ -110,13 +110,11 @@ manage_toolchains() {
 	    get_toolchains
 	    return $?
 	    ;;
-	--install )
-	    shift
+	--install ) shift
 	    install_toolchain "$@"
 	    return $?
 	    ;;
-	--remove )
-	    shift
+	--remove ) shift
 	    remove_toolchain "$@"
 	    return $?
 	    ;;
@@ -154,7 +152,7 @@ get_develpkgs() {
 	if [[ ${pkg%-devel} != ${pkg} ]]; then
 		echo "${pkg},${installed}"
 	fi
-    done 
+    done
     return ${PIPESTATUS[0]}
 }
 
@@ -164,15 +162,13 @@ manage_develpkgs() {
     fi
 
     case "$1" in
-	--list )
-	    shift
+	--list ) shift
 	    target=${1:-}
 	    assert_target_and_setup
 	    get_develpkgs $target
 	    return $?
 	    ;;
-	--install )
-	    shift
+	--install ) shift
 	    target=${1:-}
 	    assert_target_and_setup
 	    shift
@@ -180,8 +176,7 @@ manage_develpkgs() {
 	    synchronise_target $target
 	    return $?
 	    ;;
-	--remove )
-	    shift
+	--remove ) shift
 	    target=${1:-}
 	    assert_target_and_setup
 	    shift
@@ -281,11 +276,11 @@ install_target() {
     mkdir -p $host_targets/$target
 
     cd $mer_targets/$target
-    
+
     echo
     echo Unpacking target
     tar xf "$local_file"
-    
+
     if [ $? -ne 0 ]; then
 	if [ "$( df --sync / | tr -s ' ' | tail -n 1 | cut -d ' ' -f 4 )" -lt 10000 ]; then
 	    echo "Not enough disk space to unpack target image"
@@ -362,28 +357,23 @@ manage_targets() {
 	--list )
 	    get_targets
 	    ;;
-	--install )
-	    shift
+	--install ) shift
 	    assert_target_name_valid "${1:-}"
 	    install_target "$@"
 	    ;;
-	--remove )
-	    shift
+	--remove ) shift
 	    assert_target_name_valid "${1:-}"
 	    remove_target "$@"
 	    ;;
-	--sync )
-	    shift
+	--sync ) shift
 	    assert_target_name_valid "${1:-}"
 	    synchronise_target "$@"
 	    ;;
-	--import )
-	    shift
+	--import ) shift
 	    assert_target_name_valid "${1:-}"
 	    import_target "$@"
 	    ;;
-	--refresh )
-	    shift
+	--refresh ) shift
 	    target="${1:-}"
 	    assert_target_and_setup
 	    t_zypper --non-interactive refresh
@@ -404,8 +394,7 @@ manage_srcdir() {
     fi
 
     case "$1" in
-	--add )
-	    shift
+	--add ) shift
 	    if ! [[ $1 =~ ^[0-9]{1,2}$ ]]; then
 		echo "Invalid index $1 : allowed 1-99"; exit 1
 	    fi
@@ -462,8 +451,7 @@ manage_sdk() {
 	--version )
 	    get_sdk_version
 	    ;;
-	--upgrade )
-	    shift
+	--upgrade ) shift
 	    upgrade_sdk "$@"
 	    ;;
 	* )
@@ -487,23 +475,19 @@ if ! [[ ${1:-} ]]; then
 fi
 
 case "$1" in
-    --toolchain )
-	shift
+    --toolchain ) shift
 	manage_toolchains "$@"
 	;;
-    --target )
-	shift
+    --target ) shift
 	manage_targets "$@"
 	;;
-    --devel )
-	shift
+    --devel ) shift
 	manage_develpkgs "$@"
 	;;
     --srcdir ) shift
 	manage_srcdir "$@"
 	;;
-    --sdk )
-	shift
+    --sdk ) shift
 	manage_sdk "$@"
 	;;
     * )
