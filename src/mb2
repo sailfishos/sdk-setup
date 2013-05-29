@@ -43,6 +43,9 @@ usage: $ME -t <target> [-s <specfile>] qmake [<args>] | make [<args>] | install 
   an obvious yaml file which is newer.
 
   $ME qmake [<args>] : runs qmake in the 'build' phase
+                       Note that this also verifies target
+                       build dependencies are up to date
+
   $ME make [<args>]  : run make in the 'build' phase
 
   $ME install [<args>] : runs the 'install' phase to install to $buildroot
@@ -69,8 +72,13 @@ ensure_spec_newer_than_yaml() {
     fi
 }
 
+verify_target_dependencies() {
+    grep BuildRequires "$spec" | sed -e '/^#.*$/d' | cut -d: -f2 | tr ',' ' ' | xargs --no-run-if-empty sb2 -t "$target" -m sdk-install -R zypper in 
+}
 
 run_qmake() {
+    # This is a good time to verify the target dependencies as per mb
+    verify_target_dependencies
     eval sb2 -t $target rpmbuild --build-in-place \
 	--dobuild \
 	--define \"qtc_builddir $(pwd) \" \
