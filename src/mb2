@@ -27,6 +27,7 @@
 # POSSIBILITY OF SUCH DAMAGE.
 
 buildroot=$(pwd)/myroot
+DEVICES_XML=/etc/mersdk/share/devices.xml
 
 usage() {
     cat <<EOF
@@ -83,6 +84,44 @@ verify_target_dependencies() {
     grep BuildRequires "$spec" | sed -e '/^#.*$/d' | cut -d: -f2 | tr ',' ' ' | xargs --no-run-if-empty sb2 -t "$target" -m sdk-install -R zypper in 
 }
 
+# Helper to read XML
+read_dom () {
+    local IFS=\>
+    read -d \< ENTITY CONTENT
+    local RET=$?
+    TAG_NAME=${ENTITY%% *}
+    ATTRIBUTES=${ENTITY#* }
+    return $RET
+}
+
+# This slurps the XML and converts tags like <subnet> to $device_subnet
+# Also sets device_name and device_type from the attributes
+get_device() {
+    local FOUND=
+    while read_dom; do
+	case $TAG_NAME in
+	    device )
+		[[ $FOUND ]] && break # found - and we're on the next
+				      # <device> so we're done
+		eval local $ATTRIBUTES
+		device_name=$name
+		device_type=$type
+		;;
+	    mac|index|subnet|ip|sshkeypath )
+		eval device_$TAG_NAME="$CONTENT"
+		;;
+	esac
+	[[ $device_name == $1 ]] && FOUND=1
+    done
+    [[ $FOUND ]] && return 0
+    return 1
+}
+
+ssh_device() {
+    deviceuser=user
+    ssh -i $keypath $deviceuser@$deviceIP $@
+}
+
 run_qmake() {
     # This is a good time to verify the target dependencies as per mb
     verify_target_dependencies
@@ -122,6 +161,23 @@ run_rpm() {
 	$spec
 }
 
+run_deploy() {
+    while [[ $1 ]]; do
+	case "$1" in
+            "--zypper" ) shift
+		rpm="$1"; shift
+		[[ -f $rpm ]] || fatal "$rpm doesn't exist"
+		;;
+            "--rsync" ) shift
+		;;
+	esac
+    done
+}
+
+run_gdb() {
+    ssh_device gdb "$@"
+}
+
 
 ME=$(basename $0)
 target=""
@@ -132,6 +188,10 @@ while [[ $1 ]]; do
         "-t" | "--target") shift
 	    target="$1"; shift
 	    [[ -d ~/.scratchbox2/$target ]] || fatal "$target is an invalid sb2 target"
+	    ;;
+        "-d" | "--device") shift
+	    device="$1"; shift
+	    get_device $device < $DEVICES_XML
 	    ;;
         "-p" | "--projectdir") shift
 	    projdir="$1"; shift
