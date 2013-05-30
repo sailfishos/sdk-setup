@@ -4,6 +4,7 @@
 [Unit]
 Description=SDK Information
 Documentation=http://wiki.merproject.org/Platform_SDK
+WantedBy=multi-user.target
 After=systemd-user-sessions.service plymouth-quit-wait.service multi-user.target network.target
 
 [Service]
@@ -14,4 +15,3 @@ ExecStart=/usr/bin/sdk-info
 StandardInput=tty-force
 StandardOutput=tty-force
 StandardError=inherit
-

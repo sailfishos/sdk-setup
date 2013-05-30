@@ -1,0 +1,15 @@
+[Unit]
+Description=Build Engine/QtCreator shared configuration
+Before=sshd.service sdk-webapp.service
+RequiredBy=sshd.service
+
+[Mount]
+What=config
+Where=/etc/mersdk/share
+Type=vboxsf
+Options=rw,exec,uid=0,gid=0,dev,fmode=555,dmode=555
+DirectoryMode=755
+TimeoutSec=10
+
+[Install]
+WantedBy=sysinit.target

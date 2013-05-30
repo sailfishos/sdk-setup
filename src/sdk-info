@@ -37,35 +37,10 @@ cat << EOF
 
   Use "right-ctrl F2" to get a console login prompt.
  
-  Your VM SDK IP address is:  $IP
-
   This VM should be accessible using the mer-qt-creator-rsa key
     ssh -p 2222 -i ~/.ssh/mer-qt-creator-rsa root@localhost
 
-  Mounting shared folders....
 EOF
-
-fail=
-if VBoxControl -nologo sharedfolder list | grep ' home$' > /dev/null 2>&1 ; then
-    mount -tvboxsf -o"rw,exec,uid=1001,gid=1001,dev,ttl=200,fmode=700,dmode=700"  home /home/mersdk || fail=1
-else
-    echo '  Failed to mount shared folder "home"'
-    fail=1
-fi
-if VBoxControl -nologo sharedfolder list | grep ' ssh$' > /dev/null 2>&1 ; then
-    mount -tvboxsf -o"rw,exec,uid=0,gid=0,dev,fmode=555,dmode=555"  ssh /etc/ssh/authorized_keys || fail=1
-else
-    echo '  Failed to mount shared folder "ssh" - ssh will not work, use console login as root'
-    fail=1
-fi
-
-if [[ $fail ]]; then
-    VBoxControl -nologo sharedfolder list
-    echo "  Please see https://wiki.merproject.org/wiki/Platform_SDK_on_VirtualBox"
-    echo "  for instructions on setting up"
-else
-    echo "  mounted home and targets succesfully"
-fi
 
 /bin/echo -en '\033]R'
 

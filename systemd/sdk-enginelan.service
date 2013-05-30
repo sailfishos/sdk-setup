@@ -4,7 +4,8 @@
 [Unit]
 Description=SDK Engine LAN
 Documentation=https://wiki.merproject.org/wiki/SDK_on_VirtualBox/Design
-After=host_targets.mount connman.service
+WantedBy=multi-user.target
+After=etc-mersdk-share.mount connman.service
 
 [Service]
 Type=oneshot

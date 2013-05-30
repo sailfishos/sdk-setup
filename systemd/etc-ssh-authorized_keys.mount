@@ -1,0 +1,15 @@
+[Unit]
+Description=Build Engine/QtCreator shared configuration
+Before=sshd.service
+
+[Mount]
+What=ssh
+Where=/etc/ssh/authorized_keys
+Type=vboxsf
+Options=rw,exec,uid=0,gid=0,dev,fmode=555,dmode=555
+DirectoryMode=555
+TimeoutSec=10
+
+[Install]
+WantedBy=sysinit.target
+RequiredBy=sshd.service

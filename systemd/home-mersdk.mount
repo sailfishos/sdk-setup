@@ -1,0 +1,13 @@
+[Unit]
+Description=Home for QtCreator 
+
+[Mount]
+What=home
+Where=/home/mersdk
+Type=vboxsf
+Options=rw,exec,uid=1001,gid=1001,dev,ttl=200,fmode=700,dmode=700
+DirectoryMode=755
+TimeoutSec=10
+
+[Install]
+WantedBy=sysinit.target
