@@ -50,6 +50,13 @@ usage: $ME -t <target> [-s <specfile>] qmake [<args>] | make [<args>] | install 
 
   $ME install [<args>] : runs the 'install' phase to install to $buildroot
   $ME rpm [<args>] : runs the install & rpm-creation phases
+
+  -t | --target      : specify the sb2 target to use
+  -d | --device      : specify the device
+  -p | --projectdir  : when running shadow build/deploy from another dir
+  -s | --specfile    : if the specfile is not in rpm/*.spec
+
+
 EOF
 }
 
