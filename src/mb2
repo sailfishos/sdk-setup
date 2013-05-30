@@ -129,17 +129,18 @@ pkgdir="./rpm"
 
 while [[ $1 ]]; do
     case "$1" in
-        "-t" | "--target")
-	    shift
-	    target="$1"
+        "-t" | "--target") shift
+	    target="$1"; shift
 	    [[ -d ~/.scratchbox2/$target ]] || fatal "$target is an invalid sb2 target"
-	    shift
 	    ;;
-        "-s" )
-	    shift
-	    spec="$1"
+        "-p" | "--projectdir") shift
+	    projdir="$1"; shift
+	    pkgdir=$projdir/rpm
+	    [[ -d $projdir ]] || fatal "$projdir is not a directory"
+	    ;;
+        "-s" | "--specfile" ) shift
+	    spec="$1"; shift
 	    [[ -f $spec ]] || fatal "$spec doesn't exist"
-	    shift
 	    ;;
 	qmake | make | install | rpm)
 	    cmd=run_$1
