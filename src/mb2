@@ -26,8 +26,9 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
-buildroot=$(pwd)/myroot
+buildroot=$(pwd)/installroot
 DEVICES_XML=/etc/mersdk/share/devices.xml
+deviceuser=nemo
 
 usage() {
     cat <<EOF
@@ -40,6 +41,9 @@ usage: $ME -t <target> [-s <specfile>] qmake [<args>] | make [<args>] | install 
   <specfile> will be looked for in the current rpm/ dir. If there is
   more than one it must be provided.
 
+  CWD is used as a base dir for installroot/ and RPMS/ to allow for
+  shadowbuilds
+
   $ME is aware of spectacle and will update the spec file if there is
   an obvious yaml file which is newer.
 
@@ -49,14 +53,21 @@ usage: $ME -t <target> [-s <specfile>] qmake [<args>] | make [<args>] | install 
 
   $ME make [<args>]  : run make in the 'build' phase
 
+  $ME deploy --zypper|--rsync
+                     : runs the install or rpm-creation phase and then
+                       copies/installs the relevant files to the device
+
+  $ME run|ssh [<args>] : runs a command (on device if --device given);
+                         intended for running gdb and a gdb server
+
   $ME install [<args>] : runs the 'install' phase to install to $buildroot
   $ME rpm [<args>] : runs the install & rpm-creation phases
+
 
   -t | --target      : specify the sb2 target to use
   -d | --device      : specify the device
   -p | --projectdir  : when running shadow build/deploy from another dir
   -s | --specfile    : if the specfile is not in rpm/*.spec
-
 
 EOF
 }
@@ -76,12 +87,18 @@ ensure_spec_newer_than_yaml() {
     yaml=$(dirname $spec)/$(basename $spec .spec).yaml
     [[ -f $yaml ]] || return # User has decided not to use yaml
     if [[ $yaml -nt $spec ]]; then # -nt is newer than
-	(cd $(dirname $spec); specify -n -N $yaml)
+	echo "$yaml -nt $spec"
+	ls -laF $yaml $spec
+	specify -n -N $yaml
     fi
 }
 
 verify_target_dependencies() {
     grep BuildRequires "$spec" | sed -e '/^#.*$/d' | cut -d: -f2 | tr ',' ' ' | xargs --no-run-if-empty sb2 -t "$target" -m sdk-install -R zypper in 
+}
+
+get_spec_value(){
+    grep -i "^${1}:" $spec | sed -e 's/^.*:\s*//g' -e 's/\s*$//g'
 }
 
 # Helper to read XML
@@ -104,22 +121,36 @@ get_device() {
 		[[ $FOUND ]] && break # found - and we're on the next
 				      # <device> so we're done
 		eval local $ATTRIBUTES
-		device_name=$name
-		device_type=$type
 		;;
 	    mac|index|subnet|ip|sshkeypath )
 		eval device_$TAG_NAME="$CONTENT"
 		;;
 	esac
-	[[ $device_name == $1 ]] && FOUND=1
+	[[ "$name" == "$1" ]] && {
+	    FOUND=1
+	    device_name=$name
+	    device_type=$type
+	}
     done
-    [[ $FOUND ]] && return 0
-    return 1
+    [[ $FOUND ]] || return 1
+    # Set this up as it's useful
+    if [[ $device_subnet ]]; then
+	device_ip=$device_subnet.$device_index
+    fi
+    return 0
 }
 
-ssh_device() {
-    deviceuser=user
-    ssh -i $keypath $deviceuser@$deviceIP $@
+rsync_as() {
+    local user=$1;shift
+    local key="$(dirname $DEVICES_XML)/${device_sshkeypath}/$user"
+    [[ -f $key ]] || fatal "No key for user $user on $device_name given in devices.xml"
+    RSYNC_RSH="ssh -l $user -i $key" rsync "$@"
+}
+
+ssh_as() {
+    local user=$1;shift
+    local key="$(dirname $DEVICES_XML)/${device_sshkeypath}/$user"
+    ssh -i $key -l $user $device_ip $@
 }
 
 run_qmake() {
@@ -143,7 +174,7 @@ run_make() {
 }
 
 run_install() {
-    # Install to ./myroot which should be rsync'ed to /opt/sdk/$package on device
+    # Install to buildroot which should be rsync'ed to /opt/sdk/$package on device
     eval sb2 -t $target rpmbuild --build-in-place \
 	--define \"qtc_builddir $(pwd) \" \
 	--buildroot=$buildroot \
@@ -154,6 +185,8 @@ run_install() {
 run_rpm() {
     eval sb2 -t $target rpmbuild --build-in-place \
 	--define \"qtc_builddir $(pwd) \" \
+	--define \"_rpmdir $(pwd)/RPMS \" \
+	--define \"_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm \" \
 	--buildroot=$buildroot \
 	--doinstall \
 	--dobinary \
@@ -162,22 +195,26 @@ run_rpm() {
 }
 
 run_deploy() {
-    while [[ $1 ]]; do
+    [[ $device_type ]] || fatal "deploy must have a valid --device"
+	while [[ $1 ]]; do
 	case "$1" in
             "--zypper" ) shift
-		rpm="$1"; shift
-		[[ -f $rpm ]] || fatal "$rpm doesn't exist"
+		run_rpm
+		rpms=$(find RPMS -name \*rpm | grep -v -- "-debug")
+		rsync_as root -av ${rpms} $device_ip:/root/RPMS/
+		ssh_as root zypper --non-interactive in -f ${rpms}
 		;;
             "--rsync" ) shift
+		user=root
+		run_install
+		name=$(get_spec_value Name)
+		rsync_as $user -av ${buildroot}/. $device_ip:/opt/sdk/$name
 		;;
+	    *)
+		fatal "deploy must use either --rsync or --zypper" ;;
 	esac
     done
 }
-
-run_gdb() {
-    ssh_device gdb "$@"
-}
-
 
 ME=$(basename $0)
 target=""
@@ -187,24 +224,33 @@ while [[ $1 ]]; do
     case "$1" in
         "-t" | "--target") shift
 	    target="$1"; shift
-	    [[ -d ~/.scratchbox2/$target ]] || fatal "$target is an invalid sb2 target"
+	    [[ -d ~/.scratchbox2/$target ]] || fatal "'$target' is an invalid sb2 target"
 	    ;;
         "-d" | "--device") shift
 	    device="$1"; shift
-	    get_device $device < $DEVICES_XML
+	    get_device "$device" < $DEVICES_XML || fatal "'$device' not found in devices.xml"
 	    ;;
         "-p" | "--projectdir") shift
 	    projdir="$1"; shift
 	    pkgdir=$projdir/rpm
-	    [[ -d $projdir ]] || fatal "$projdir is not a directory"
+	    [[ -d $projdir ]] || fatal "'$projdir' is not a directory"
 	    ;;
         "-s" | "--specfile" ) shift
 	    spec="$1"; shift
-	    [[ -f $spec ]] || fatal "$spec doesn't exist"
+	    [[ -f $spec ]] || fatal "'$spec' doesn't exist"
 	    ;;
-	qmake | make | install | rpm)
+	qmake | make | install | rpm | deploy )
 	    cmd=run_$1
             shift
+	    break 2
+            ;;
+	run | ssh )
+	    shift
+	    if [[ $device ]]; then
+		cmd="ssh_as $deviceuser"
+	    else
+		cmd="eval"
+	    fi
 	    break 2
             ;;
 	*)
@@ -222,7 +268,7 @@ if [[ ! $spec ]]; then
     numspec=$(ls $pkgdir/*spec 2>/dev/null | wc -l)
     [[ $numspec -gt 1 ]] && fatal "Too many spec files - please use -s to identify which to use"
     [[ $numspec -eq 0 ]] && fatal "No spec file found in '$pkgdir/' - please use -s to identify which to use"
-    spec=$pkgdir/*.spec
+    spec=$(ls $pkgdir/*spec)
 fi
 
 ensure_spec_newer_than_yaml
