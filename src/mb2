@@ -153,6 +153,21 @@ ssh_as() {
     ssh -i $key -l $user $device_ip $@
 }
 
+run_build() {
+    # intended to provide mb build behaviour
+    verify_target_dependencies
+    eval sb2 -t $target rpmbuild --build-in-place \
+	$BUILD_DEBUG \
+	--define \"_rpmdir $(pwd)/RPMS \" \
+	--define \"_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm \" \
+	--buildroot=$buildroot \
+	--dobuild \
+	--doinstall \
+	--dobinary \
+	--docheck \
+	$spec
+}
+
 run_qmake() {
     # This is a good time to verify the target dependencies as per mb
     verify_target_dependencies
@@ -240,7 +255,17 @@ while [[ $1 ]]; do
 	    ;;
 	qmake | make | install | rpm | deploy )
 	    cmd=run_$1
+	    assert_spec_supports_mb2
             shift
+	    break 2
+            ;;
+	build )
+	    cmd=run_$1; shift
+	    BUILD_DEBUG='--define "debug_package %{nil} "'
+	    case "$1" in
+		"-d" | "--enable-debug") shift
+		    BUILD_DEBUG= ;;
+	    esac
 	    break 2
             ;;
 	run | ssh )
@@ -265,8 +290,8 @@ if [[ ! $target ]]; then
 	target=$DEFAULT_TARGET
     fi
     [[ $target ]] || fatal "You must specify an sb2 target or have a default configured"
-   fi
 fi
+
 [[ -d ~/.scratchbox2/$target ]] || fatal "$target is an invalid sb2 target"
 
 if [[ ! $spec ]]; then
@@ -277,7 +302,5 @@ if [[ ! $spec ]]; then
 fi
 
 ensure_spec_newer_than_yaml
-
-assert_spec_supports_mb2
 
 $cmd "$@"
