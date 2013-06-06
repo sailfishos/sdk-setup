@@ -369,6 +369,7 @@ manage_targets() {
 	--sync ) shift
 	    assert_target_name_valid "${1:-}"
 	    synchronise_target "$@"
+	    sudo -i -u $sdk_user updateQtCreatorTargets --name $target --target-xml $target_xml
 	    ;;
 	--import ) shift
 	    assert_target_name_valid "${1:-}"
