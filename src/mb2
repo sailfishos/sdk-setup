@@ -156,6 +156,7 @@ ssh_as() {
 run_build() {
     # intended to provide mb build behaviour
     verify_target_dependencies
+    sed -e '/^%patch/d' $spec > $spec.$$
     eval sb2 -t $target rpmbuild --build-in-place \
 	$BUILD_DEBUG \
 	--define \"_rpmdir $(pwd)/RPMS \" \
@@ -165,7 +166,8 @@ run_build() {
 	--doinstall \
 	--dobinary \
 	--docheck \
-	$spec
+	$spec.$$
+    rm -f $spec.$$
 }
 
 run_qmake() {
