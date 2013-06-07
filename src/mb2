@@ -101,7 +101,7 @@ ensure_spec_newer_than_yaml() {
 }
 
 verify_target_dependencies() {
-    grep BuildRequires "$spec" | sed -e '/^#.*$/d' | cut -d: -f2 | tr ',' ' ' | xargs --no-run-if-empty sb2 -t "$target" -m sdk-install -R zypper in 
+    grep -i BuildRequires "$spec" | sed -e '/^#/d' -e 's/\w*BuildRequires://i' -e 's/,/ /g' | xargs --no-run-if-empty sb2 -t "$target" -m sdk-install -R zypper in 
 }
 
 get_spec_value(){
