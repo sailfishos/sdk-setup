@@ -32,7 +32,8 @@ deviceuser=nemo
 
 usage() {
     cat <<EOF
-usage: $ME -t <target> [-s <specfile>] qmake [<args>] | make [<args>] | install [<args>] | rpm [<args>]
+usage: $ME [-t <target>] [-s <specfile>] [-d <device>] [-p <projectdir>]
+           qmake [<args>] | make [<args>] | install [<args>] | rpm [<args>]
 
   Executes a subset of build commands in the context of an rpmbuild.
   Typically called from QtCreator to perform qmake/make phases of a project.
@@ -50,24 +51,30 @@ usage: $ME -t <target> [-s <specfile>] qmake [<args>] | make [<args>] | install 
   $ME qmake [<args>] : runs qmake in the 'build' phase
                        Note that this also verifies target
                        build dependencies are up to date
+                     : can use -s -t -p  
 
   $ME make [<args>]  : run make in the 'build' phase
+                     : can use -s -t -p  
 
   $ME deploy --zypper|--rsync
                      : runs the install or rpm-creation phase and then
                        copies/installs the relevant files to the device
+                     : can use -s -t -p -d
 
   $ME run|ssh [<args>] : runs a command (on device if --device given);
                          intended for running gdb and a gdb server
+                     : can use -s -t -p -d
 
   $ME install [<args>] : runs the 'install' phase to install to $buildroot
+                     : can use -s -t -p
   $ME rpm [<args>] : runs the install & rpm-creation phases
+                     : can use -s -t -p
 
 
   -t | --target      : specify the sb2 target to use
   -d | --device      : specify the device
   -p | --projectdir  : when running shadow build/deploy from another dir
-  -s | --specfile    : if the specfile is not in rpm/*.spec
+  -s | --specfile    : if the specfile is not in rpm/*.spec and cannot be found using -p
 
 EOF
 }
