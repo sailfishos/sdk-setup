@@ -160,6 +160,7 @@ run_build() {
     eval sb2 -t $target rpmbuild --build-in-place \
 	$BUILD_DEBUG \
 	--define \"_rpmdir $(pwd)/RPMS \" \
+	--define \"_sourcedir $(pwd)/rpm \" \
 	--define \"_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm \" \
 	--buildroot=$buildroot \
 	--dobuild \
@@ -194,6 +195,7 @@ run_install() {
     # Install to buildroot which should be rsync'ed to /opt/sdk/$package on device
     eval sb2 -t $target rpmbuild --build-in-place \
 	--define \"qtc_builddir $(pwd) \" \
+	--define \"_sourcedir $(pwd)/rpm \" \
 	--buildroot=$buildroot \
 	--doinstall \
 	$spec
@@ -203,6 +205,7 @@ run_rpm() {
     eval sb2 -t $target rpmbuild --build-in-place \
 	--define \"qtc_builddir $(pwd) \" \
 	--define \"_rpmdir $(pwd)/RPMS \" \
+	--define \"_sourcedir $(pwd)/rpm \" \
 	--define \"_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm \" \
 	--buildroot=$buildroot \
 	--doinstall \
