@@ -44,6 +44,7 @@ get_engine() {
 if get_engine < $DEVICES_XML ; then
     echo "Setting up SDK Engine internal LAN to $subnet.254"
     MAC2=$(cat /sys/class/net/eth?/address | grep -iv 08:00:5A:11:F1:55)
+    mkdir -p /var/lib/connman
     cat <<EOF > /var/lib/connman/sdkengine.config
 [global]
 Name = SDK Engine
