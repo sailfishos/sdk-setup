@@ -218,16 +218,32 @@ assert_target_name_valid() {
 }
 
 synchronise_target() {
-    # This could be minimised in the future if sf is not fixed
-    # Ignore errors as we sometimes have dangling symlinks and
-    # still want to keep clean
+    # This is now a minimal set of files to sync
     if ! [ -d $mer_targets/$1 ]; then
 	echo No target called $1
     fi
     echo "Synchronising target to host"
+    # The filter=". -" means to read filters from stdin (the <<EOF)
     rsync -a --no-devices --no-specials \
           --delete --ignore-errors \
-	  $mer_targets/$1/ $host_targets/$1
+	  --prune-empty-dirs  --copy-links \
+	  --filter=". -" \
+	  $mer_targets/$1/ $host_targets/$1 <<EOF
+# Ensure all dirs are copied (--prune-empty-dirs will clean up)
++ */
+# We want this for QtCreator to determine the architecture
++ /usr/lib/libQtCore.so
+# Don't need any other .so files
+- *.so
+# All the import, include and qt* shares
++ /usr/lib/qt4/imports**
++ /usr/include**
++ /usr/share/qt**
+# and nothing else
+- *
+EOF
+    # We need /usr/bin for Creator's happiness
+    mkdir -p $host_targets/$1/usr/bin
     echo "Sync completed"
 }
 
