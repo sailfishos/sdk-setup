@@ -228,7 +228,7 @@ synchronise_target() {
           --delete --ignore-errors \
 	  --prune-empty-dirs  --copy-links \
 	  --filter=". -" \
-	  $mer_targets/$1/ $host_targets/$1 <<EOF
+	  $mer_targets/$1/. $host_targets/$1/. <<EOF
 # Ensure all dirs are copied (--prune-empty-dirs will clean up)
 + */
 # We want this for QtCreator to determine the architecture
@@ -383,7 +383,8 @@ manage_targets() {
 	    remove_target "$@"
 	    ;;
 	--sync ) shift
-	    assert_target_name_valid "${1:-}"
+	    target="${1:-}"
+	    assert_target_name_valid "$target"
 	    synchronise_target "$@"
 	    sudo -i -u $sdk_user updateQtCreatorTargets --name $target --target-xml $target_xml
 	    ;;

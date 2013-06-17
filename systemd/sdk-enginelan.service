@@ -6,7 +6,7 @@ Description=SDK Engine LAN
 Documentation=https://wiki.merproject.org/wiki/SDK_on_VirtualBox/Design
 # We need the shared mount and we should setup before connman so there's
 # no confusion about MACs
-After=etc-mersdk-share.mount
+After=etc-mersdk-share.service
 Before=connman.service
 
 [Service]

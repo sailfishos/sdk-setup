@@ -1,0 +1,27 @@
+[Unit]
+Description=Build Engine/QtCreator shared configuration
+Before=sdk-webapp.service
+
+#[Mount]
+#What=config
+#Where=/etc/mersdk/share
+#Type=vboxsf
+#EnvironmentFile=-/etc/mersdk.env.systemd
+#EnvironmentFile=-/etc/login.defs.systemd
+## This folder will contain private keys so we need to be 700, 700
+#Options=rw,exec,uid=$UID_MERSDK,gid=$GID_MERSDK,dev,fmode=700,dmode=700
+#DirectoryMode=755
+#TimeoutSec=10
+
+[Service]
+Type=oneshot
+WorkingDirectory=/
+EnvironmentFile=-/etc/mersdk.env.systemd
+EnvironmentFile=-/etc/login.defs.systemd
+ExecStartPre=/bin/mkdir -p /etc/mersdk/share
+# This folder will contain private keys so we need to be 700, 700
+ExecStart=/bin/mount -t vboxsf -orw,exec,uid=${UID_MERSDK},gid=${GID_MERSDK},dev,fmode=700,dmode=700 config /etc/mersdk/share
+TimeoutSec=10
+
+[Install]
+WantedBy=basic.target

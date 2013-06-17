@@ -11,5 +11,5 @@ DirectoryMode=555
 TimeoutSec=10
 
 [Install]
-WantedBy=sysinit.target
+WantedBy=basic.target
 RequiredBy=sshd.service
