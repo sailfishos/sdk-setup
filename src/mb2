@@ -232,7 +232,7 @@ run_deploy() {
 		ssh_as root zypper --non-interactive in -f ${rpms}
 		;;
             "--rsync" ) shift
-		user=root
+		user=$deviceuser
 		run_install
 		name=$(get_spec_value Name)
 		rsync_as $user -av ${buildroot}/. $device_ip:/opt/sdk/$name
@@ -289,7 +289,6 @@ if [[ ! $spec ]]; then
     [[ $numspec -gt 1 ]] && fatal "Too many spec files - please use -s to identify which to use"
     [[ $numspec -eq 0 ]] && fatal "No spec file found in '$pkgdir/' - please use -s to identify which to use"
     spec=$(ls $pkgdir/*spec)
-    echo "spec is $spec"
 fi
 
 ensure_spec_newer_than_yaml
