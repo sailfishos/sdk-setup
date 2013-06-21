@@ -7,7 +7,7 @@ Description=Home for QtCreator
 #Type=vboxsf
 #EnvironmentFile=-/etc/mersdk.env.systemd
 #EnvironmentFile=-/etc/login.defs.systemd
-#Options=rw,exec,uid=$UID_MERSDK,gid=$GID_MERSDK,dev,ttl=200,fmode=700,dmode=700
+#Options=rw,exec,uid=$UID_MERSDK,gid=$GID_MERSDK,dev,ttl=200,fmode=755,dmode=755
 #DirectoryMode=755
 #TimeoutSec=10
 
@@ -17,8 +17,7 @@ WorkingDirectory=/
 EnvironmentFile=-/etc/mersdk.env.systemd
 EnvironmentFile=-/etc/login.defs.systemd
 ExecStartPre=/bin/mkdir -p /home/mersdk
-# This folder will contain private keys so we need to be 700, 700
-ExecStart=/bin/mount -t vboxsf -orw,exec,uid=${UID_MERSDK},gid=${GID_MERSDK},dev,ttl=200,fmode=700,dmode=700 home /home/mersdk
+ExecStart=/bin/mount -t vboxsf -orw,exec,uid=${UID_MERSDK},gid=${GID_MERSDK},dev,ttl=200,fmode=755,dmode=755 home /home/mersdk
 TimeoutSec=10
 
 [Install]
