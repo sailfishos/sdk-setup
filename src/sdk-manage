@@ -242,8 +242,10 @@ synchronise_target() {
 # and nothing else
 - *
 EOF
-    # We need /usr/bin for Creator's happiness
+    # We need /usr/bin/stopCreatorSegfaulting for Creator's happiness
     mkdir -p $host_targets/$1/usr/bin
+    touch $host_targets/$1/usr/bin/stopCreatorSegfaulting
+
     echo "Sync completed"
 }
 
