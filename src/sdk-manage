@@ -281,7 +281,7 @@ install_target() {
 	echo "curl $url > $local_file"
 	curl "$url" > $local_file
 	curl_status=$?
-	if [ \( $curl_status -ne 0 \) -o \( $(stat -c %s "$mer_targets/$target.tar.bz2") -lt 10000 \) ]; then #hash check anybody?
+	if [ \( $curl_status -ne 0 \) -o \( $(stat -c %s "$local_file") -lt 10000 \) ]; then #hash check anybody?
 	    echo "Download failed"
 	    rm -f $local_file
 	    return 3
@@ -313,7 +313,6 @@ install_target() {
 
     chown -R $sdk_user:$sdk_user $mer_targets/$target
 
-    echo Synchronising target with host
     synchronise_target $target
 
     [ $? -ne 0 ] && echo "Rsync didn't exactly run as intended, expect problems."
