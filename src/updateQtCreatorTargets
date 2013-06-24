@@ -62,7 +62,10 @@ def update(args, root):
 
 def delete(args, root):
     existing = root.find(".//target[@name='%s']" % args.name)
-    del root[root.index(existing)]
+    if existing is not None:
+        del root[root.index(existing)]
+    else:
+        print "target %s is not present" % args.name
 
 def save(args,root):
     # Save XML
