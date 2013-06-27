@@ -232,11 +232,11 @@ synchronise_target() {
 # Ensure all dirs are copied (--prune-empty-dirs will clean up)
 + */
 # We want this for QtCreator to determine the architecture
-+ /usr/lib/libQtCore.so
++ /usr/lib/libQt*Core.so
 # Don't need any other .so files
 - *.so
 # All the import, include and qt* shares
-+ /usr/lib/qt4/imports**
++ /usr/lib/qt*/imports**
 + /usr/include**
 + /usr/share/qt**
 # and nothing else
