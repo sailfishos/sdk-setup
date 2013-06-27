@@ -25,7 +25,7 @@ usage()
            $0 --target --sync  <name>
            $0 --target --import  <name>
 
-           $0 --devel --list <target>
+           $0 --devel --list <target> [<search string>]
            $0 --devel --install <target> <devel package list>
            $0 --devel --remove <target> <devel package list>
 
@@ -149,7 +149,8 @@ t_zypper() {
 }
 
 get_develpkgs() {
-    t_zypper --no-refresh search -- -devel 2>&1 | sed '0,/---------/d' | while IFS='| ' read installed pkg dummy; do
+    search=${1:-}
+    t_zypper --no-refresh search -- "$search" 2>&1 | sed '0,/---------/d' | while IFS='| ' read installed pkg dummy; do
 	if [[ ${pkg%-devel} != ${pkg} ]]; then
 		echo "${pkg},${installed}"
 	fi
@@ -165,8 +166,9 @@ manage_develpkgs() {
     case "$1" in
 	--list ) shift
 	    target=${1:-}
+	    search=${2:-}
 	    assert_target_and_setup
-	    get_develpkgs $target
+	    get_develpkgs $search
 	    return $?
 	    ;;
 	--install ) shift
