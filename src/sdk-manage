@@ -245,6 +245,8 @@ EOF
     # We need /usr/bin/stopCreatorSegfaulting for Creator's happiness
     mkdir -p $host_targets/$1/usr/bin
     touch $host_targets/$1/usr/bin/stopCreatorSegfaulting
+    # For Qt5, QtCreator needs to see this dir or it thinks Qt version is not properly installed
+    mkdir -p $host_targets/$1/usr/lib/qt5/bin/
 
     echo "Sync completed"
 }
