@@ -148,9 +148,7 @@ t_zypper() {
 get_develpkgs() {
     search=${1:-}
     t_zypper --no-refresh search -- "$search" 2>&1 | sed '0,/---------/d' | while IFS='| ' read installed pkg dummy; do
-	if [[ ${pkg%-devel} != ${pkg} ]]; then
-		echo "${pkg},${installed}"
-	fi
+	echo "${pkg},${installed}"
     done
     return ${PIPESTATUS[0]}
 }
