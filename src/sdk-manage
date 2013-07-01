@@ -29,9 +29,6 @@ usage()
            $0 --devel --install <target> <devel package list>
            $0 --devel --remove <target> <devel package list>
 
-           $0 --srcdir --add <N>
-           $0 --srcdir --remove <N>
-
            $0 --sdk --version
            $0 --sdk --upgrade
            $0 --sdk --status
@@ -412,52 +409,6 @@ manage_targets() {
 ################################################################
 # SDK
 
-manage_srcdir() {
-    if ! [[ $1 ]]; then
-	usage --exit
-    fi
-
-    case "$1" in
-	--add ) shift
-	    if ! [[ $1 =~ ^[0-9]{1,2}$ ]]; then
-		echo "Invalid index $1 : allowed 1-99"; exit 1
-	    fi
-	    cat <<EOF > "/etc/systemd/system/home-src$1.mount"
-[Unit]
-Description=SDK Engine Source mapping
-
-[Mount]
-What=src$1
-Where=/home/src$1
-Type=vboxsf
-Options=rw,exec,uid=0,gid=0,dev,fmode=555,dmode=555
-DirectoryMode=755
-TimeoutSec=10
-
-[Install]
-WantedBy=sysinit.target
-
-EOF
-	    systemctl --quiet enable home-src$1.mount
-	    systemctl start home-src$1.mount
-	    ;;
-	--remove ) shift
-	    systemctl --quiet disable home-src$1.mount
-	    systemctl stop home-src$1.mount
-	    systemctl reset-failed home-src$1.mount
-	    rm -f "/etc/systemd/system/home_src$1.mount"
-	    systemctl daemon-reload
-	    ;;
-	* )
-	    echo "$1 not recognised"
-	    usage --exit
-	    ;;
-    esac
-}
-
-################################################################
-# SDK
-
 get_sdk_version() {
     sdk-version
 }
@@ -528,9 +479,6 @@ case "$1" in
 	;;
     --devel ) shift
 	manage_develpkgs "$@"
-	;;
-    --srcdir ) shift
-	manage_srcdir "$@"
 	;;
     --sdk ) shift
 	manage_sdk "$@"
