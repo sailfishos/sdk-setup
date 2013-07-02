@@ -187,8 +187,10 @@ run_qmake() {
     verify_target_dependencies
     eval sb2 -t $target rpmbuild --build-in-place \
 	--dobuild \
+	--define \"noecho 1 \" \
 	--define \"qtc_builddir $(pwd) \" \
-	--define \"qtc_make echo ignoring make\" \
+	--define \"qtc_make false ignoring make\" \
+	--define \"qtc_qmake5  qmake5 $@\" \
 	--define \"qtc_qmake  qmake $@\" \
 	$spec
 }
@@ -196,8 +198,10 @@ run_qmake() {
 run_make() {
     eval sb2 -t $target rpmbuild --build-in-place \
 	--dobuild \
+	--define \"noecho 1 \" \
 	--define \"qtc_builddir $(pwd) \" \
-	--define \"qtc_qmake echo ignoring qmake\" \
+	--define \"qtc_qmake5 false ignoring qmake\" \
+	--define \"qtc_qmake false ignoring qmake\" \
 	--define \"qtc_make  make $@\" \
 	$spec
 }
@@ -205,6 +209,7 @@ run_make() {
 run_install() {
     # Install to buildroot which should be rsync'ed to /opt/sdk/$package on device
     eval sb2 -t $target rpmbuild --build-in-place \
+	--define \"noecho 1 \" \
 	--define \"qtc_builddir $(pwd) \" \
 	--define \"_sourcedir $(pwd)/rpm \" \
 	--buildroot=$buildroot \
