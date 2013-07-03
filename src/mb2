@@ -35,7 +35,7 @@ DEVICES_XML=/etc/mersdk/share/devices.xml
 deviceuser=nemo
 
 if [[ -x /usr/bin/ssu ]]; then
-    local REG_STATUS=$(ssu s | grep "registration" | grep -v "not");
+    REG_STATUS=$(ssu s | grep "registration" | grep -v "not");
     if [[ -z "$REG_STATUS" ]]; then
         echo "SSU registration is not done, please execute 'ssu r' as root first";
         exit
@@ -193,25 +193,33 @@ run_build() {
 run_qmake() {
     # This is a good time to verify the target dependencies as per mb
     verify_target_dependencies
-    eval sb2 -t $target rpmbuild --build-in-place \
-	--dobuild \
-	--define \"noecho 1 \" \
-	--define \"qtc_builddir $(pwd) \" \
-	--define \"qtc_make false ignoring make\" \
-	--define \"qtc_qmake5  qmake5 $@\" \
-	--define \"qtc_qmake  qmake $@\" \
-	$spec
+    if [[ $spec ]]; then
+	eval sb2 -t $target rpmbuild --build-in-place \
+	    --dobuild \
+	    --define \"noecho 1 \" \
+	    --define \"qtc_builddir $(pwd) \" \
+	    --define \"qtc_make false ignoring make\" \
+	    --define \"qtc_qmake5  qmake5 $@\" \
+	    --define \"qtc_qmake  qmake $@\" \
+	    $spec
+    else
+	sb2 -t $target qmake
+    fi
 }
 
 run_make() {
-    eval sb2 -t $target rpmbuild --build-in-place \
-	--dobuild \
-	--define \"noecho 1 \" \
-	--define \"qtc_builddir $(pwd) \" \
-	--define \"qtc_qmake5 false ignoring qmake\" \
-	--define \"qtc_qmake false ignoring qmake\" \
-	--define \"qtc_make  make $@\" \
-	$spec
+    if [[ $spec ]]; then
+	eval sb2 -t $target rpmbuild --build-in-place \
+	    --dobuild \
+	    --define \"noecho 1 \" \
+	    --define \"qtc_builddir $(pwd) \" \
+	    --define \"qtc_qmake5 false ignoring qmake\" \
+	    --define \"qtc_qmake false ignoring qmake\" \
+	    --define \"qtc_make  make $@\" \
+	    $spec
+    else
+	sb2 -t $target make
+    fi		
 }
 
 run_install() {
@@ -282,7 +290,10 @@ while [[ $1 ]]; do
 	    spec="$1"; shift
 	    [[ -f $spec ]] || fatal "'$spec' doesn't exist"
 	    ;;
-	qmake | make | install | rpm | deploy | build | run | ssh )
+	install | rpm | deploy | build )
+	    needspec=1;
+	    break 2 ;;
+	qmake | make | run | ssh )
 	    break 2 ;;
 	*)
 	    usage
@@ -301,19 +312,23 @@ fi
 
 [[ -d ~/.scratchbox2/$target ]] || fatal "$target is an invalid sb2 target"
 
-if [[ ! $spec ]]; then
+if [[ $needspec && ! $spec ]]; then
     numspec=$(ls $pkgdir/*spec 2>/dev/null | wc -l)
     [[ $numspec -gt 1 ]] && fatal "Too many spec files - please use -s to identify which to use"
     [[ $numspec -eq 0 ]] && fatal "No spec file found in '$pkgdir/' - please use -s to identify which to use"
     spec=$(ls $pkgdir/*spec)
 fi
 
-ensure_spec_newer_than_yaml
+if [[ $spec ]]; then
+    ensure_spec_newer_than_yaml
+fi
 
 case $1 in
     qmake | make | install | rpm | deploy )
 	cmd=run_$1
-	assert_spec_supports_mb2
+	if [[ $spec ]]; then
+	    assert_spec_supports_mb2
+	fi
         shift
         ;;
     build )
