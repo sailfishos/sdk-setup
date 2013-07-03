@@ -21,7 +21,7 @@ usage()
      --sdk  <release> : Use SDK/Tools <release>
                         eg: --sdk 0.5.1
                         <release> can be "next" or "latest" from
-                        http://repo.pub.meego.com/releases/Mer-Tools/latest-release
+                        http://repo.merproject.org/releases/mer-tools/latest-release
 
      --latest : short for: --sdk latest --core latest
 
@@ -51,14 +51,14 @@ update_repos() {
 [mer-tools-i486]
 name=mer-tools-i486
 failovermethod=priority
-baseurl=http://repo.pub.meego.com/releases/Mer-Tools/$SDK/builds/i486/packages/
+baseurl=http://repo.merproject.org/releases/mer-tools/$SDK/builds/i486/packages/
 gpgcheck=0
 enabled=1
 
 [mer-tools-i486-debuginfo]
 name=mer-tools-i486-debuginfo
 failovermethod=priority
-baseurl=http://repo.pub.meego.com/releases/Mer-Tools/$SDK/builds/i486/debug
+baseurl=http://repo.merproject.org/releases/mer-tools/$SDK/builds/i486/debug
 gpgcheck=0
 enabled=0
 EOF
@@ -152,14 +152,14 @@ while [[ $1 ]] ; do
 	--sdk )    UPDATE=1
 	    case $2 in
 		next | latest)
-		SDK=$(curl -Ss http://repo.pub.meego.com/releases/Mer-Tools/${2}-release) ;;
+		SDK=$(curl -Ss http://repo.merproject.org/releases/mer-tools/${2}-release) ;;
 		*)   SDK=$2 ;;
 	    esac
 	    shift ;;
 	--next | --latest ) UPDATE=1; PRE=${1#--}
 	    CORE=$(curl -m 5 -Ss http://releases.merproject.org/releases/$PRE-release)
 	    CORE_STATUS=$?
-	    SDK=$(curl -m 5 -Ss http://repo.pub.meego.com/releases/Mer-Tools/$PRE-release)
+	    SDK=$(curl -m 5 -Ss http://repo.merproject.org/releases/mer-tools/$PRE-release)
 	    SDK_STATUS=$?
 	    CORE_LEN=$( echo $CORE | wc -c )
 	    SDK_LEN=$( echo $CORE | wc -c )
