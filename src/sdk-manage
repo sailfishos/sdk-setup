@@ -19,9 +19,11 @@ usage()
            $0 --toolchain --remove <arch>
 
            $0 --target --list
+           $0 --target --status <name>
            $0 --target --install <name> <toolchain> <url>
            $0 --target --remove  <name>
-           $0 --target --refresh <target>
+           $0 --target --refresh <name>
+           $0 --target --update <name>
            $0 --target --sync  <name>
            $0 --target --import  <name>
 
@@ -374,6 +376,11 @@ manage_targets() {
 	--list )
 	    get_targets
 	    ;;
+	--status ) shift
+	    target="${1:-}"
+	    assert_target_and_setup
+	    t_zypper --non-interactive --no-refresh lu
+	    ;;
 	--install ) shift
 	    assert_target_name_valid "${1:-}"
 	    install_target "$@"
@@ -381,6 +388,16 @@ manage_targets() {
 	--remove ) shift
 	    assert_target_name_valid "${1:-}"
 	    remove_target "$@"
+	    ;;
+	--refresh ) shift
+	    target="${1:-}"
+	    assert_target_and_setup
+	    t_zypper --non-interactive refresh
+	    ;;
+	--update ) shift
+	    target="${1:-}"
+	    assert_target_and_setup
+	    t_zypper --non-interactive dup
 	    ;;
 	--sync ) shift
 	    target="${1:-}"
@@ -391,11 +408,6 @@ manage_targets() {
 	--import ) shift
 	    assert_target_name_valid "${1:-}"
 	    import_target "$@"
-	    ;;
-	--refresh ) shift
-	    target="${1:-}"
-	    assert_target_and_setup
-	    t_zypper --non-interactive refresh
 	    ;;
 	* )
 	    echo "$1 not recognised"
