@@ -264,13 +264,19 @@ import_target() {
 
 # Download and install a rootfs
 install_target() {
+    if [[ "$1" == "--jfdi" ]]; then
+	# Sometimes you want to install without checking the toolchain - jfdi
+	skip_toolchain_check=1; shift;
+    fi
     target=$1
     toolchain=$2
     url=$3 #FIXME: check url validity
-    echo Making sure the right toolchain exists
-    if ! ensure_installed $toolchain; then
-	echo "Installing required toolchain: $toolchain"
-	install_toolchain $toolchain
+    if ! [[ $skip_toolchain_check ]]; then
+	echo Making sure the right toolchain exists
+	if ! ensure_installed $toolchain; then
+	    echo "Installing required toolchain: $toolchain"
+	    install_toolchain $toolchain
+	fi
     fi
 
     local_file=""
