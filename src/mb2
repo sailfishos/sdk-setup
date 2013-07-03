@@ -34,6 +34,14 @@ fi
 DEVICES_XML=/etc/mersdk/share/devices.xml
 deviceuser=nemo
 
+if [[ -x /usr/bin/ssu ]]; then
+    local REG_STATUS=$(ssu s | grep "registration" | grep -v "not");
+    if [[ -z "$REG_STATUS" ]]; then
+        echo "SSU registration is not done, please execute 'ssu r' as root first";
+        exit
+    fi
+fi
+
 usage() {
     cat <<EOF
 usage: $ME [-t <target>] [-s <specfile>] [-d <device>] [-p <projectdir>]
