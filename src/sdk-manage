@@ -333,18 +333,21 @@ install_target() {
 	    architecture=$(echo $toolchain | tr '-' '\n' | tail -n 1)
 	    transparency="-c /usr/bin/qemu-arm-dynamic"
 	    compiler="/opt/cross/bin/$architecture-meego-linux-gnueabi-gcc"
+	    toolsdir="-t /"
 	    ;;
 	*-mipsel)
 	    transparency="-c /usr/bin/qemu-mipsel-dynamic"
 	    compiler="/opt/cross/bin/mipsel-meego-linux-gnu-gcc"
+	    toolsdir="-t /"
 	    ;;
 	*-i486*)
 	    transparency=""
 	    compiler="/opt/cross/bin/i486-meego-linux-gnu-gcc"
+	    toolsdir=""
 	    ;;
     esac
 
-    sudo -i -u $sdk_user bash -c "cd $PWD; sb2-init -L \"--sysroot=/\" -C \"--sysroot=/\" $transparency -m sdk-build -n -N -t / $target $compiler"
+    sudo -i -u $sdk_user bash -c "cd $PWD; sb2-init -L \"--sysroot=/\" -C \"--sysroot=/\" $transparency -m sdk-build -n -N $toolsdir $target $compiler"
 
     # Now refresh target repos
     echo refreshing target repositories
