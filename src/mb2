@@ -200,12 +200,12 @@ run_qmake() {
 	    --dobuild \
 	    --define \"noecho 1 \" \
 	    --define \"qtc_builddir $(pwd) \" \
-	    --define \"qtc_make false ignoring make\" \
+	    --define \"qtc_make true ignoring make\" \
 	    --define \"qtc_qmake5  qmake5 $@\" \
 	    --define \"qtc_qmake  qmake $@\" \
 	    $spec
     else
-	sb2 -t $target qmake
+	sb2 -t $target qmake "$@"
     fi
 }
 
@@ -215,12 +215,12 @@ run_make() {
 	    --dobuild \
 	    --define \"noecho 1 \" \
 	    --define \"qtc_builddir $(pwd) \" \
-	    --define \"qtc_qmake5 false ignoring qmake\" \
-	    --define \"qtc_qmake false ignoring qmake\" \
+	    --define \"qtc_qmake5 true ignoring qmake\" \
+	    --define \"qtc_qmake true ignoring qmake\" \
 	    --define \"qtc_make  make $@\" \
 	    $spec
     else
-	sb2 -t $target make
+	sb2 -t $target make "$@"
     fi		
 }
 
