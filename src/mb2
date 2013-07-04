@@ -193,9 +193,9 @@ run_build() {
 }
 
 run_qmake() {
-    # This is a good time to verify the target dependencies as per mb
-    verify_target_dependencies
     if [[ $spec ]]; then
+	# This is a good time to verify the target dependencies as per mb
+	verify_target_dependencies
 	eval sb2 -t $target rpmbuild --build-in-place \
 	    --dobuild \
 	    --define \"noecho 1 \" \
