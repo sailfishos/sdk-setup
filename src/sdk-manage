@@ -264,6 +264,7 @@ import_target() {
 
 # Download and install a rootfs
 install_target() {
+    skip_toolchain_check=0
     if [[ "$1" == "--jfdi" ]]; then
 	# Sometimes you want to install without checking the toolchain - jfdi
 	skip_toolchain_check=1; shift;
