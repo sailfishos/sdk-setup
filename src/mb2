@@ -314,11 +314,15 @@ fi
 
 [[ -d ~/.scratchbox2/$target ]] || fatal "$target is an invalid sb2 target"
 
-if [[ $needspec && ! $spec ]]; then
+if [[ ! $spec ]]; then
     numspec=$(ls $pkgdir/*spec 2>/dev/null | wc -l)
-    [[ $numspec -gt 1 ]] && fatal "Too many spec files - please use -s to identify which to use"
-    [[ $numspec -eq 0 ]] && fatal "No spec file found in '$pkgdir/' - please use -s to identify which to use"
-    spec=$(ls $pkgdir/*spec)
+    if [[ $needspec ]]; then # errors are fatal
+	[[ $numspec -gt 1 ]] && fatal "Too many spec files - please use -s to identify which to use"
+	[[ $numspec -eq 0 ]] && fatal "No spec file found in '$pkgdir/' - please use -s to identify which to use"
+	spec=$(ls $pkgdir/*spec)
+    else
+	[[ $numspec -eq 1 ]] && spec=$(ls $pkgdir/*spec)
+    fi
 fi
 
 if [[ $spec ]]; then
