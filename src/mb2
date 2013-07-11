@@ -26,24 +26,6 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
-if [[ -f /etc/mer-sdk-vbox ]]; then
-    buildroot=/home/deploy/installroot
-else
-    buildroot=$(pwd)/installroot
-fi
-DEVICES_XML=/etc/mersdk/share/devices.xml
-deviceuser=nemo
-
-# SSU validation - This really needs to be done for the host and
-# targets if they use ssu.
-if [[ -e /etc/ssu/ssu.ini ]] && grep "^credentials-url" /etc/ssu/ssu.ini >/dev/null 2>&1 ; then
-    REG_STATUS=$(ssu s | grep "registration" | grep -v "not");
-    if [[ -z "$REG_STATUS" ]]; then
-        echo "SSU registration is not done, please execute 'ssu r' as root first";
-        exit
-    fi
-fi
-
 usage() {
     cat <<EOF
 usage: $ME [-t <target>] [-s <specfile>] [-d <device>] [-p <projectdir>]
@@ -273,6 +255,25 @@ run_deploy() {
 ME=$(basename $0)
 target=""
 pkgdir="./rpm"
+DEVICES_XML=/etc/mersdk/share/devices.xml
+deviceuser=nemo
+
+# Virtualbox environment will install in this hardcoded location
+if [[ -f /etc/mer-sdk-vbox ]]; then
+    buildroot=/home/deploy/installroot
+else
+    buildroot=$(pwd)/installroot
+fi
+
+# SSU validation - This really needs to be done for the host and
+# targets if they use ssu.
+if [[ -e /etc/ssu/ssu.ini ]] && grep "^credentials-url" /etc/ssu/ssu.ini >/dev/null 2>&1 ; then
+    REG_STATUS=$(ssu s | grep "registration" | grep -v "not");
+    if [[ -z "$REG_STATUS" ]]; then
+        echo "SSU registration is not done, please execute 'ssu r' as root first";
+        exit
+    fi
+fi
 
 while [[ $1 ]]; do
     case "$1" in
