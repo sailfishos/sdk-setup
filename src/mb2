@@ -86,6 +86,17 @@ assert_spec_supports_mb2() {
     fi
 }
 
+try_to_make_spec() { # Tries to create a missing spec
+    [[ -f $1 ]] && return # It's not missing
+    yaml=$(dirname $1)/$(basename $1 .spec).yaml
+    [[ -f $yaml ]] || return # No yaml
+    specify -n -N $yaml
+}
+try_to_make_spec_from_yaml() {
+    # Tries to create a missing spec from a given yaml
+    try_to_make_spec $(dirname $1)/$(basename $1 .yaml).spec
+}
+
 ensure_spec_newer_than_yaml() {
     yaml=$(dirname $spec)/$(basename $spec .spec).yaml
     [[ -f $yaml ]] || return # User has decided not to use yaml
@@ -291,7 +302,8 @@ while [[ $1 ]]; do
 	    ;;
         "-s" | "--specfile" ) shift
 	    spec="$1"; shift
-	    [[ -f $spec ]] || fatal "'$spec' doesn't exist"
+	    try_to_make_spec $spec
+	    [[ -f $spec ]] || fatal "'$spec' doesn't exist (and couldn't be made from a yaml)"
 	    ;;
 	install | rpm | deploy | build )
 	    needspec=1;
@@ -315,17 +327,43 @@ fi
 
 [[ -d ~/.scratchbox2/$target ]] || fatal "$target is an invalid sb2 target"
 
+# spec rules are complex:
+#  a .spec is required for some but not all operations
+#  if -s is given then
+#    if it does not exist then specify tries to make it
+#    if it exists it will be used
+#  if there is a rpm/*.spec then that is used
+#  if there is a rpm/*.yaml then a spec is made and used
+
 if [[ ! $spec ]]; then
     numspec=$(ls $pkgdir/*spec 2>/dev/null | wc -l)
-    if [[ $needspec ]]; then # errors are fatal
-	[[ $numspec -gt 1 ]] && fatal "Too many spec files - please use -s to identify which to use"
-	[[ $numspec -eq 0 ]] && fatal "No spec file found in '$pkgdir/' - please use -s to identify which to use"
+    if [[ $numspec -gt 1 ]]; then
+	[[ $needspec ]] && fatal "Too many spec files - please use -s to identify which to use"
+	echo "Too many spec files - not using any. Use -s to identify a specific one"
+	# spec is not set
+    fi
+
+    if [[ $numspec -eq 0 ]]; then
+	# No spec, try to find a yaml
+	numyaml=$(ls $pkgdir/*yaml 2>/dev/null | wc -l)
+	if [[ $numyaml -eq 1 ]]; then
+	    try_to_make_spec_from_yaml $(ls $pkgdir/*yaml)
+	    numspec=$(ls $pkgdir/*spec 2>/dev/null | wc -l)
+	else
+	    [[ $needspec ]] && fatal "No spec file found in '$pkgdir/' and couldn't make one from a yaml"
+	fi
+    fi
+
+    if [[ $numspec -eq 1 ]]; then
 	spec=$(ls $pkgdir/*spec)
     else
-	[[ $numspec -eq 1 ]] && spec=$(ls $pkgdir/*spec)
+	# this is because we did try_to_make_spec_from_yaml and failed
+	[[ $needspec ]] && fatal "No spec file found in '$pkgdir/' and couldn't make one from a yaml"
+	
     fi
 fi
 
+# Now if there is a spec given, make sure it is up-to-date
 if [[ $spec ]]; then
     ensure_spec_newer_than_yaml
 fi
