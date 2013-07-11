@@ -1,0 +1,13 @@
+# This is the Mer SDK ssh client configuration file.
+
+Host *
+     UserKnownHostsFile /dev/null
+     ForwardAgent no
+     ForwardX11 no
+     CheckHostIP no
+     StrictHostKeyChecking no
+     LogLevel error
+     SendEnv LANG LC_CTYPE LC_NUMERIC LC_TIME LC_COLLATE LC_MONETARY LC_MESSAGES
+     SendEnv LC_PAPER LC_NAME LC_ADDRESS LC_TELEPHONE LC_MEASUREMENT
+     SendEnv LC_IDENTIFICATION LC_ALL LANGUAGE
+     SendEnv XMODIFIERS
