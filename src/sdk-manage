@@ -236,6 +236,8 @@ synchronise_target() {
 - *.so
 # All the import, include and qt* shares
 + /usr/lib/qt*/imports**
+# Qt5 qml imports are here
++ /usr/lib/qt5/qml**
 + /usr/include**
 + /usr/share/qt**
 # and nothing else
