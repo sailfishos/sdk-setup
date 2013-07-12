@@ -264,6 +264,21 @@ import_target() {
 	  $host_targets/$1/ $mer_targets/$1
 }
 
+# create a unique device-id for the target
+target_uuidgen()
+{
+    local mytarget=$1
+
+    if [[ -z "$mytarget" ]]; then
+	echo "NOTICE: target_uuidgen: empty target name given"
+	return 0
+    fi
+
+    echo "target_uuidgen: generating a unique id for $mytarget target"
+    sudo -i -u $sdk_user bash -c "sb2 -t $mytarget -m sdk-install -R rm -f /var/lib/dbus/machine-id"
+    sudo -i -u $sdk_user bash -c "sb2 -t $mytarget -m sdk-install -R dbus-uuidgen --ensure"
+}
+
 # Download and install a rootfs
 install_target() {
     skip_toolchain_check=0
@@ -351,6 +366,9 @@ install_target() {
     esac
 
     sudo -i -u $sdk_user bash -c "cd $PWD; sb2-init -L \"--sysroot=/\" -C \"--sysroot=/\" $transparency -m sdk-build -n -N $toolsdir $target $compiler"
+
+    # make sure the created target gets a unique id
+    target_uuidgen $target
 
     # Now refresh target repos
     echo refreshing target repositories
