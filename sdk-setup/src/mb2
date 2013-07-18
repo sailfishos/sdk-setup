@@ -119,11 +119,12 @@ ensure_spec_newer_than_yaml() {
 }
 
 verify_target_dependencies() {
-    grep -i BuildRequires "$spec" | sed -e '/^#/d' -e 's/\w*BuildRequires://i' -e 's/,/ /g' | xargs --no-run-if-empty sb2 -t "$target" -m sdk-install -R zypper --non-interactive in 
+    rpmspec --query --buildrequires "$spec" | \
+        xargs --no-run-if-empty sb2 -t "$target" -m sdk-install -R zypper --non-interactive in
 }
 
 get_spec_value(){
-    grep -i "^${1}:" $spec | sed -e 's/^.*:\s*//g' -e 's/\s*$//g'
+    rpmspec --query --srpm --queryformat="%{$1}" $spec
 }
 
 # Helper to read XML
@@ -278,7 +279,7 @@ run_deploy() {
             "--rsync" ) shift
 		user=$deviceuser
 		run_install
-		name=$(get_spec_value Name)
+		name=$(get_spec_value name)
 		rsync_as $user -av ${buildroot}/. $device_ip:/opt/sdk/$name
 		;;
 	    *)
