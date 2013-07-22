@@ -22,7 +22,7 @@ usage()
            $0 --target --status <name>
            $0 --target --install <name> <toolchain> <url>
            $0 --target --remove  <name>
-           $0 --target --refresh <name>
+           $0 --target --refresh <name> [<name>...]
            $0 --target --update <name>
            $0 --target --sync  <name>
            $0 --target --import  <name>
@@ -417,9 +417,10 @@ manage_targets() {
 	    remove_target "$@"
 	    ;;
 	--refresh ) shift
-	    target="${1:-}"
-	    assert_target_and_setup
-	    t_zypper --non-interactive refresh
+	    for target in "$@"; do
+		assert_target_and_setup
+		t_zypper --non-interactive refresh
+	    done
 	    ;;
 	--update ) shift
 	    target="${1:-}"
