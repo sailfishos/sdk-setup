@@ -457,15 +457,15 @@ upgrade_sdk() {
 sdk_status() {
     systemctl --failed
     ERR=$?
-    if VBoxControl -nologo sharedfolder list | grep ' home$' > /dev/null 2>&1 ; then
+    if sudo VBoxControl -nologo sharedfolder list | grep ' home$' > /dev/null 2>&1 ; then
 	echo "'home' shared folder is missing"
 	ERR=1
     fi
-    if VBoxControl -nologo sharedfolder list | grep ' config$' > /dev/null 2>&1 ; then
+    if sudo VBoxControl -nologo sharedfolder list | grep ' config$' > /dev/null 2>&1 ; then
 	echo "'config' shared folder is missing"
 	ERR=1
     fi
-    if VBoxControl -nologo sharedfolder list | grep ' targets$' > /dev/null 2>&1 ; then
+    if sudo VBoxControl -nologo sharedfolder list | grep ' targets$' > /dev/null 2>&1 ; then
 	echo "'targets' shared folder is missing"
 	ERR=1
     fi
@@ -473,7 +473,7 @@ sdk_status() {
 }
 
 manage_sdk() {
-    if ! [[ $1 ]]; then
+    if ! [[ ${1:-} ]]; then
 	usage --exit
     fi
 
