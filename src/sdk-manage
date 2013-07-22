@@ -370,9 +370,6 @@ install_target() {
     # make sure the created target gets a unique id
     target_uuidgen $target
 
-    # Now refresh target repos
-    echo refreshing target repositories
-    target=$target
     assert_target_and_setup
 
     echo Notifying QtCreator of new target
