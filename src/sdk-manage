@@ -457,7 +457,7 @@ manage_targets() {
 # SDK
 
 get_sdk_version() {
-    sdk-version
+    echo "Version not available"
 }
 
 upgrade_sdk() {
