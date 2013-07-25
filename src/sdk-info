@@ -35,7 +35,12 @@ fi
 cat << EOF
   Welcome to the Mer build machine.
 
-  Use "right-ctrl F2" to get a console login prompt.
+  Use "<host key> + F2" to get a console login prompt.
+  On Linux the <host key> is usually <right-ctrl>.
+  Virtualbox indicates the <host key> for your installation at the bottome right of this window.
+
+  For more information including ssh connection and root access see:
+    https://sailfishos.org/develop-faq.html
  
 EOF
 
