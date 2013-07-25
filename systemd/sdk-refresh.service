@@ -1,0 +1,14 @@
+#  This file is part of Mer SDK.
+#
+
+[Unit]
+Description=SDK Engine Refresh service
+
+[Service]
+Type=oneshot
+User=mersdk
+Environment=HOME=/home/mersdk
+WorkingDirectory=/home/mersdk
+ExecStart=/usr/bin/sdk-manage --refresh-all
+
+# No [Install], handled by sdk-refresh.timer

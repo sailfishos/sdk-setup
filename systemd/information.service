@@ -12,7 +12,7 @@ WorkingDirectory=/root
 ExecStartPre=-/bin/plymouth quit
 ExecStart=/usr/bin/sdk-info
 StandardInput=tty-force
-StandardOutput=tty-force
+StandardOutput=tty
 StandardError=inherit
 
 [Install]

@@ -19,10 +19,10 @@ usage()
            $0 --toolchain --remove <arch>
 
            $0 --target --list
-           $0 --target --status <name>
+           $0 --target --upgradable <name>
            $0 --target --install <name> <toolchain> <url>
            $0 --target --remove  <name>
-           $0 --target --refresh <name> [<name>...]
+           $0 --target --refresh [--all | <name> [<name>...]]
            $0 --target --update <name>
            $0 --target --sync  <name>
            $0 --target --import  <name>
@@ -32,8 +32,12 @@ usage()
            $0 --devel --remove <target> <devel package list>
 
            $0 --sdk --version
+           $0 --sdk --refresh
+           $0 --sdk --upgradable
            $0 --sdk --upgrade
            $0 --sdk --status
+
+           $0 --refresh-all
 
        This is the Mer SDK VM manager
        For information see https://wiki.merproject.org/wiki/Platform_SDK_on_VirtualBox
@@ -403,10 +407,10 @@ manage_targets() {
 	--list )
 	    get_targets
 	    ;;
-	--status ) shift
+	--upgradable ) shift
 	    target="${1:-}"
 	    assert_target_and_setup
-	    t_zypper --non-interactive --no-refresh lu
+	    t_zypper --non-interactive --no-refresh --quiet lu
 	    ;;
 	--install ) shift
 	    assert_target_name_valid "${1:-}"
@@ -417,7 +421,12 @@ manage_targets() {
 	    remove_target "$@"
 	    ;;
 	--refresh ) shift
-	    for target in "$@"; do
+	    if [[ "${1:-}" == "--all" ]]; then
+		local targets=$(get_targets)
+	    else
+		local targets="$@"
+	    fi
+	    for target in $targets; do
 		assert_target_and_setup
 		t_zypper --non-interactive refresh
 	    done
@@ -455,6 +464,10 @@ upgrade_sdk() {
     sdk-version --latest --go
 }
 
+refresh_sdk() {
+    zypper --non-interactive refresh -f
+}
+
 sdk_status() {
     systemctl --failed
     ERR=$?
@@ -485,8 +498,14 @@ manage_sdk() {
 	--status )
 	    sdk_status
 	    ;;
+	--upgradable ) shift
+	    zypper --non-interactive --no-refresh --quiet lu
+	    ;;
 	--upgrade ) shift
 	    upgrade_sdk "$@"
+	    ;;
+	--refresh )
+	    refresh_sdk
 	    ;;
 	* )
 	    echo "$1 not recognised"
@@ -520,6 +539,10 @@ case "$1" in
 	;;
     --sdk ) shift
 	manage_sdk "$@"
+	;;
+    --refresh-all ) shift
+	manage_targets --refresh --all
+	manage_sdk --refresh
 	;;
     * )
 	echo "$1 not recognised"
