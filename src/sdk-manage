@@ -461,7 +461,8 @@ get_sdk_version() {
 }
 
 upgrade_sdk() {
-    sdk-version --latest --go
+    zypper --non-interactive refresh -f
+    zypper --non-interactive dup
 }
 
 refresh_sdk() {
