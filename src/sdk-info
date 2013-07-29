@@ -37,7 +37,7 @@ cat << EOF
 
   Use "<host key> + F2" to get a console login prompt.
   On Linux the <host key> is usually <right-ctrl>.
-  Virtualbox indicates the <host key> for your installation at the bottome right of this window.
+  Virtualbox indicates the <host key> for your installation at the bottom right of this window.
 
   For more information including ssh connection and root access see:
     https://sailfishos.org/develop-faq.html
