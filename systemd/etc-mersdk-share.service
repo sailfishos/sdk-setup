@@ -21,7 +21,7 @@ EnvironmentFile=-/etc/login.defs.systemd
 ExecStartPre=/bin/mkdir -p /etc/mersdk/share
 # This folder will contain private keys so we need to be 700, 700
 ExecStart=/bin/mount -t vboxsf -orw,exec,uid=${UID_MERSDK},gid=${GID_MERSDK},dev,fmode=700,dmode=700 config /etc/mersdk/share
-TimeoutSec=10
+TimeoutSec=90
 
 [Install]
 WantedBy=basic.target

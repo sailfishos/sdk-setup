@@ -18,7 +18,7 @@ EnvironmentFile=-/etc/mersdk.env.systemd
 EnvironmentFile=-/etc/login.defs.systemd
 ExecStartPre=/bin/mkdir -p /home/mersdk
 ExecStart=/bin/mount -t vboxsf -orw,exec,uid=${UID_MERSDK},gid=${GID_MERSDK},dev,ttl=200,fmode=755,dmode=755 home /home/mersdk
-TimeoutSec=10
+TimeoutSec=90
 
 [Install]
 WantedBy=basic.target
