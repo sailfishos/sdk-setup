@@ -135,9 +135,13 @@ get_device() {
 		[[ $FOUND ]] && break # found - and we're on the next
 				      # <device> so we're done
 		eval local $ATTRIBUTES
+		tagn=0
+		unset tag tag_val
 		;;
 	    mac|index|subnet|ip|sshkeypath )
-		eval device_$TAG_NAME="$CONTENT"
+		# Store nested tags
+		tag[$tagn]=$TAG_NAME
+		tag_val[$((tagn++))]="$CONTENT"
 		;;
 	esac
 	[[ "$name" == "$1" ]] && {
@@ -147,6 +151,11 @@ get_device() {
 	}
     done
     [[ $FOUND ]] || return 1
+    # Set nested tags
+    while [[ $(( --tagn )) -ge 0 ]]; do
+	echo device_${tag[$tagn]}="${tag_val[$tagn]}"
+	eval device_${tag[$tagn]}="${tag_val[$tagn]}"
+    done
     # Set this up as it's useful
     if [[ $device_subnet ]]; then
 	device_ip=$device_subnet.$device_index
