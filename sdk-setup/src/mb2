@@ -192,14 +192,26 @@ ssh_as() {
     ssh -F /etc/ssh/ssh_config.sdk -i $key -l $user $device_ip $@
 }
 
+cd_to_spec_setup_dir() {
+    local setup_dir=$(grep -Po '%setup.*-n.*' $spec | cut -s -f2 -d'/')
+    if [ "$setup_dir" != "" ]; then
+        cd "$setup_dir"
+    fi
+}
+
 run_build() {
     # intended to provide mb build behaviour
     verify_target_dependencies
+
     sed -e '/^%patch/d' $spec > $spec.$$
+
+    local basedir=$(pwd)
+    cd_to_spec_setup_dir
+
     eval sb2 -t $target rpmbuild --build-in-place \
 	$BUILD_DEBUG \
-	--define \"_rpmdir $(pwd)/RPMS \" \
-	--define \"_sourcedir $(pwd)/rpm \" \
+	--define \"_rpmdir $basedir/RPMS \" \
+	--define \"_sourcedir $basedir/rpm \" \
 	--define \"_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm \" \
 	--buildroot=$buildroot \
 	--dobuild \
@@ -207,6 +219,7 @@ run_build() {
 	--dobinary \
 	--docheck \
 	$spec.$$
+    cd $basedir
     rm -f $spec.$$
 }
 
@@ -214,14 +227,17 @@ run_qmake() {
     if [[ $spec ]]; then
 	# This is a good time to verify the target dependencies as per mb
 	verify_target_dependencies
+    local basedir=$(pwd)
+    cd_to_spec_setup_dir
 	eval sb2 -t $target rpmbuild --build-in-place \
 	    --dobuild \
 	    --define \"noecho 1 \" \
-	    --define \"qtc_builddir $(pwd) \" \
+	    --define \"qtc_builddir $basedir \" \
 	    --define \"qtc_make true ignoring make\" \
 	    --define \"qtc_qmake5  %qmake5 $@\" \
 	    --define \"qtc_qmake  %qmake $@\" \
 	    $spec
+    cd $basedir
     else
 	sb2 -t $target qmake "$@"
     fi
@@ -229,14 +245,17 @@ run_qmake() {
 
 run_make() {
     if [[ $spec ]]; then
+    local basedir=$(pwd)
+    cd_to_spec_setup_dir
 	eval sb2 -t $target rpmbuild --build-in-place \
 	    --dobuild \
 	    --define \"noecho 1 \" \
-	    --define \"qtc_builddir $(pwd) \" \
+	    --define \"qtc_builddir $basedir \" \
 	    --define \"qtc_qmake5 true ignoring qmake\" \
 	    --define \"qtc_qmake true ignoring qmake\" \
 	    --define \"qtc_make  make  %{?_smp_mflags} $@\" \
 	    $spec
+    cd $basedir
     else
 	sb2 -t $target make "$@"
     fi		
@@ -244,26 +263,32 @@ run_make() {
 
 run_install() {
     # Install to buildroot which should be rsync'ed to /opt/sdk/$package on device
+    local basedir=$(pwd)
+    cd_to_spec_setup_dir
     eval sb2 -t $target rpmbuild --build-in-place \
 	--define \"noecho 1 \" \
-	--define \"qtc_builddir $(pwd) \" \
-	--define \"_sourcedir $(pwd)/rpm \" \
+	--define \"qtc_builddir $basedir \" \
+	--define \"_sourcedir $basedir/rpm \" \
 	--buildroot=$buildroot \
 	--doinstall \
 	$spec
+    cd $basedir
 }
 
 run_rpm() {
+    local basedir=$(pwd)
+    cd_to_spec_setup_dir
     eval sb2 -t $target rpmbuild --build-in-place \
-	--define \"qtc_builddir $(pwd) \" \
-	--define \"_rpmdir $(pwd)/RPMS \" \
-	--define \"_sourcedir $(pwd)/rpm \" \
+	--define \"qtc_builddir $basedir \" \
+	--define \"_rpmdir $basedir/RPMS \" \
+	--define \"_sourcedir $basedir/rpm \" \
 	--define \"_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm \" \
 	--buildroot=$buildroot \
 	--doinstall \
 	--dobinary \
 	--docheck \
 	$spec
+    cd $basedir
 }
 
 run_deploy() {
@@ -390,6 +415,8 @@ fi
 
 # Now if there is a spec given, make sure it is up-to-date
 if [[ $spec ]]; then
+    # turn 'spec' into an absolute path
+    spec=$(readlink -f "$spec")
     ensure_spec_newer_than_yaml
 fi
 
