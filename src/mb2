@@ -219,7 +219,7 @@ run_make() {
 	    --define \"qtc_builddir $(pwd) \" \
 	    --define \"qtc_qmake5 true ignoring qmake\" \
 	    --define \"qtc_qmake true ignoring qmake\" \
-	    --define \"qtc_make  make  %{?jobs:-j%jobs} $@\" \
+	    --define \"qtc_make  make  %{?_smp_mflags} $@\" \
 	    $spec
     else
 	sb2 -t $target make "$@"
