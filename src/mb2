@@ -126,39 +126,42 @@ read_dom () {
 # This slurps the XML and converts tags like <subnet> to $device_subnet
 # Also sets device_name and device_type from the attributes
 get_device() {
-    local FOUND=
+    local FOUND_DEVICE=
+    local IN_DEVICE=
+    local maintag=
     while read_dom; do
 	case $TAG_NAME in
 	    device )
-		[[ $FOUND ]] && break # found - and we're on the next
-				      # <device> so we're done
+		maintag=$TAG_NAME
 		eval local $ATTRIBUTES
-		tagn=0
-		unset tag tag_val
+		if [[ "$name" == "$1" ]] ; then
+		    FOUND_DEVICE=1
+		    IN_DEVICE=1
+		    device_name="$name"
+		    device_type="$type"
+		else
+		    IN_DEVICE=
+		fi
+		;;
+	    engine )
+		maintag=$TAG_NAME
+		eval local $ATTRIBUTES
 		;;
 	    mac|index|subnet|ip|sshkeypath )
-		# Store nested tags
-		tag[$tagn]=$TAG_NAME
-		tag_val[$((tagn++))]="$CONTENT"
+		# Don't process and store nested tags if we're in
+		# device with wrong name
+		if [[ $maintag == "device" ]] && [[ $IN_DEVICE != 1 ]]; then
+		    continue
+		fi
+		eval ${maintag}_$TAG_NAME="$CONTENT"
 		;;
 	esac
-	[[ "$name" == "$1" ]] && {
-	    FOUND=1
-	    device_name=$name
-	    device_type=$type
-	}
-    done
-    [[ $FOUND ]] || return 1
-    # Set nested tags
-    while [[ $(( --tagn )) -ge 0 ]]; do
-	echo device_${tag[$tagn]}="${tag_val[$tagn]}"
-	eval device_${tag[$tagn]}="${tag_val[$tagn]}"
     done
     # Set this up as it's useful
     if [[ $device_subnet ]]; then
 	device_ip=$device_subnet.$device_index
     fi
-    return 0
+    if [[ $FOUND_DEVICE == 1 ]]; then return 0; else return 1; fi
 }
 
 rsync_as() {
