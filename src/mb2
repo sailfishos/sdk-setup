@@ -171,6 +171,7 @@ rsync_as() {
 ssh_as() {
     local user=$1;shift
     local key="$(dirname $DEVICES_XML)/${device_sshkeypath}/$user"
+    [[ -f $key ]] || fatal "No key for user $user on $device_name given in devices.xml"
     ssh -F /etc/ssh/ssh_config.sdk -i $key -l $user $device_ip $@
 }
 
