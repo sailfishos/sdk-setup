@@ -132,14 +132,14 @@ mkdir -p %{buildroot}/%{_sysconfdir}/mersdk
 
 mkdir -p %{buildroot}/%{_sysconfdir}/ssh/
 mkdir -p %{buildroot}/%{_sysconfdir}/ssh/authorized_keys
-cp ssh-env.conf  %{buildroot}/%{_sysconfdir}/ssh/
-cp sshd_config_engine  %{buildroot}/%{_sysconfdir}/ssh/
+cp etc/ssh-env.conf  %{buildroot}/%{_sysconfdir}/ssh/
+cp etc/sshd_config_engine  %{buildroot}/%{_sysconfdir}/ssh/
 
 mkdir -p %{buildroot}/home/deploy
 chmod 1777 %{buildroot}/home/deploy
 
 # Until login.prefs.systemd is ready
-cp mersdk.env.systemd  %{buildroot}/%{_sysconfdir}/
+cp etc/mersdk.env.systemd  %{buildroot}/%{_sysconfdir}/
 
 # sdk-sb2-config
 mkdir -p %{buildroot}/usr/share/scratchbox2/modes/
@@ -153,7 +153,7 @@ cp src/sdk-manage %{buildroot}%{_bindir}/
 cp src/updateQtCreatorTargets %{buildroot}%{_bindir}/updateQtCreatorTargets
 
 mkdir -p %{buildroot}/%{_sysconfdir}/ssh/
-cp ssh_config.sdk  %{buildroot}/%{_sysconfdir}/ssh/
+cp etc/ssh_config.sdk %{buildroot}/%{_sysconfdir}/ssh/
 
 # sdk-mer-branding
 install -D -m 644 branding/mer-splash.png %{buildroot}%{_datadir}/plymouth/splash.png
@@ -161,7 +161,7 @@ install -D -m 755 branding/splashfontcol %{buildroot}%{_sysconfdir}/sysconfig/sp
 
 # connman-configs-mersdk-emul
 mkdir -p %{buildroot}%{_sysconfdir}/connman
-install -D -m 755  connman_main.conf %{buildroot}%{_sysconfdir}/connman/main.conf
+install -D -m 755 etc/connman_main.conf %{buildroot}%{_sysconfdir}/connman/main.conf
 
 # Make all bindir executable
 chmod 755 %{buildroot}%{_bindir}/*
