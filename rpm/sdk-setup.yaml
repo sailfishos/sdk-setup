@@ -13,7 +13,7 @@ PkgBR:
   - systemd
 Configure: none
 Builder: none
-SetupOptions: -q -n %{name}/%{name}-%{version}
+SetupOptions: -q -n %{name}-%{version}/%{name}
 NoFiles: true
 SubPackages:
   - Name: sdk-chroot
@@ -74,7 +74,7 @@ SubPackages:
       SDK
     Group: System/Base
     Requires:
-      - scratchbox2 = 2.3.90
+      - scratchbox2 >= 2.3.90
     Files:
       - '%{_datadir}/scratchbox2/modes/*'
   - Name: sdk-utils
@@ -86,6 +86,7 @@ SubPackages:
       - rpm-build
       - python-lxml
       - sudo
+      - scratchbox2 >= 2.3.90
     Files:
       - '%{_bindir}/mb'
       - '%{_bindir}/mb2'
@@ -93,6 +94,8 @@ SubPackages:
       - '%{_bindir}/sdk-manage'
       - '%{_bindir}/updateQtCreatorTargets'
       - '%config %{_sysconfdir}/ssh/ssh_config.sdk'
+      - '%config %{_sysconfdir}/bash_completion.d/mb.bash'
+      - '%config %{_sysconfdir}/bash_completion.d/mb2.bash'
   - Name: sdk-mer-branding
     Summary: Mer Branding for the SDK Engine
     AsWholeName: true

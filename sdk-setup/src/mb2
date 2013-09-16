@@ -26,10 +26,18 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
-usage() {
+short_usage() {
     cat <<EOF
 usage: $ME [-t <target>] [-s <specfile>] [-d <device>] [-p <projectdir>]
-           qmake [<args>] | make [<args>] | install [<args>] | rpm [<args>]
+           build <-d> [<args>] | qmake [<args>] | make [<args>] | ssh <args>
+           install [<args>] | rpm [<args>] | deploy <args> | run <args>
+       $ME --help
+EOF
+}
+
+usage() {
+    short_usage
+    cat <<EOF
 
   Executes a subset of build commands in the context of an rpmbuild.
   Typically called from QtCreator to perform qmake/make phases of a project.
@@ -43,6 +51,11 @@ usage: $ME [-t <target>] [-s <specfile>] [-d <device>] [-p <projectdir>]
 
   $ME is aware of spectacle and will update the spec file if there is
   an obvious yaml file which is newer.
+
+  $ME build <-d> [<args>]
+                     : runs rpmbuild for the given spec file in the
+                       given sb2 target. Produces an rpm package.
+                     : can use -s -t -p
 
   $ME qmake [<args>] : runs qmake in the 'build' phase
                        Note that this also verifies target
@@ -63,7 +76,7 @@ usage: $ME [-t <target>] [-s <specfile>] [-d <device>] [-p <projectdir>]
 
   $ME install [<args>] : runs the 'install' phase to install to $buildroot
                      : can use -s -t -p
-  $ME rpm [<args>] : runs the install & rpm-creation phases
+  $ME rpm [<args>]   : runs the install & rpm-creation phases
                      : can use -s -t -p
 
 
@@ -402,6 +415,10 @@ case $1 in
 	    cmd="eval"
 	fi
         ;;
+    *)
+	short_usage
+	exit 1
+	;;
 esac
 
 $cmd "$@"

@@ -53,7 +53,7 @@ Contains the supporting configs for VMs
 %package -n sdk-sb2-config
 Summary:    Mer SDK files to configure sb2
 Group:      System/Base
-Requires:   scratchbox2 = 2.3.90
+Requires:   scratchbox2 >= 2.3.90
 
 %description -n sdk-sb2-config
 Contains the sdk build and install modes used by scratchbox2 in the SDK
@@ -64,6 +64,7 @@ Group:      System/Base
 Requires:   rpm-build
 Requires:   python-lxml
 Requires:   sudo
+Requires:   scratchbox2 >= 2.3.90
 
 %description -n sdk-utils
 Contains some utility scripts to support Mer SDK development
@@ -88,7 +89,7 @@ Provides:   connman-configs
 Connman configs for SDK emulator to ensure session is started
 
 %prep
-%setup -q -n %{name}/%{name}-%{version}
+%setup -q -n %{name}-%{version}/%{name}
 
 # >> setup
 # << setup
@@ -122,7 +123,7 @@ cp --no-dereference systemd/* %{buildroot}/%{_unitdir}/
 cp src/sdk-info %{buildroot}%{_bindir}/
 cp src/sdk-setup-enginelan %{buildroot}%{_bindir}/
 cp src/sdk-shutdown %{buildroot}%{_bindir}/
-cp src/resize-rootfs %{buildroot}%{_bindir}/
+install -D -m 755 src/resize-rootfs %{buildroot}%{_bindir}/resize-rootfs
 # This should really be %%{_unitdir}/default.target but systemd owns that :/
 mkdir -p %{buildroot}/%{_sysconfdir}/systemd/system/
 ln -sf %{_unitdir}/multi-user.target  %{buildroot}/%{_sysconfdir}/systemd/system/default.target
@@ -154,6 +155,8 @@ cp src/updateQtCreatorTargets %{buildroot}%{_bindir}/updateQtCreatorTargets
 
 mkdir -p %{buildroot}/%{_sysconfdir}/ssh/
 cp etc/ssh_config.sdk %{buildroot}/%{_sysconfdir}/ssh/
+install -D -m 644 src/mb.bash %{buildroot}/%{_sysconfdir}/bash_completion.d/mb.bash
+install -D -m 644 src/mb2.bash %{buildroot}/%{_sysconfdir}/bash_completion.d/mb2.bash
 
 # sdk-mer-branding
 install -D -m 644 branding/mer-splash.png %{buildroot}%{_datadir}/plymouth/splash.png
@@ -263,6 +266,8 @@ fi
 %{_bindir}/sdk-manage
 %{_bindir}/updateQtCreatorTargets
 %config %{_sysconfdir}/ssh/ssh_config.sdk
+%config %{_sysconfdir}/bash_completion.d/mb.bash
+%config %{_sysconfdir}/bash_completion.d/mb2.bash
 # >> files sdk-utils
 # << files sdk-utils
 

@@ -23,12 +23,11 @@ _mb_comp()
 	    COMPREPLY=( $(compgen -W "-t -d -v -j -h --target --enable-debug --verbose --jobs --help" -- "${cur}") )
 	    return 0
 	    ;;
-	"$1")
-	    COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
-	    return 0
+	*)
 	    ;;
     esac
 
+    COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
     return 0
 } &&
 complete -F _mb_comp -o default mb
