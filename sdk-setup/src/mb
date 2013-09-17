@@ -121,7 +121,10 @@ EOF
 	error "Source0 or Source: not found from spec. Can not replace the tarball name."
     fi
 
-    sed -i s/setup\ -q.*/setup\ -q\ -n\ $PACKAGE/g ~/temp.spec
+    EXTRA_DIR=
+    [[ -n $(grep setup ~/temp.spec | grep /%{name}) ]] && EXTRA_DIR="/%{name}"
+
+    sed -i s!setup\ -q.*!setup\ -q\ -n\ $PACKAGE$EXTRA_DIR!g ~/temp.spec
 
     echo "rsyncing source..."
     mkdir -p ~/rpmbuild/SOURCES
