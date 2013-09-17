@@ -147,7 +147,7 @@ assert_target_and_setup() {
 
 t_zypper() {
     (
-	sudo -i -u $sdk_user bash -c "cd $SBOX_TARGET_ROOT ; sb2 -t $target -m sdk-install -R zypper $*"
+	sudo -i -u $sdk_user bash -c "sb2 -t $target -m sdk-install -R zypper $*"
     )
 }
 
