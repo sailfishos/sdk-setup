@@ -1,0 +1,19 @@
+#  This file is part of Mer SDK.
+#
+
+[Unit]
+Description=SDK Information
+Documentation=http://wiki.merproject.org/Platform_SDK
+After=systemd-user-sessions.service plymouth-quit-wait.service multi-user.target network.target
+
+[Service]
+Environment=HOME=/root
+WorkingDirectory=/root
+ExecStartPre=-/bin/plymouth quit
+ExecStart=/usr/bin/sdk-info
+StandardInput=tty-force
+StandardOutput=tty
+StandardError=inherit
+
+[Install]
+WantedBy=multi-user.target

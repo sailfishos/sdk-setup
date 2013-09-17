@@ -1,0 +1,13 @@
+#  This file is part of Mer SDK.
+#  It provides support for automatically resizing the root filesystem
+
+[Unit]
+Description=Resize rootfs
+Documentation=http://wiki.merproject.org/Platform_SDK
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/resize-rootfs
+
+[Install]
+WantedBy=basic.target

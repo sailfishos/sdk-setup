@@ -1,0 +1,57 @@
+#!/bin/bash
+
+TIMEOUT=10
+DEV=eth0
+
+echo 3 > /proc/sys/kernel/printk
+
+cnt=0
+echo waiting for IP
+while (( $cnt < $TIMEOUT )); do
+    IP=$(/sbin/ip -4 addr show dev $DEV scope global | grep "inet"  | cut -f6 -d' ' | cut -f1 -d'/' )
+    [[ $IP ]] && break
+    sleep 1;
+    (( cnt++ ))
+    IP="Unknown"
+done
+
+/usr/bin/chvt 1
+/usr/bin/setterm -powersave off -blank 0
+/usr/bin/clear
+
+# This sets the font colour
+if [ -e /etc/sysconfig/splashfontcol ]; then
+   # put 2 echo commands in here to customise as vendor
+   . /etc/sysconfig/splashfontcol
+else
+# last 6 digits of the echos are RRGGBB
+  /bin/echo -en '\033]P7B1BFDB' # fg
+  /bin/echo -en '\033]P0011130' # bg
+fi
+
+/usr/bin/tput cup 25 0
+/usr/bin/ply-image
+
+cat << EOF
+  Welcome to the Mer build machine.
+
+  Use "<host key> + F2" to get a console login prompt.
+  On Linux the <host key> is usually <right-ctrl>.
+  Virtualbox indicates the <host key> for your installation at the bottom right of this window.
+
+  For more information including ssh connection and root access see:
+    https://sailfishos.org/develop-faq.html
+ 
+EOF
+
+
+for src in $(VBoxControl --nologo sharedfolder list | grep -- "- src[0-9]" | cut -f3 -d" ");
+do
+    echo "Adding src workspace $src"
+    mkdir -p /home/$src
+    chown mersdk /home/$src
+    /bin/mount -t vboxsf -orw,exec,uid=$(id -u mersdk),gid=$(id -g mersdk),dev,ttl=200,fmode=755,dmode=755 $src /home/$src
+done
+
+/bin/echo -en '\033]R'
+

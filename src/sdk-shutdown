@@ -1,0 +1,15 @@
+#!/bin/bash
+#
+# Copyright (C) 2012 David Greaves <david.greaves@jollamobile.com>
+# License GPL2+
+#
+# This script is used by QtCreator to shutdown the build VM and emulator
+#
+
+ME=$0
+
+sudo -n /usr/sbin/poweroff && exit
+
+echo "sudo did not work without a passwd for /usr/sbin/shutdown"
+echo "$ME cannot run"
+exit 1

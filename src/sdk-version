@@ -1,0 +1,186 @@
+#!/bin/bash
+
+# Report and set SDK repo versions for Mer Core and SDK
+
+usage()
+{
+    cat <<EOF
+    usage: $1 [--latest | --next] [--core <release>] [--sdk <release>] [-h|--help]
+
+     By default reports the current versions from the repos
+
+     Alternatively updates the zypper repos to point to the "latest",
+     "next" or specified Mer / SDK releases. It does not run zypper
+     ref or zypper up by default (use --go for that).
+
+     --core <release> : Use Mer Core <release>
+                        eg: --core 0.20120517.1
+                        <release> can be "next" or "latest" from
+                        http://releases.merproject.org/releases/{latest,next}-release
+
+     --sdk  <release> : Use SDK/Tools <release>
+                        eg: --sdk 0.5.1
+                        <release> can be "next" or "latest" from
+                        http://repo.merproject.org/releases/mer-tools/latest-release
+
+     --latest : short for: --sdk latest --core latest
+
+     --next : short for: --sdk next --core next 
+
+     --go : actually run the zypper upgrade
+
+EOF
+    return 0
+}
+
+backup() {
+    [ -f $1 ] && mv $1 $1$2
+}
+
+update_repos() {
+# This handles the repo rename from mer-tools-i486 to mer-tools
+# around 6.0.2
+    [[ -e /etc/zypp/repos.d/mer-tools-i486.repo ]] && {
+	echo "Moving mer-tools-i486.repo to mer-tools.repo"
+	mv /etc/zypp/repos.d/mer-tools-i486.repo /etc/zypp/repos.d/mer-tools.repo
+    }
+
+    backup /etc/zypp/repos.d/mer-tools.repo -pre-$CORE
+
+    cat <<EOF > /etc/zypp/repos.d/mer-tools.repo
+[mer-tools-i486]
+name=mer-tools-i486
+failovermethod=priority
+baseurl=http://repo.merproject.org/releases/mer-tools/$SDK/builds/i486/packages/
+gpgcheck=0
+enabled=1
+
+[mer-tools-i486-debuginfo]
+name=mer-tools-i486-debuginfo
+failovermethod=priority
+baseurl=http://repo.merproject.org/releases/mer-tools/$SDK/builds/i486/debug
+gpgcheck=0
+enabled=0
+EOF
+
+    backup /etc/zypp/repos.d/mer-core.repo -pre-$CORE
+    cat <<EOF > /etc/zypp/repos.d/mer-core.repo 
+[mer-core]
+name=mer-core
+failovermethod=priority
+baseurl=http://releases.merproject.org/releases/$CORE/builds/i486/packages
+gpgcheck=0
+enabled=1
+
+[mer-core-debuginfo]
+name=mer-core-debuginfo
+failovermethod=priority
+baseurl=http://releases.merproject.org/releases/$CORE/builds/i486/debug
+gpgcheck=0
+enabled=0
+EOF
+
+    backup /etc/zypp/repos.d/mer-cross-tools.repo -pre-$CORE
+    cat <<EOF > /etc/zypp/repos.d/mer-cross-tools.repo
+[mer-cross-tools]
+name=mer-cross-tools
+failovermethod=priority
+baseurl=http://releases.merproject.org/releases/$CORE/builds/i486/cross/
+gpgcheck=0
+enabled=1
+
+[mer-cross-tools-debuginfo]
+name=mer-cross-tools-debuginfo
+failovermethod=priority
+baseurl=http://releases.merproject.org/releases/$CORE/builds/i486/debug
+gpgcheck=0
+enabled=0
+EOF
+
+    [ -f /etc/zypp/repos.d/mer-tools-testing-i486.repo ] && {
+	cat <<EOF
+You have a repo for the Mer:Tools:Testing project.
+This is very volatile and could lead to breakage in your SDK.
+You should remove it unless you know you need it. Run:
+   sudo rm /etc/zypp/repos.d/mer-tools-testing-i486.repo
+EOF
+    }
+}
+
+report_version() {
+    cat <<EOF
+Core repos point at version: $CORE
+Tools repos point at version: $SDK
+EOF
+}
+
+do_update() {
+    if [[ $INSTALL ]]; then
+	echo "Running update"
+	sudo zypper --non-interactive ref
+	sudo zypper --non-interactive up
+    else
+	cat <<EOF
+Now run:
+  sudo zypper ref
+  sudo zypper up
+EOF
+    fi
+}
+
+# Main
+if [[ $EUID -ne 0 ]]; then
+    exec sudo $0 "$@"
+    echo "$0 must be run as root and sudo failed; exiting"
+    exit 1
+fi
+
+# Establish current version
+CORE=$(grep baseurl.*packages /etc/zypp/repos.d/mer-core.repo | cut -f5 -d/)
+SDK=$(grep baseurl.*packages /etc/zypp/repos.d/mer-tools.repo | cut -f6 -d/)
+INTERACT=""
+
+while [[ $1 ]] ; do
+    case $1 in
+	--core )   UPDATE=1
+	    case $2 in
+		next | latest)
+		CORE=$(curl -Ss http://releases.merproject.org/releases/${2}-release) ;;
+		*)   CORE=$2 ;;
+	    esac
+	    shift ;;
+	--sdk )    UPDATE=1
+	    case $2 in
+		next | latest)
+		SDK=$(curl -Ss http://repo.merproject.org/releases/mer-tools/${2}-release) ;;
+		*)   SDK=$2 ;;
+	    esac
+	    shift ;;
+	--next | --latest ) UPDATE=1; PRE=${1#--}
+	    CORE=$(curl -m 5 -Ss http://releases.merproject.org/releases/$PRE-release)
+	    CORE_STATUS=$?
+	    SDK=$(curl -m 5 -Ss http://repo.merproject.org/releases/mer-tools/$PRE-release)
+	    SDK_STATUS=$?
+	    CORE_LEN=$( echo $CORE | wc -c )
+	    SDK_LEN=$( echo $CORE | wc -c )
+	    if [ \( $CORE_STATUS -ne 0 \) -o \( $SDK_STATUS -ne 0 \) -o \( $CORE_LEN -lt 5 \) -o \( $CORE_LEN -gt 20 \) -o \( $SDK_LEN -lt 3 \) -o \( $SDK_LEN -gt 20 \) ]; then
+		echo "couldn't fetch $PRE release version, aborting"
+		exit 2
+	    fi
+	    ;;
+	--go )   INSTALL=1;;
+	*-h* )
+	    usage
+	    exit 1 ;;
+    esac
+    shift
+done
+
+if [[ $UPDATE || $INSTALL ]]; then
+    update_repos
+    report_version
+    do_update
+else
+    report_version
+fi
+
