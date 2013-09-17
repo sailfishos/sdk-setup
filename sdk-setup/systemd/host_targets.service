@@ -1,0 +1,24 @@
+[Unit]
+Description=Targets for QtCreator 
+
+#[Mount]
+#What=targets
+#Where=/host_targets
+#Type=vboxsf
+#EnvironmentFile=-/etc/mersdk.env.systemd
+#EnvironmentFile=-/etc/login.defs.systemd
+#Options=rw,exec,uid=$UID_MERSDK,gid=$GID_MERSDK,dev,fmode=555,dmode=555
+#DirectoryMode=755
+#TimeoutSec=5
+
+[Service]
+Type=oneshot
+WorkingDirectory=/
+EnvironmentFile=-/etc/mersdk.env.systemd
+EnvironmentFile=-/etc/login.defs.systemd
+ExecStartPre=/bin/mkdir -p /host_targets
+ExecStart=/bin/mount -t vboxsf -orw,exec,uid=${UID_MERSDK},gid=${GID_MERSDK},dev,fmode=755,dmode=755 targets /host_targets
+TimeoutSec=90
+
+[Install]
+WantedBy=basic.target

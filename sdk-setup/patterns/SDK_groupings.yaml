@@ -1,0 +1,166 @@
+---
+Description: Mer image creation
+Name: Mer-image-creation
+Packages:
+    - mic
+    - mer-kickstarter
+    - psmisc
+    - qemu-usermode-static
+    - repomd-pattern-builder
+Summary: Mer image creation
+...
+---
+Description: Mer development tools
+Name: Mer-development-tools
+Packages:
+    - gcc
+    - gcc-c++
+    - make
+    - gdb
+    - binutils
+    - automake
+    - git
+    - patch
+Summary: Mer development tools
+...
+---
+Description: Mer debugging tools
+Name: Mer-debug-tools
+Packages:
+    - powertop
+    - gdb
+    - oprofile
+    - valgrind
+    - swaplogger
+    - xresponse
+    - functracer
+    - ltrace
+    - sp-smaps
+    - sp-rtrace
+    - sp-memusage
+Summary: Mer debugging tools
+...
+---
+Description: Mer testing tools
+Name: Mer-testing-tools
+Packages:
+    - eat-host
+    - testrunner-lite
+    - qttas-server
+Summary: Mer testing tools
+...
+---
+Description: Mer OBS development
+Name: Mer-OBS-development
+Packages:
+    - osc
+    - spectacle
+    - build
+    - bsdtar
+Summary: Mer OBS development
+...
+---
+Description: Mer python development
+Name: Mer-python-development
+Packages:
+    - python-devel
+    - swig
+Summary: Mer python development
+...
+---
+Description: Mer ruby development
+Name: Mer-ruby-development
+Packages:
+    - ruby
+    - ruby19-devel
+    - rubygem-gem2rpm
+Summary: Mer python development
+...
+---
+Description: Mer kernel development
+Name: Mer-kernel-development
+Packages:
+    - kernel-headers
+Summary: Mer kernel development
+...
+---
+Description: Mer Qt4 development
+Name: Mer-Qt4-development
+Packages:
+    - libqt-devel
+    - qt-devel-tools
+    - qt-designer
+    - qt-mobility-devel
+Summary: Mer Qt4 development
+...
+---
+Description: Mer Qt5 development
+Name: Mer-Qt5-development
+Packages:
+    - qtcreator
+Summary: Mer Qt5 development
+...
+---
+Description: Mer Device tools
+Name: Mer-device-tools
+Packages:
+    - openssh
+    - eat-device
+Summary: Mer tools typically used on a device
+...
+# SB2 for various architectures
+---
+Description: Mer SB2 armv6l
+Name: Mer-SB2-armv6l
+Packages:
+    - sdk-sb2-config
+    - qemu-usermode
+    - cross-armv6l-gcc
+    - cross-armv6l-binutils
+    - mpc
+Summary: Mer SB2 armv6l
+...
+---
+Description: Mer SB2 armv7l
+Name: Mer-SB2-armv7l
+Packages:
+    - sdk-sb2-config
+    - qemu-usermode
+    - cross-armv7l-gcc
+    - cross-armv7l-binutils
+    - mpc
+Summary: Mer SB2 armv7l
+...
+---
+Description: Mer SB2 armv7hl
+Name: Mer-SB2-armv7hl
+Packages:
+    - sdk-sb2-config
+    - qemu-usermode
+    - cross-armv7hl-gcc
+    - cross-armv7hl-binutils
+    - mpc
+Summary: Mer SB2 armv7hl
+...
+---
+Description: Mer SB2 armv7tnhl
+Name: Mer-SB2-armv7tnhl
+Packages:
+    - sdk-sb2-config
+    - qemu-usermode
+    - cross-armv7tnhl-gcc
+    - cross-armv7tnhl-binutils
+    - mpc
+Summary: Mer SB2 armv7tnhl
+...
+---
+Description: Mer SB2 mipsel
+Name: Mer-SB2-mipsel
+Packages:
+    - sdk-sb2-config
+    - qemu-usermode
+    - cross-mipsel-gcc
+    - cross-mipsel-binutils
+    - mpc
+Summary: Mer SB2 mipsel
+...

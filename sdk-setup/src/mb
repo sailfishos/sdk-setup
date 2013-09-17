@@ -1,0 +1,180 @@
+#!/bin/bash
+# Copyright (C) 2012 Jolla Ltd.
+# Contact: Robin Burchell <robin.burchell@jollamobile.com>
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#
+# - Redistributions of source code must retain the above copyright
+#   notice, this list of conditions and the following disclaimer.
+# - Redistributions in binary form must reproduce the above copyright
+#   notice, this list of conditions and the following disclaimer in
+#   the documentation and/or other materials provided with the
+#   distribution.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+# ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+# LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+# POSSIBILITY OF SUCH DAMAGE.
+
+function error() {
+    echo "ERROR: $*"
+    exit 1
+}
+
+clean() {
+    SPEC=$1
+
+    if [[ ! $SPEC ]]; then
+	error "path to specfile must be given"
+    fi
+
+    if [ "$SPEC" == "--help" ]; then
+	echo "mb clean /path/to/spec"
+	echo " removes all traces of the build tree, and copies source over from scratch"
+	exit 0
+    fi
+    
+    PACKAGE=$(grep Name: "$SPEC" | cut -b6- | tr -d " ")
+    echo "Cleaning $PACKAGE ($SPEC)"
+    rm -rv ~/rpmbuild/BUILD/$PACKAGE
+}
+
+build() {
+    TARGET=""
+    VERBOSE=""
+
+    while [[ $1 ]]; do
+	case "$1" in
+            "-t" | "--target")
+		TARGET="$2"
+		shift
+		;;
+            "-d" | "--enable-debug")
+		ENABLE_DEBUG=1
+		;;
+            "-v" | "--verbose")
+		VERBOSE=1
+		;;
+            "-j" | "--jobs")
+                JOBS="$2"
+                shift
+                ;;
+            "-h" | "--help")
+                cat <<EOF
+mb build -t sb2_targetname /path/to/spec
+ does an incremental build for the given sb2_targetname on a given specfile, with the source taken from the current working directory
+
+ If you want debugsource and debuginfo packages, pass -d or --enable-debug
+
+ If you want to customise the number of cores used for building, pass -j or --jobs and the number of jobs you want to use.
+EOF
+                exit 0
+                ;;
+            *)
+		if [[ "$1" =~ ^- ]] ; then
+                    error "Unknown option"
+		else
+                    SPEC=$1
+		fi
+		;;
+	esac
+	shift
+    done
+
+    if [[ ! $TARGET ]]; then
+	error "you must specify a sb2 target (-t) to build against"
+    fi
+
+    if [[ ! $SPEC ]]; then
+	error "path to specfile must be given"
+    fi
+
+    if [[ ! -e $SPEC ]]; then
+	error "Given spec files path $SPEC doesn't exist."
+    fi
+    
+    echo "Building $SPEC for $TARGET"
+    PACKAGE=$(grep Name: "$SPEC" | cut -b6- | tr -d " \t")
+
+    echo "Checking dependencies..."
+    # Note rpm-build is needed in sb2 target as well as it isn't fully accelerated with sb2 yet
+    grep --color=never BuildRequires "$SPEC" | sed -e '/^#.*$/d' | gawk -F: '{ print $2 }' | tr ',' ' ' | xargs sb2 -t "$TARGET" -m sdk-install -R zypper in rpm-build
+
+    echo "Setting up temporary specfile for $PACKAGE from $SPEC"
+    cp $SPEC ~/temp.spec
+
+    if [[ "$(grep Source0 ~/temp.spec &> /dev/null;echo $?)" -eq 0 ]]; then
+	sed -i s/Source0.*/Source0:$PACKAGE.tar.bz2/g ~/temp.spec
+    elif [[ "$(grep Source: ~/temp.spec &> /dev/null;echo $?)" -eq 0 ]]; then
+	sed -i s/Source:.*/Source0:$PACKAGE.tar.bz2/g ~/temp.spec
+    else
+	error "Source0 or Source: not found from spec. Can not replace the tarball name."
+    fi
+
+    sed -i s/setup\ -q.*/setup\ -q\ -n\ $PACKAGE/g ~/temp.spec
+
+    echo "rsyncing source..."
+    mkdir -p ~/rpmbuild/SOURCES
+    mkdir -p ~/rpmbuild/BUILD
+
+    # workaround for RPM insisting we have a "tarball"
+    echo "this is more than 13 bytes" > ~/rpmbuild/SOURCES/$PACKAGE.tar.bz2
+
+    RSYNC_OPTIONS=""
+    if [ -n "$VERBOSE" ]; then
+        RSYNC_OPTIONS="-v"
+    fi
+
+    rsync --exclude=".git" $RSYNC_OPTIONS -rlt . ~/rpmbuild/BUILD/$PACKAGE
+    # TODO: read this from spec, not all packages have extra Sources
+    cp ./${PKGDIR:-rpm}/* ~/rpmbuild/SOURCES
+
+    if [[ ! $JOBS ]]; then
+        JOBS=$(grep "model n" /proc/cpuinfo | wc -l)
+
+        if [ $? -ne 0 ]; then
+          echo "$0: can't detect CPU count"
+          JOBS=1
+        fi
+    fi
+
+    echo "run rpmbuild with $JOBS jobs"
+    # TODO: debug_package define disables debugsource/debuginfo packages, which
+    # is incredibly fast, but user may sometimes want them...
+    if [ "$ENABLE_DEBUG" == 1 ]; then
+	sb2 -t "$TARGET" rpmbuild --skip-prep -bb ~/temp.spec --define "jobs $JOBS"
+    else
+	sb2 -t "$TARGET" rpmbuild --skip-prep -bb ~/temp.spec --define 'debug_package %{nil}' --define "jobs $JOBS"
+    fi
+
+    rm ~/temp.spec
+}
+
+
+case "$1" in
+    "build")
+        shift
+	build "$@"
+        ;;
+    "clean")
+        shift
+        clean "$@"
+        ;;
+    *)
+        ME=$(basename $0)
+        echo "$ME: quickly build stuff"
+        echo "  $ME build - quickly build a package from the specified spec file from the current source tree"
+        echo "  $ME clean - clean a fast build tree (equivilent of 'make clean)"
+        ;;
+esac
+

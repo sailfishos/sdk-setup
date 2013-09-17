@@ -1,0 +1,4 @@
+# Save to /etc/sysconfig/splashfontcol
+# Used by sdk-info
+/bin/echo -en '\033]P7B1BFDB'
+/bin/echo -en '\033]P0011130'

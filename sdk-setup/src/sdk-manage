@@ -1,0 +1,552 @@
+#!/bin/bash
+
+# This is a helper script for the Mer SDK to manage sb2 target and
+# toolchain installation
+
+sdk_user=mersdk
+mer_targets=/srv/mer/targets
+host_targets=/host_targets
+sbox2dir=/home/$sdk_user/.scratchbox2
+target_xml=${host_targets}/targets.xml
+
+usage()
+{
+    cat <<EOF
+    usage (keep the arguments order):
+
+           $0 --toolchain --list
+           $0 --toolchain --install <arch>
+           $0 --toolchain --remove <arch>
+
+           $0 --target --list
+           $0 --target --upgradable <name>
+           $0 --target --install <name> <toolchain> <url>
+           $0 --target --remove  <name>
+           $0 --target --refresh [--all | <name> [<name>...]]
+           $0 --target --update <name>
+           $0 --target --sync  <name>
+           $0 --target --import  <name>
+
+           $0 --devel --list <target> [<search string>]
+           $0 --devel --install <target> <devel package list>
+           $0 --devel --remove <target> <devel package list>
+
+           $0 --sdk --version
+           $0 --sdk --refresh
+           $0 --sdk --upgradable
+           $0 --sdk --upgrade
+           $0 --sdk --status
+
+           $0 --refresh-all
+
+       This is the Mer SDK VM manager
+       For information see https://wiki.merproject.org/wiki/Platform_SDK_on_VirtualBox
+       It is primarily intended for use by the SDK web interface.
+
+
+EOF
+    [[ ${1:-} == "--exit" ]] && { exit 1; }
+    return 0
+}
+
+if [[ $EUID -ne 0 ]]; then
+    exec sudo $0 "$@"
+    echo "$0 must be run as root and sudo failed; exiting"
+    exit 1
+fi
+
+# From now on, exit if variables not set
+set -u
+
+# Make sure normal users can use any dirs we make
+umask 022
+
+
+################################################################'
+# toolchain
+
+# Our toolchains are available through zypper as Mer-SB2-* patterns
+
+get_toolchains() {
+    zypper --no-refresh --non-interactive search -t pattern Mer-SB2-* | grep Mer-SB2 | while IFS='| ' read installed pkg dummy; do
+	echo "${pkg},${installed}"
+    done
+    return ${PIPESTATUS[0]}
+}
+
+ensure_installed() {
+    get_toolchains | egrep -s "^$1,i$" >/dev/null
+}
+
+ensure_installable() {
+    get_toolchains | egrep -s "^$1,$" >/dev/null
+}
+
+install_toolchain() {
+    pkg=$1
+    if ensure_installable $pkg; then
+	zypper --non-interactive install -t pattern $pkg
+	return $?
+    else
+	echo "Toolchain $pkg doesn't exist or is already installed- can not install."
+	exit 2
+    fi
+}
+
+remove_toolchain() {
+    pkg=$1
+    if ensure_installed $pkg; then
+	zypper --no-refresh --non-interactive remove -t pattern $pkg
+	return $?
+    else
+	echo "Toolchain $pkg is not installed - can not remove."
+	exit 2
+    fi
+}
+
+manage_toolchains() {
+    if ! [[ $1 ]]; then
+	usage --exit
+    fi
+
+    case "$1" in
+	--list )
+	    get_toolchains
+	    return $?
+	    ;;
+	--install ) shift
+	    install_toolchain "$@"
+	    return $?
+	    ;;
+	--remove ) shift
+	    remove_toolchain "$@"
+	    return $?
+	    ;;
+	* )
+	    echo "$1 not recognised"
+	    usage --exit
+	    ;;
+    esac
+}
+
+################################################################'
+# Devel packages
+
+# Our devel packages are available through zypper as -devel packages :)
+
+assert_target_and_setup() {
+    assert_target_name_valid "$target"
+    if ! [[ -f $sbox2dir/$target/sb2.config ]]; then
+	echo "Target $target is not a valid Scratchbox2 target"
+	exit 1
+    fi
+    set +u
+    . $sbox2dir/$target/sb2.config
+    set -u
+}
+
+t_zypper() {
+    (
+	sudo -i -u $sdk_user bash -c "cd $SBOX_TARGET_ROOT ; sb2 -t $target -m sdk-install -R zypper $*"
+    )
+}
+
+get_develpkgs() {
+    search=${1:-}
+    t_zypper --non-interactive --no-refresh search -- "$search" 2>&1 | sed '0,/---------/d' | while IFS='| ' read installed pkg dummy; do
+	echo "${pkg},${installed}"
+    done
+    return ${PIPESTATUS[0]}
+}
+
+manage_develpkgs() {
+    if ! [[ {$1:-} ]]; then
+	usage --exit
+    fi
+
+    case "$1" in
+	--list ) shift
+	    target=${1:-}
+	    search=${2:-}
+	    assert_target_and_setup
+	    get_develpkgs $search
+	    return $?
+	    ;;
+	--install ) shift
+	    target=${1:-}
+	    assert_target_and_setup
+	    shift
+	    t_zypper --non-interactive --no-refresh install "$@"
+	    synchronise_target $target
+	    return $?
+	    ;;
+	--remove ) shift
+	    target=${1:-}
+	    assert_target_and_setup
+	    shift
+	    t_zypper --non-interactive --no-refresh remove "$@"
+	    synchronise_target $target
+	    return $?
+	    ;;
+	* )
+	    echo "$1 not recognised"
+	    usage --exit
+	    ;;
+    esac
+}
+
+################################################################
+# Targets
+
+get_targets() {
+    tgts=$(sudo -i -u $sdk_user sb2-config -l 2>&1)
+    if ! grep 'sb2-init' <<< "$tgts" >/dev/null ; then
+	echo "$tgts"
+    fi
+}
+
+assert_target_name_valid() {
+    if [[ $# -lt 1 ]] || [[ -z $1 ]]; then
+      echo "Target name missing."
+      exit 1
+    fi
+
+    pat='^[-[:alnum:]_.]*$'
+    if [[ $1 ]] && [[ $1 =~ $pat ]] ; then
+      return
+    fi
+
+    echo "Target name '$1' is not a valid Scratchbox2 target name."
+    exit 1
+}
+
+synchronise_target() {
+    # This is now a minimal set of files to sync
+    if ! [ -d $mer_targets/$1 ]; then
+	echo No target called $1
+    fi
+    echo "Synchronising target to host"
+    # The filter=". -" means to read filters from stdin (the <<EOF)
+    rsync -a --no-devices --no-specials \
+          --delete --ignore-errors \
+	  --prune-empty-dirs  --copy-links \
+	  --filter=". -" \
+	  $mer_targets/$1/. $host_targets/$1/. <<EOF
+# Ensure all dirs are copied (--prune-empty-dirs will clean up)
++ */
+# We want this for QtCreator to determine the architecture
++ /usr/lib/libQt*Core.so
+# Don't need any other .so files
+- *.so
+# All the import, include and qt* shares
++ /usr/lib/qt*/imports**
+# Qt5 qml imports are here
++ /usr/lib/qt5/qml**
++ /usr/include**
++ /usr/share/qt**
+# and nothing else
+- *
+EOF
+    # We need /usr/bin/stopCreatorSegfaulting for Creator's happiness
+    mkdir -p $host_targets/$1/usr/bin
+    touch $host_targets/$1/usr/bin/stopCreatorSegfaulting
+    # For Qt5, QtCreator needs to see this dir or it thinks Qt version is not properly installed
+    mkdir -p $host_targets/$1/usr/lib/qt5/bin/
+
+    echo "Sync completed"
+}
+
+import_target() {
+    # This could be minimised in the future if sf is not fixed
+    # Ignore errors as we sometimes have dangling symlinks and
+    # still want to keep clean
+    if ! [ -d $host_targets/$1 ]; then
+	echo No host target called $1
+    fi
+    rsync -a --no-devices --no-specials \
+          --delete --ignore-errors \
+	  $host_targets/$1/ $mer_targets/$1
+}
+
+# create a unique device-id for the target
+target_uuidgen()
+{
+    local mytarget=$1
+
+    if [[ -z "$mytarget" ]]; then
+	echo "NOTICE: target_uuidgen: empty target name given"
+	return 0
+    fi
+
+    echo "target_uuidgen: generating a unique id for $mytarget target"
+    sudo -i -u $sdk_user bash -c "sb2 -t $mytarget -m sdk-install -R rm -f /var/lib/dbus/machine-id"
+    sudo -i -u $sdk_user bash -c "sb2 -t $mytarget -m sdk-install -R dbus-uuidgen --ensure"
+}
+
+# Download and install a rootfs
+install_target() {
+    skip_toolchain_check=0
+    if [[ "$1" == "--jfdi" ]]; then
+	# Sometimes you want to install without checking the toolchain - jfdi
+	skip_toolchain_check=1; shift;
+    fi
+    target=$1
+    toolchain=$2
+    url=$3 #FIXME: check url validity
+    if ! [[ $skip_toolchain_check ]]; then
+	echo Making sure the right toolchain exists
+	if ! ensure_installed $toolchain; then
+	    echo "Installing required toolchain: $toolchain"
+	    install_toolchain $toolchain
+	fi
+    fi
+
+    local_file=""
+    if [[ $url = file\:\/\/\/* ]]; then
+	local_file=${url//file\:\/\//}
+    else
+	echo Downloading target
+	local_file=$mer_targets/$target.tar.bz2
+	echo "curl $url > $local_file"
+	curl "$url" > $local_file
+	curl_status=$?
+	if [ \( $curl_status -ne 0 \) -o \( $(stat -c %s "$local_file") -lt 10000 \) ]; then #hash check anybody?
+	    echo "Download failed"
+	    rm -f $local_file
+	    return 3
+	fi
+    fi
+
+    # Virtualbox shared folders don't work too well at the moment
+    # Unpack targets to a private area within the VM
+    rm -rf $mer_targets/$target
+    mkdir -p $mer_targets/$target
+    mkdir -p $host_targets/$target
+
+    cd $mer_targets/$target
+
+    echo
+    echo Unpacking target
+    tar xf "$local_file"
+
+    if [ $? -ne 0 ]; then
+	if [ "$( df --sync / | tr -s ' ' | tail -n 1 | cut -d ' ' -f 4 )" -lt 10000 ]; then
+	    echo "Not enough disk space to unpack target image"
+	else
+	    echo "Couldn't unpack target image"
+	fi
+	rm -rf $mer_targets/$target
+
+	return 4
+    fi
+
+    chown -R $sdk_user:$sdk_user $mer_targets/$target
+
+    synchronise_target $target
+
+    [ $? -ne 0 ] && echo "Rsync didn't exactly run as intended, expect problems."
+
+    [[ ! $local_file ]] && rm "$mer_targets/$target.tar.bz2"
+
+    echo Setting up SB2
+
+    case $toolchain in
+	*-arm*)
+	    architecture=$(echo $toolchain | tr '-' '\n' | tail -n 1)
+	    transparency="-c /usr/bin/qemu-arm-dynamic"
+	    compiler="/opt/cross/bin/$architecture-meego-linux-gnueabi-gcc"
+	    toolsdir="-t /"
+	    ;;
+	*-mipsel)
+	    transparency="-c /usr/bin/qemu-mipsel-dynamic"
+	    compiler="/opt/cross/bin/mipsel-meego-linux-gnu-gcc"
+	    toolsdir="-t /"
+	    ;;
+	*-i486*)
+	    transparency=""
+	    compiler="/opt/cross/bin/i486-meego-linux-gnu-gcc"
+	    toolsdir=""
+	    ;;
+    esac
+
+    sudo -i -u $sdk_user bash -c "cd $PWD; sb2-init -L \"--sysroot=/\" -C \"--sysroot=/\" $transparency -m sdk-build -n -N $toolsdir $target $compiler"
+
+    # make sure the created target gets a unique id
+    target_uuidgen $target
+
+    assert_target_and_setup
+
+    echo Notifying QtCreator of new target
+    sudo -i -u $sdk_user updateQtCreatorTargets --name $target --target-xml $target_xml
+
+    echo Target $target now setup
+}
+
+remove_target() {
+    target=$1
+    if [ -d $sbox2dir/$target ]; then
+	rm -r $sbox2dir/$target
+	rm -rf $mer_targets/$target
+	rm -rf $host_targets/$target
+    else
+	echo "Target not installed - can't delete"
+	exit 2
+    fi
+
+    echo Notifying QtCreator of removed target
+    sudo -i -u $sdk_user updateQtCreatorTargets --delete --name $target --target-xml $target_xml
+}
+
+
+manage_targets() {
+    if ! [[ ${1:-} ]]; then
+	usage --exit
+    fi
+
+    case "${1:-}" in
+	--list )
+	    get_targets
+	    ;;
+	--upgradable ) shift
+	    target="${1:-}"
+	    assert_target_and_setup
+	    t_zypper --non-interactive --no-refresh --quiet lu
+	    ;;
+	--install ) shift
+	    assert_target_name_valid "${1:-}"
+	    install_target "$@"
+	    ;;
+	--remove ) shift
+	    assert_target_name_valid "${1:-}"
+	    remove_target "$@"
+	    ;;
+	--refresh ) shift
+	    if [[ "${1:-}" == "--all" ]]; then
+		local targets=$(get_targets)
+	    else
+		local targets="$@"
+	    fi
+	    for target in $targets; do
+		assert_target_and_setup
+		t_zypper --non-interactive refresh
+	    done
+	    ;;
+	--update ) shift
+	    target="${1:-}"
+	    assert_target_and_setup
+	    t_zypper --non-interactive dup
+	    ;;
+	--sync ) shift
+	    target="${1:-}"
+	    assert_target_name_valid "$target"
+	    synchronise_target "$@"
+	    sudo -i -u $sdk_user updateQtCreatorTargets --name $target --target-xml $target_xml
+	    ;;
+	--import ) shift
+	    assert_target_name_valid "${1:-}"
+	    import_target "$@"
+	    ;;
+	* )
+	    echo "$1 not recognised"
+	    usage --exit
+	    ;;
+    esac
+}
+
+################################################################
+# SDK
+
+get_sdk_version() {
+    echo "Version not available"
+}
+
+upgrade_sdk() {
+    zypper --non-interactive refresh -f
+    zypper --non-interactive dup
+}
+
+refresh_sdk() {
+    zypper --non-interactive refresh -f
+}
+
+sdk_status() {
+    systemctl --failed
+    ERR=$?
+    if sudo VBoxControl -nologo sharedfolder list | grep ' home$' > /dev/null 2>&1 ; then
+	echo "'home' shared folder is missing"
+	ERR=1
+    fi
+    if sudo VBoxControl -nologo sharedfolder list | grep ' config$' > /dev/null 2>&1 ; then
+	echo "'config' shared folder is missing"
+	ERR=1
+    fi
+    if sudo VBoxControl -nologo sharedfolder list | grep ' targets$' > /dev/null 2>&1 ; then
+	echo "'targets' shared folder is missing"
+	ERR=1
+    fi
+    exit $ERR
+}
+
+manage_sdk() {
+    if ! [[ ${1:-} ]]; then
+	usage --exit
+    fi
+
+    case "$1" in
+	--version )
+	    get_sdk_version
+	    ;;
+	--status )
+	    sdk_status
+	    ;;
+	--upgradable ) shift
+	    zypper --non-interactive --no-refresh --quiet lu
+	    ;;
+	--upgrade ) shift
+	    upgrade_sdk "$@"
+	    ;;
+	--refresh )
+	    refresh_sdk
+	    ;;
+	* )
+	    echo "$1 not recognised"
+	    usage --exit
+	    ;;
+    esac
+}
+
+
+################################################################
+# utility
+
+################
+
+################################################################
+# Main
+
+if ! [[ ${1:-} ]]; then
+    usage --exit
+fi
+
+case "$1" in
+    --toolchain ) shift
+	manage_toolchains "$@"
+	;;
+    --target ) shift
+	manage_targets "$@"
+	;;
+    --devel ) shift
+	manage_develpkgs "$@"
+	;;
+    --sdk ) shift
+	manage_sdk "$@"
+	;;
+    --refresh-all ) shift
+	manage_targets --refresh --all
+	manage_sdk --refresh
+	;;
+    * )
+	echo "$1 not recognised"
+	usage --exit
+	;;
+esac

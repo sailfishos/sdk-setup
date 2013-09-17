@@ -1,0 +1,71 @@
+#!/bin/bash
+
+# This script sets up the virtualbox internal vlan used to communicate with the Emulators
+#
+# It is run by systemd once the configuration shared folder is mounted and it then sets
+# up the ethernet for connman; connman will immediately reconfigure the 2nd adapter
+DEVICES_XML=/etc/mersdk/share/devices.xml
+
+read_dom () {
+    local IFS=\>
+    read -d \< ENTITY CONTENT
+    local RET=$?
+    TAG_NAME=${ENTITY%% *}
+    ATTRIBUTES=${ENTITY#* }
+    return $RET
+}
+
+get_engine() {
+    FOUND=
+    while read_dom; do
+	case $TAG_NAME in
+	    device )
+		ENGINE=
+		;;
+	    engine )
+		ENGINE=1
+		eval local $ATTRIBUTES
+		NAME=$name
+		;;
+	    subnet )
+		if [[ $ENGINE ]]; then
+		    eval $TAG_NAME="$CONTENT"
+		fi
+		;;
+	esac
+    done
+    if [[ $subnet ]]; then
+	echo Wil set IP=$subnet.254 for $NAME
+	return 0
+    fi
+    return 1
+}
+
+if get_engine < $DEVICES_XML ; then
+    echo "Setting up SDK Engine internal LAN to $subnet.254"
+    MAC2=$(cat /sys/class/net/eth?/address | grep -iv 08:00:5A:11:F1:55)
+    mkdir -p /var/lib/connman
+    cat <<EOF > /var/lib/connman/sdkengine.config
+[global]
+Name = SDK Engine
+Description = SDK Engine Configuration
+
+[service_sailfishsdk_ethernet]
+Type = ethernet
+IPv4 = $subnet.254/24/0.0.0.0
+IPv6 = off
+MAC = 08:00:5A:11:F1:55
+
+[service_nat_ethernet]
+Type = ethernet
+IPv4 = dhcp
+IPv6 = off
+MAC = $MAC2
+
+EOF
+    exit 0
+else
+    echo "No <engine><subnet> found in devices.xml"
+    exit 1
+fi
+
