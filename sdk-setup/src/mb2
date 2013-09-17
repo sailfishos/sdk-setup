@@ -105,6 +105,7 @@ try_to_make_spec() { # Tries to create a missing spec
     [[ -f $yaml ]] || return # No yaml
     specify -n -N $yaml
 }
+
 try_to_make_spec_from_yaml() {
     # Tries to create a missing spec from a given yaml
     try_to_make_spec $(dirname $1)/$(basename $1 .yaml).spec
@@ -123,8 +124,8 @@ verify_target_dependencies() {
         xargs --no-run-if-empty sb2 -t "$target" -m sdk-install -R zypper --non-interactive in
 }
 
-get_spec_value(){
-    rpmspec --query --srpm --queryformat="%{$1}" $spec
+get_spec_tag() {
+    rpmspec --query --srpm --queryformat="$1" $spec
 }
 
 # Helper to read XML
@@ -193,9 +194,12 @@ ssh_as() {
 }
 
 cd_to_spec_setup_dir() {
+    _basedir=$(pwd)
     local setup_dir=$(grep -Po '%setup.*-n.*' $spec | cut -s -f2 -d'/')
-    if [ "$setup_dir" != "" ]; then
-        cd "$setup_dir"
+    if [ -n "$setup_dir" ]; then
+	# in case we got a spec %{tag} out of this, try to expand it
+	setup_dir=$(get_spec_tag "$setup_dir")
+	cd "$setup_dir"
     fi
 }
 
@@ -205,21 +209,20 @@ run_build() {
 
     sed -e '/^%patch/d' $spec > $spec.$$
 
-    local basedir=$(pwd)
-    cd_to_spec_setup_dir
-
-    eval sb2 -t $target rpmbuild --build-in-place \
-	$BUILD_DEBUG \
-	--define \"_rpmdir $basedir/RPMS \" \
-	--define \"_sourcedir $basedir/rpm \" \
-	--define \"_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm \" \
-	--buildroot=$buildroot \
-	--dobuild \
-	--doinstall \
-	--dobinary \
-	--docheck \
-	$spec.$$
-    cd $basedir
+    (
+	cd_to_spec_setup_dir;
+	eval sb2 -t $target rpmbuild --build-in-place \
+	    $BUILD_DEBUG \
+	    --define \"_rpmdir $_basedir/RPMS \" \
+	    --define \"_sourcedir $_basedir/rpm \" \
+	    --define \"_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm \" \
+	    --buildroot=$buildroot \
+	    --dobuild \
+	    --doinstall \
+	    --dobinary \
+	    --docheck \
+	    $spec.$$
+    )
     rm -f $spec.$$
 }
 
@@ -227,17 +230,17 @@ run_qmake() {
     if [[ $spec ]]; then
 	# This is a good time to verify the target dependencies as per mb
 	verify_target_dependencies
-    local basedir=$(pwd)
-    cd_to_spec_setup_dir
-	eval sb2 -t $target rpmbuild --build-in-place \
-	    --dobuild \
-	    --define \"noecho 1 \" \
-	    --define \"qtc_builddir $basedir \" \
-	    --define \"qtc_make true ignoring make\" \
-	    --define \"qtc_qmake5  %qmake5 $@\" \
-	    --define \"qtc_qmake  %qmake $@\" \
-	    $spec
-    cd $basedir
+	(
+	    cd_to_spec_setup_dir;
+	    eval sb2 -t $target rpmbuild --build-in-place \
+		--dobuild \
+		--define \"noecho 1 \" \
+		--define \"qtc_builddir $_basedir \" \
+		--define \"qtc_make true ignoring make\" \
+		--define \"qtc_qmake5  %qmake5 $@\" \
+		--define \"qtc_qmake  %qmake $@\" \
+		$spec
+	)
     else
 	sb2 -t $target qmake "$@"
     fi
@@ -245,50 +248,50 @@ run_qmake() {
 
 run_make() {
     if [[ $spec ]]; then
-    local basedir=$(pwd)
-    cd_to_spec_setup_dir
-	eval sb2 -t $target rpmbuild --build-in-place \
-	    --dobuild \
-	    --define \"noecho 1 \" \
-	    --define \"qtc_builddir $basedir \" \
-	    --define \"qtc_qmake5 true ignoring qmake\" \
-	    --define \"qtc_qmake true ignoring qmake\" \
-	    --define \"qtc_make  make  %{?_smp_mflags} $@\" \
-	    $spec
-    cd $basedir
+	(
+	    cd_to_spec_setup_dir;
+	    eval sb2 -t $target rpmbuild --build-in-place \
+		--dobuild \
+		--define \"noecho 1 \" \
+		--define \"qtc_builddir $_basedir \" \
+		--define \"qtc_qmake5 true ignoring qmake\" \
+		--define \"qtc_qmake true ignoring qmake\" \
+		--define \"qtc_make  make  %{?_smp_mflags} $@\" \
+		$spec
+	)
     else
 	sb2 -t $target make "$@"
-    fi		
+    fi
 }
 
 run_install() {
     # Install to buildroot which should be rsync'ed to /opt/sdk/$package on device
-    local basedir=$(pwd)
-    cd_to_spec_setup_dir
-    eval sb2 -t $target rpmbuild --build-in-place \
-	--define \"noecho 1 \" \
-	--define \"qtc_builddir $basedir \" \
-	--define \"_sourcedir $basedir/rpm \" \
-	--buildroot=$buildroot \
-	--doinstall \
-	$spec
-    cd $basedir
+    (
+	cd_to_spec_setup_dir;
+	eval sb2 -t $target rpmbuild --build-in-place \
+	    --define \"noecho 1 \" \
+	    --define \"qtc_builddir $_basedir \" \
+	    --define \"_sourcedir $_basedir/rpm \" \
+	    --buildroot=$buildroot \
+	    --doinstall \
+	    $spec
+    )
 }
 
 run_rpm() {
-    local basedir=$(pwd)
-    cd_to_spec_setup_dir
-    eval sb2 -t $target rpmbuild --build-in-place \
-	--define \"qtc_builddir $basedir \" \
-	--define \"_rpmdir $basedir/RPMS \" \
-	--define \"_sourcedir $basedir/rpm \" \
-	--define \"_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm \" \
-	--buildroot=$buildroot \
-	--doinstall \
-	--dobinary \
-	--docheck \
-	$spec
-    cd $basedir
+    (
+	cd_to_spec_setup_dir;
+	eval sb2 -t $target rpmbuild --build-in-place \
+	    --define \"qtc_builddir $_basedir \" \
+	    --define \"_rpmdir $_basedir/RPMS \" \
+	    --define \"_sourcedir $_basedir/rpm \" \
+	    --define \"_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm \" \
+	    --buildroot=$buildroot \
+	    --doinstall \
+	    --dobinary \
+	    --docheck \
+	    $spec
+    )
 }
 
 run_deploy() {
@@ -304,7 +307,7 @@ run_deploy() {
             "--rsync" ) shift
 		user=$deviceuser
 		run_install
-		name=$(get_spec_value name)
+		name=$(get_spec_tag "%{name}")
 		rsync_as $user -av ${buildroot}/. $device_ip:/opt/sdk/$name
 		;;
 	    *)
