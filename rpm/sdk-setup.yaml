@@ -1,0 +1,120 @@
+Name: sdk-setup
+Summary: SDK setup packages for Mer SDK
+Description: Scripts, configurations and utilities to build Mer SDK and variants
+Version: 0.63
+Release: 1
+Group: System/Base
+License: GPL
+BuildArch: noarch
+URL: https://github.com/sailfish-sdk/sdk-setup
+Sources:
+  - '%{name}-%{version}.tar.bz2'
+PkgBR:
+  - systemd
+Configure: none
+Builder: none
+SetupOptions: -q -n %{name}/%{name}-%{version}
+NoFiles: true
+SubPackages:
+  - Name: sdk-chroot
+    AsWholeName: true
+    Summary: Mer SDK files for the chroot variant
+    Description: Contains the mer_sdk_chroot script and supporting configs
+    Group: System/Base
+    RequiresPre:
+      - rpm
+      - /bin/rm
+    Conflicts:
+      - sdk-vm
+    Files:
+      - /mer-sdk-chroot
+      - /mer-bash-setup
+      - '%{_bindir}/sdk-version'
+      - '%{_sysconfdir}/mer-sdk-chroot'
+  - Name: sdk-vm
+    AsWholeName: true
+    Summary: Mer SDK files for the VM variant
+    Description: Contains the supporting configs for VMs
+    Group: System/Base
+    Conflicts:
+      - sdk-chroot
+    RequiresPost:
+      - /bin/ln
+    Requires:
+      - sdk-utils == %{version}
+      - connman >= 1.14
+      - virtualbox-guest-tools
+      - openssh-server
+    Files:
+      - '%{_bindir}/sdk-version'
+      - '%{_bindir}/sdk-info'
+      - '%{_bindir}/sdk-setup-enginelan'
+      - '%{_bindir}/sdk-shutdown'
+      - '%{_bindir}/resize-rootfs'
+      - '%{_unitdir}/information.service'
+      - '%{_unitdir}/sdk-enginelan.service'
+      - '%{_unitdir}/host_targets.service'
+      - '%{_unitdir}/home-mersdk.service'
+      - '%{_unitdir}/etc-mersdk-share.service'
+      - '%{_unitdir}/etc-ssh-authorized_keys.mount'
+      - '%{_unitdir}/sdk-refresh.service'
+      - '%{_unitdir}/sdk-refresh.timer'
+      - '%{_unitdir}/resize-rootfs.service'
+      - '%config %{_sysconfdir}/systemd/system/default.target'
+      - '%config %{_sysconfdir}/ssh/ssh-env.conf'
+      - '%config %{_sysconfdir}/ssh/sshd_config_engine'
+      - '%config %{_sysconfdir}/mersdk.env.systemd'
+      - '%dir /home/deploy'
+      - '%{_sysconfdir}/mer-sdk-vbox'
+      - '%attr(-,mersdk,mersdk) %{_sysconfdir}/mersdk/'
+  - Name: sdk-sb2-config
+    AsWholeName: true
+    Summary: Mer SDK files to configure sb2
+    Description: Contains the sdk build and install modes used by scratchbox2 in the
+      SDK
+    Group: System/Base
+    Requires:
+      - scratchbox2 = 2.3.90
+    Files:
+      - '%{_datadir}/scratchbox2/modes/*'
+  - Name: sdk-utils
+    AsWholeName: true
+    Summary: Mer SDK utility scripts
+    Description: Contains some utility scripts to support Mer SDK development
+    Group: System/Base
+    Requires:
+      - rpm-build
+      - python-lxml
+      - sudo
+    Files:
+      - '%{_bindir}/mb'
+      - '%{_bindir}/mb2'
+      - '%{_bindir}/qb'
+      - '%{_bindir}/sdk-manage'
+      - '%{_bindir}/updateQtCreatorTargets'
+      - '%config %{_sysconfdir}/ssh/ssh_config.sdk'
+  - Name: sdk-mer-branding
+    Summary: Mer Branding for the SDK Engine
+    AsWholeName: true
+    Description: Splash screen for the SDK Engine
+    Group: System/Base
+    Provides:
+      - boot-splash-screen
+    Requires:
+      - plymouth-lite
+      - sdk-vm
+    Files:
+      - '%{_datadir}/plymouth/splash.png'
+      - '%{_sysconfdir}/sysconfig/splashfontcol'
+  - Name: connman-configs-mersdk-emul
+    Summary: Connman configs for SDK Emulator
+    AsWholeName: true
+    Description: Connman configs for SDK emulator to ensure session is started
+    Group: System/Base
+    Provides:
+      - connman-configs
+    Requires:
+      - connman
+    Files:
+      - '%{_sysconfdir}/connman/main.conf'
+Patches: []
