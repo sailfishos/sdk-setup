@@ -98,28 +98,28 @@ fatal() {
 }
 
 assert_spec_supports_mb2() {
-    if ! grep "define qtc_qmake" $spec 2>&1 > /dev/null; then
+    if ! grep "define qtc_qmake" "$spec" 2>&1 > /dev/null; then
 	fatal "This specfile does not have the qtc_* macros defined"
     fi
 }
 
 try_to_make_spec() { # Tries to create a missing spec
-    [[ -f $1 ]] && return # It's not missing
-    yaml=$(dirname $1)/$(basename $1 .spec).yaml
-    [[ -f $yaml ]] || return # No yaml
-    specify -n -N $yaml
+    [[ -f "$1" ]] && return # It's not missing
+    yaml=$(dirname "$1")/$(basename "$1" .spec).yaml
+    [[ -f "$yaml" ]] || return # No yaml
+    specify -n -N "$yaml"
 }
 
 try_to_make_spec_from_yaml() {
     # Tries to create a missing spec from a given yaml
-    try_to_make_spec $(dirname $1)/$(basename $1 .yaml).spec
+    try_to_make_spec $(dirname "$1")/$(basename "$1" .yaml).spec
 }
 
 ensure_spec_newer_than_yaml() {
-    yaml=$(dirname $spec)/$(basename $spec .spec).yaml
-    [[ -f $yaml ]] || return # User has decided not to use yaml
-    if [[ $yaml -nt $spec ]]; then # -nt is newer than
-	specify -n -N $yaml
+    yaml=$(dirname "$spec")/$(basename "$spec" .spec).yaml
+    [[ -f "$yaml" ]] || return # User has decided not to use yaml
+    if [[ "$yaml" -nt "$spec" ]]; then # -nt is newer than
+	specify -n -N "$yaml"
     fi
 }
 
@@ -129,7 +129,7 @@ verify_target_dependencies() {
 }
 
 get_spec_tag() {
-    rpmspec --query --srpm --queryformat="$1" $spec
+    rpmspec --query --srpm --queryformat="$1" "$spec"
 }
 
 # Helper to read XML
@@ -169,7 +169,7 @@ get_device() {
 	    mac|index|subnet|ip|sshkeypath )
 		# Don't process and store nested tags if we're in
 		# device with wrong name
-		if [[ $maintag == "device" ]] && [[ $IN_DEVICE != 1 ]]; then
+		if [[ "$maintag" == "device" ]] && [[ $IN_DEVICE != 1 ]]; then
 		    continue
 		fi
 		eval ${maintag}_$TAG_NAME="$CONTENT"
@@ -177,29 +177,29 @@ get_device() {
 	esac
     done
     # Set this up as it's useful
-    if [[ $device_subnet ]]; then
-	device_ip=$device_subnet.$device_index
+    if [[ "$device_subnet" ]]; then
+	device_ip="$device_subnet".$device_index
     fi
-    if [[ $FOUND_DEVICE == 1 ]]; then return 0; else return 1; fi
+    if [[ "$FOUND_DEVICE" == 1 ]]; then return 0; else return 1; fi
 }
 
 rsync_as() {
     local user=$1;shift
-    local key="$(dirname $DEVICES_XML)/${device_sshkeypath}/$user"
-    [[ -f $key ]] || fatal "No key for user $user on $device_name given in devices.xml"
+    local key="$(dirname "$DEVICES_XML")/${device_sshkeypath}/$user"
+    [[ -f "$key" ]] || fatal "No key for user $user on $device_name given in devices.xml"
     RSYNC_RSH="ssh -F /etc/ssh/ssh_config.sdk -l $user -i $key" rsync "$@"
 }
 
 ssh_as() {
     local user=$1;shift
-    local key="$(dirname $DEVICES_XML)/${device_sshkeypath}/$user"
-    [[ -f $key ]] || fatal "No key for user $user on $device_name given in devices.xml"
+    local key="$(dirname "$DEVICES_XML")/${device_sshkeypath}/$user"
+    [[ -f "$key" ]] || fatal "No key for user $user on $device_name given in devices.xml"
     ssh -F /etc/ssh/ssh_config.sdk -i $key -l $user $device_ip $@
 }
 
 cd_to_spec_setup_dir() {
     _basedir=$(pwd)
-    local setup_dir=$(grep -Po '%setup.*-n.*' $spec | cut -s -f2 -d'/')
+    local setup_dir=$(grep -Po '%setup.*-n.*' "$spec" | cut -s -f2 -d'/')
     if [ -n "$setup_dir" ]; then
 	# in case we got a spec %{tag} out of this, try to expand it
 	setup_dir=$(get_spec_tag "$setup_dir")
@@ -211,7 +211,7 @@ run_build() {
     # intended to provide mb build behaviour
     verify_target_dependencies
 
-    sed -e '/^%patch/d' $spec > $spec.$$
+    sed -e '/^%patch/d' "$spec" > "$spec".$$
 
     (
 	cd_to_spec_setup_dir;
@@ -221,18 +221,18 @@ run_build() {
 	    --define \"_rpmdir $_basedir/RPMS \" \
 	    --define \"_sourcedir $_basedir/rpm \" \
 	    --define \"_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm \" \
-	    --buildroot=$buildroot \
+	    --buildroot=\"$buildroot\" \
 	    --dobuild \
 	    --doinstall \
 	    --dobinary \
 	    --docheck \
-	    $spec.$$
+	    \"$spec\".$$
     )
-    rm -f $spec.$$
+    rm -f "$spec".$$
 }
 
 run_qmake() {
-    if [[ $spec ]]; then
+    if [[ "$spec" ]]; then
 	# This is a good time to verify the target dependencies as per mb
 	verify_target_dependencies
 	(
@@ -244,7 +244,7 @@ run_qmake() {
 		--define \"qtc_make true ignoring make\" \
 		--define \"qtc_qmake5  %qmake5 $@\" \
 		--define \"qtc_qmake  %qmake $@\" \
-		$spec
+		\"$spec\"
 	)
     else
 	sb2 -t $target qmake "$@"
@@ -252,7 +252,7 @@ run_qmake() {
 }
 
 run_make() {
-    if [[ $spec ]]; then
+    if [[ "$spec" ]]; then
 	(
 	    cd_to_spec_setup_dir;
 	    eval sb2 -t $target rpmbuild --build-in-place \
@@ -262,7 +262,7 @@ run_make() {
 		--define \"qtc_qmake5 true ignoring qmake\" \
 		--define \"qtc_qmake true ignoring qmake\" \
 		--define \"qtc_make  make  %{?_smp_mflags} $@\" \
-		$spec
+		\"$spec\"
 	)
     else
 	sb2 -t $target make "$@"
@@ -277,9 +277,9 @@ run_install() {
 	    --define \"noecho 1 \" \
 	    --define \"qtc_builddir $_basedir \" \
 	    --define \"_sourcedir $_basedir/rpm \" \
-	    --buildroot=$buildroot \
+	    --buildroot=\"$buildroot\" \
 	    --doinstall \
-	    $spec
+	    \"$spec\"
     )
 }
 
@@ -291,16 +291,16 @@ run_rpm() {
 	    --define \"_rpmdir $_basedir/RPMS \" \
 	    --define \"_sourcedir $_basedir/rpm \" \
 	    --define \"_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm \" \
-	    --buildroot=$buildroot \
+	    --buildroot=\"$buildroot\" \
 	    --doinstall \
 	    --dobinary \
 	    --docheck \
-	    $spec
+	    \"$spec\"
     )
 }
 
 run_deploy() {
-    [[ $device_type ]] || fatal "deploy must have a valid --device"
+    [[ "$device_type" ]] || fatal "deploy must have a valid --device"
 	while [[ $1 ]]; do
 	case "$1" in
             "--zypper" ) shift
@@ -344,7 +344,7 @@ if [[ -e /etc/ssu/ssu.ini ]] && grep "^credentials-url" /etc/ssu/ssu.ini >/dev/n
     fi
 fi
 
-while [[ $1 ]]; do
+while [[ "$1" ]]; do
     case "$1" in
         "-t" | "--target") shift
 	    target="$1"; shift
@@ -355,13 +355,13 @@ while [[ $1 ]]; do
 	    ;;
         "-p" | "--projectdir") shift
 	    projdir="$1"; shift
-	    pkgdir=$projdir/rpm
-	    [[ -d $projdir ]] || fatal "'$projdir' is not a directory"
+	    pkgdir="$projdir"/rpm
+	    [[ -d "$projdir" ]] || fatal "'$projdir' is not a directory"
 	    ;;
         "-s" | "--specfile" ) shift
 	    spec="$1"; shift
-	    try_to_make_spec $spec
-	    [[ -f $spec ]] || fatal "'$spec' doesn't exist (and couldn't be made from a yaml)"
+	    try_to_make_spec "$spec"
+	    [[ -f "$spec" ]] || fatal "'$spec' doesn't exist (and couldn't be made from a yaml)"
 	    ;;
 	install | rpm | deploy | build )
 	    needspec=1;
@@ -375,12 +375,12 @@ while [[ $1 ]]; do
     esac
 done
 
-if [[ ! $target ]]; then
+if [[ ! "$target" ]]; then
     if [[ -f ~/.scratchbox2/config ]]; then
 	. ~/.scratchbox2/config
 	target=$DEFAULT_TARGET
     fi
-    [[ $target ]] || fatal "You must specify an sb2 target or have a default configured"
+    [[ "$target" ]] || fatal "You must specify an sb2 target or have a default configured"
 fi
 
 [[ -d ~/.scratchbox2/$target ]] || fatal "$target is an invalid sb2 target"
@@ -393,8 +393,8 @@ fi
 #  if there is a rpm/*.spec then that is used
 #  if there is a rpm/*.yaml then a spec is made and used
 
-if [[ ! $spec ]]; then
-    numspec=$(ls $pkgdir/*spec 2>/dev/null | wc -l)
+if [[ ! "$spec" ]]; then
+    numspec=$(ls "$pkgdir"/*spec 2>/dev/null | wc -l)
     if [[ $numspec -gt 1 ]]; then
 	[[ $needspec ]] && fatal "Too many spec files - please use -s to identify which to use"
 	echo "Too many spec files - not using any. Use -s to identify a specific one"
@@ -403,17 +403,17 @@ if [[ ! $spec ]]; then
 
     if [[ $numspec -eq 0 ]]; then
 	# No spec, try to find a yaml
-	numyaml=$(ls $pkgdir/*yaml 2>/dev/null | wc -l)
+	numyaml=$(ls "$pkgdir"/*yaml 2>/dev/null | wc -l)
 	if [[ $numyaml -eq 1 ]]; then
-	    try_to_make_spec_from_yaml $(ls $pkgdir/*yaml)
-	    numspec=$(ls $pkgdir/*spec 2>/dev/null | wc -l)
+	    try_to_make_spec_from_yaml $(ls "$pkgdir"/*yaml)
+	    numspec=$(ls "$pkgdir"/*spec 2>/dev/null | wc -l)
 	else
 	    [[ $needspec ]] && fatal "No spec file found in '$pkgdir/' and couldn't make one from a yaml"
 	fi
     fi
 
     if [[ $numspec -eq 1 ]]; then
-	spec=$(ls $pkgdir/*spec)
+	spec=$(ls "$pkgdir"/*spec)
     else
 	# this is because we did try_to_make_spec_from_yaml and failed
 	[[ $needspec ]] && fatal "No spec file found in '$pkgdir/' and couldn't make one from a yaml"
@@ -422,16 +422,16 @@ if [[ ! $spec ]]; then
 fi
 
 # Now if there is a spec given, make sure it is up-to-date
-if [[ $spec ]]; then
+if [[ "$spec" ]]; then
     # turn 'spec' into an absolute path
     spec=$(readlink -f "$spec")
     ensure_spec_newer_than_yaml
 fi
 
-case $1 in
+case "$1" in
     qmake | make | install | rpm | deploy )
 	cmd=run_$1
-	if [[ $spec ]]; then
+	if [[ "$spec" ]]; then
 	    assert_spec_supports_mb2
 	fi
         shift
@@ -440,7 +440,7 @@ case $1 in
 	cmd=run_$1; shift
 	BUILD_DEBUG='--define "debug_package %{nil} "'
 	BUILD_JOBS=$(getconf _NPROCESSORS_ONLN)
-	while [[ $1 ]]; do
+	while [[ "$1" ]]; do
 	    case "$1" in
 		-d|--enable-debug) shift
 		    BUILD_DEBUG= ;;
@@ -461,7 +461,7 @@ case $1 in
 	done
         ;;
     run | ssh ) shift
-	if [[ $device ]]; then
+	if [[ "$device" ]]; then
 	    cmd="ssh_as $deviceuser"
 	else
 	    cmd="eval"
