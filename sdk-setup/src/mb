@@ -143,7 +143,7 @@ EOF
     cp ./${PKGDIR:-rpm}/* ~/rpmbuild/SOURCES
 
     if [[ ! $JOBS ]]; then
-        JOBS=$(grep "model n" /proc/cpuinfo | wc -l)
+        JOBS=$(getconf _NPROCESSORS_ONLN)
 
         if [ $? -ne 0 ]; then
           echo "$0: can't detect CPU count"
@@ -155,9 +155,12 @@ EOF
     # TODO: debug_package define disables debugsource/debuginfo packages, which
     # is incredibly fast, but user may sometimes want them...
     if [ "$ENABLE_DEBUG" == 1 ]; then
-	sb2 -t "$TARGET" rpmbuild --skip-prep -bb ~/temp.spec --define "jobs $JOBS"
+	sb2 -t "$TARGET" rpmbuild --skip-prep -bb ~/temp.spec \
+	    --define "_smp_mflags -j$JOBS"
     else
-	sb2 -t "$TARGET" rpmbuild --skip-prep -bb ~/temp.spec --define 'debug_package %{nil}' --define "jobs $JOBS"
+	sb2 -t "$TARGET" rpmbuild --skip-prep -bb ~/temp.spec \
+	    --define "_smp_mflags -j$JOBS" \
+	    --define 'debug_package %{nil}'
     fi
 
     rm ~/temp.spec

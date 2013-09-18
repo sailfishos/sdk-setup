@@ -29,10 +29,12 @@
 short_usage() {
     cat <<EOF
 usage: $ME [-t <target>] [-s <specfile>] [-d <device>] [-p <projectdir>]
-           build <-d> [<args>] | qmake [<args>] | make [<args>] | ssh <args>
+           build [-d] [-j <n>] [<args>] | qmake [<args>] | make [<args>] | ssh <args>
            install [<args>] | rpm [<args>] | deploy <args> | run <args>
        $ME --help
 EOF
+    # exit if any argument is given
+    [ -n "$1" ] && exit 1
 }
 
 usage() {
@@ -52,9 +54,11 @@ usage() {
   $ME is aware of spectacle and will update the spec file if there is
   an obvious yaml file which is newer.
 
-  $ME build <-d> [<args>]
+  $ME build [-d] [-j <n>] [<args>]
                      : runs rpmbuild for the given spec file in the
                        given sb2 target. Produces an rpm package.
+                     : -d     enable debug build
+                     : -j <n> use only 'n' CPUs to build
                      : can use -s -t -p
 
   $ME qmake [<args>] : runs qmake in the 'build' phase
@@ -213,6 +217,7 @@ run_build() {
 	cd_to_spec_setup_dir;
 	eval sb2 -t $target rpmbuild --build-in-place \
 	    $BUILD_DEBUG \
+	    --define \"_smp_mflags -j$BUILD_JOBS\" \
 	    --define \"_rpmdir $_basedir/RPMS \" \
 	    --define \"_sourcedir $_basedir/rpm \" \
 	    --define \"_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm \" \
@@ -434,10 +439,26 @@ case $1 in
     build )
 	cmd=run_$1; shift
 	BUILD_DEBUG='--define "debug_package %{nil} "'
-	case "$1" in
-	    "-d" | "--enable-debug") shift
-		BUILD_DEBUG= ;;
-	esac
+	BUILD_JOBS=$(getconf _NPROCESSORS_ONLN)
+	while [[ $1 ]]; do
+	    case "$1" in
+		-d|--enable-debug) shift
+		    BUILD_DEBUG= ;;
+		-j*)
+		    # support giving -j with and without space between
+		    # it and the 'n'
+		    if [ ${#1} -gt 2 ]; then
+			BUILD_JOBS=${1:2}; shift
+		    else
+			[ -z "$2" ] && short_usage quit
+			BUILD_JOBS="$2"; shift 2;
+		    fi
+		    ;;
+		*)
+		    break
+		    ;;
+	    esac
+	done
         ;;
     run | ssh ) shift
 	if [[ $device ]]; then
@@ -447,8 +468,7 @@ case $1 in
 	fi
         ;;
     *)
-	short_usage
-	exit 1
+	short_usage quit
 	;;
 esac
 
