@@ -98,7 +98,7 @@ fatal() {
 }
 
 assert_spec_supports_mb2() {
-    if ! grep "define qtc_qmake" "$spec" 2>&1 > /dev/null; then
+    if ! grep "define qtc_qmake" "$spec" >/dev/null 2>&1 ; then
 	fatal "This specfile does not have the qtc_* macros defined"
     fi
 }
@@ -107,7 +107,7 @@ try_to_make_spec() { # Tries to create a missing spec
     [[ -f "$1" ]] && return # It's not missing
     yaml=$(dirname "$1")/$(basename "$1" .spec).yaml
     [[ -f "$yaml" ]] || return # No yaml
-    specify -n -N "$yaml"
+    ANSI_COLORS_DISABLED=1 specify -n -N "$yaml"
 }
 
 try_to_make_spec_from_yaml() {
@@ -119,7 +119,7 @@ ensure_spec_newer_than_yaml() {
     yaml=$(dirname "$spec")/$(basename "$spec" .spec).yaml
     [[ -f "$yaml" ]] || return # User has decided not to use yaml
     if [[ "$yaml" -nt "$spec" ]]; then # -nt is newer than
-	specify -n -N "$yaml"
+	ANSI_COLORS_DISABLED=1 specify -n -N "$yaml"
     fi
 }
 
