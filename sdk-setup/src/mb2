@@ -334,16 +334,6 @@ else
     buildroot=$(pwd)/installroot
 fi
 
-# SSU validation - This really needs to be done for the host and
-# targets if they use ssu.
-if [[ -e /etc/ssu/ssu.ini ]] && grep "^credentials-url" /etc/ssu/ssu.ini >/dev/null 2>&1 ; then
-    REG_STATUS=$(ssu s | grep "registration" | grep -v "not");
-    if [[ -z "$REG_STATUS" ]]; then
-        echo "SSU registration is not done, please execute 'ssu r' as root first";
-        exit
-    fi
-fi
-
 while [[ "$1" ]]; do
     case "$1" in
         "-t" | "--target") shift
