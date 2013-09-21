@@ -314,7 +314,7 @@ EOF
 	    usage
 	    retval=1
 	else
-	    setarch i386 chroot "${sdkroot}" /bin/su -s /bin/bash -l $user -- -c "export MERSDK=1;if [ -d $cwd ]; then cd $cwd; fi; $*"
+	    setarch i386 chroot "${sdkroot}" /bin/su -s /bin/bash -l $user -- -c "export MERSDK=1;if [ -d \"$cwd\" ]; then cd \"$cwd\"; fi; $*"
 	    retval=$?
 	fi
 	;;
