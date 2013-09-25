@@ -365,7 +365,7 @@ install_target() {
 	*-i486*)
 	    transparency=""
 	    compiler="/opt/cross/bin/i486-meego-linux-gnu-gcc"
-	    toolsdir=""
+	    toolsdir="-t $PWD"
 	    ;;
     esac
 
