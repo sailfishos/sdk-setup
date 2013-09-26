@@ -87,6 +87,7 @@ SubPackages:
       - python-lxml
       - sudo
       - scratchbox2 >= 2.3.90
+      - sdk-register
     Files:
       - '%{_bindir}/mb'
       - '%{_bindir}/mb2'
