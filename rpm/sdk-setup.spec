@@ -65,6 +65,7 @@ Requires:   rpm-build
 Requires:   python-lxml
 Requires:   sudo
 Requires:   scratchbox2 >= 2.3.90
+Requires:   sdk-register
 
 %description -n sdk-utils
 Contains some utility scripts to support Mer SDK development
