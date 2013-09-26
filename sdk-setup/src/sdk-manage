@@ -24,8 +24,9 @@ usage()
            $0 --target --remove  <name>
            $0 --target --refresh [--all | <name> [<name>...]]
            $0 --target --update <name>
-           $0 --target --sync  <name>
-           $0 --target --import  <name>
+           $0 --target --sync <name>
+           $0 --target --import <name>
+           $0 --target --register --user <uname> --password <pass> --all | <tname> [<tname>...]
 
            $0 --devel --list <target> [<search string>]
            $0 --devel --install <target> <devel package list>
@@ -36,8 +37,11 @@ usage()
            $0 --sdk --upgradable
            $0 --sdk --upgrade
            $0 --sdk --status
+           $0 --sdk --register --user <name> --password <pass>
 
            $0 --refresh-all
+
+           $0 --register-all --user <username> --password <password>
 
        This is the Mer SDK VM manager
        For information see https://wiki.merproject.org/wiki/Platform_SDK_on_VirtualBox
@@ -140,9 +144,11 @@ assert_target_and_setup() {
 	echo "Target $target is not a valid Scratchbox2 target"
 	exit 1
     fi
-    set +u
-    . $sbox2dir/$target/sb2.config
-    set -u
+
+    if [ $(check_target_visible $target) == "no" ]; then
+	echo "Target $target is not accessible"
+	exit 1
+    fi
 }
 
 t_zypper() {
@@ -198,11 +204,39 @@ manage_develpkgs() {
 ################################################################
 # Targets
 
+t_register() {
+    local domain
+    local tgt
+    [[ -z ${1:-} ]] && return
+
+    tgt=$1
+    domain=$(sudo -i -u $sdk_user bash -c "sb2 -t $tgt sdk-register -d")
+    if [ z"$domain" == zjolla ]; then
+	echo -n "$tgt: "
+	sudo -i -u $sdk_user bash -c "sb2 -t $tgt -m sdk-install -R sdk-register -u $reg_username -p $reg_password"
+    else
+	echo "$tgt: Register not needed (domain: ${domain:-empty})"
+    fi
+}
+
+check_target_visible() {
+    set +u
+    local tgt=$1
+    . $sbox2dir/$tgt/sb2.config
+    if [ ! -d "$SBOX_TARGET_ROOT" ]; then
+	echo "no"
+	return
+    fi
+    set -u
+    echo "yes"
+}
+
 get_targets() {
     tgts=$(sudo -i -u $sdk_user sb2-config -l 2>&1)
-    if ! grep 'sb2-init' <<< "$tgts" >/dev/null ; then
-	echo "$tgts"
-    fi
+
+    for t in $tgts; do
+	[ $(check_target_visible $t) == "yes" ] && echo $t
+    done
 }
 
 assert_target_name_valid() {
@@ -410,7 +444,7 @@ manage_targets() {
 	--upgradable ) shift
 	    target="${1:-}"
 	    assert_target_and_setup
-	    t_zypper --non-interactive --no-refresh --quiet lu
+	    t_zypper --non-interactive --no-refresh --quiet list-updates
 	    ;;
 	--install ) shift
 	    assert_target_name_valid "${1:-}"
@@ -446,6 +480,26 @@ manage_targets() {
 	    assert_target_name_valid "${1:-}"
 	    import_target "$@"
 	    ;;
+	--register ) shift
+	    local targets
+
+	    get_register_credentials "$@"
+	    shift $reg_shift
+
+	    if [[ "${1:-}" == "--all" ]]; then
+		local targets=$(get_targets)
+		shift
+	    else
+		local targets="$@"
+	    fi
+
+	    [[ -z "$targets" ]] && usage --exit
+
+	    for target in $targets; do
+		assert_target_and_setup
+		t_register $target
+	    done
+	    ;;
 	* )
 	    echo "$1 not recognised"
 	    usage --exit
@@ -467,6 +521,18 @@ upgrade_sdk() {
 
 refresh_sdk() {
     zypper --non-interactive refresh -f
+}
+
+register_sdk() {
+    local domain
+    get_register_credentials "$@"
+    domain=$(sdk-register -d)
+    if [ z"$domain" == zjolla ]; then
+	echo -n "MerSDK: "
+	sdk-register -u ${reg_username:-} -p ${reg_password:-}
+    else
+	echo "MerSDK: Register not needed (domain: ${domain:-empty})"
+    fi
 }
 
 sdk_status() {
@@ -508,6 +574,10 @@ manage_sdk() {
 	--refresh )
 	    refresh_sdk
 	    ;;
+	--register ) shift
+	    # expects --user and --password
+	    register_sdk "$@"
+	    ;;
 	* )
 	    echo "$1 not recognised"
 	    usage --exit
@@ -518,6 +588,37 @@ manage_sdk() {
 
 ################################################################
 # utility
+
+get_register_credentials() {
+    set +u
+    reg_username=
+    reg_password=
+    reg_shift=0
+    while [[ "${1:-}" ]]; do
+	case "$1" in
+	    --user )
+		[ -z "$2" ] && usage --exit
+		reg_username="$2"
+		(( reg_shift=reg_shift+2 ))
+		shift 2
+		;;
+	    --password )
+		[ -z "$2" ] && usage --exit
+		reg_password="$2"
+		(( reg_shift=reg_shift+2 ))
+		shift 2
+		;;
+	    *)
+		break
+		;;
+	esac
+    done
+    if [ -z "$reg_username" ] || [ -z "$reg_password" ]; then
+	usage --exit
+    fi
+
+    set -u
+}
 
 ################
 
@@ -544,6 +645,11 @@ case "$1" in
     --refresh-all ) shift
 	manage_targets --refresh --all
 	manage_sdk --refresh
+	;;
+    --register-all ) shift
+	# expects to get --user and --password too
+	manage_sdk --register "$@"
+	manage_targets --register "$@" --all
 	;;
     * )
 	echo "$1 not recognised"
