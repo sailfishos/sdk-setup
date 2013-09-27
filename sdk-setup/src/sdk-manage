@@ -207,7 +207,7 @@ manage_develpkgs() {
 t_register() {
     local domain
     local tgt
-    [[ -z ${1:-} ]] && return
+    [[ -z ${1:-} ]] && return 0
 
     tgt=$1
     domain=$(sudo -i -u $sdk_user bash -c "sb2 -t $tgt sdk-register -d")
@@ -235,7 +235,9 @@ get_targets() {
     tgts=$(sudo -i -u $sdk_user sb2-config -l 2>&1)
 
     for t in $tgts; do
-	[ $(check_target_visible $t) == "yes" ] && echo $t
+	if [ $(check_target_visible $t) == "yes" ]; then
+	    echo $t
+	fi
     done
 }
 
