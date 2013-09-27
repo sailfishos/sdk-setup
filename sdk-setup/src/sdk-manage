@@ -233,6 +233,7 @@ check_target_visible() {
 
 get_targets() {
     tgts=$(sudo -i -u $sdk_user sb2-config -l 2>&1)
+    [[ $? -ne 0 ]] && return 0
 
     for t in $tgts; do
 	if [ $(check_target_visible $t) == "yes" ]; then
@@ -483,19 +484,20 @@ manage_targets() {
 	    import_target "$@"
 	    ;;
 	--register ) shift
-	    local targets
-
+	    local alltargets
 	    get_register_credentials "$@"
 	    shift $reg_shift
 
 	    if [[ "${1:-}" == "--all" ]]; then
 		local targets=$(get_targets)
+		alltargets=1
 		shift
 	    else
 		local targets="$@"
 	    fi
 
-	    [[ -z "$targets" ]] && usage --exit
+	    # Fail here if --all was not used and no targets were given
+	    [[ -z "$targets" ]] && [[ -z "$alltargets" ]] && usage --exit
 
 	    for target in $targets; do
 		assert_target_and_setup
