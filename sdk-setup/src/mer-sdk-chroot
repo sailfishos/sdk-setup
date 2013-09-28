@@ -155,6 +155,7 @@ mount_bind() {
 }
 prepare_mountpoints() {
     # Make parent mountpoint not shared with parent namespace
+    # This prevents mounts in the sdk from appearing in the parent fs
     mount --make-slave "$sdkparent/"
 
     echo "Mounting system directories..."
@@ -193,7 +194,9 @@ prepare_user() {
 	echo "Mounting home directory: ${HOMEDIR}"
 	mkdir -p ${sdkroot}${HOMEDIR}
 	mount --bind ${HOMEDIR} ${sdkroot}${HOMEDIR}
-	mount --make-unbindable ${sdkroot}${HOMEDIR}
+	# Now the sdk uses a private namespace, there's no need to
+	# make it unbindable
+	mount --make-shared ${sdkroot}${HOMEDIR}
     fi
     echo "$user ALL=NOPASSWD: ALL" > ${sdkroot}/etc/sudoers.d/$user
     chmod 0440 ${sdkroot}/etc/sudoers.d/$user
