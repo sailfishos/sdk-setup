@@ -425,12 +425,14 @@ remove_target() {
 	rm -r $sbox2dir/$target
 	rm -rf $mer_targets/$target
 	rm -rf $host_targets/$target
+
+	echo "Notifying QtCreator of removed target"
     else
-	echo "Target not installed - can't delete"
-	exit 2
+	echo "Note: target $target was not seen by sb2"
     fi
 
-    echo Notifying QtCreator of removed target
+    # Notify QtCreator anyways, in case the target information was not
+    # in sync
     sudo -i -u $sdk_user updateQtCreatorTargets --delete --name $target --target-xml $target_xml
 }
 
