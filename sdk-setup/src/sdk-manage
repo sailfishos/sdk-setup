@@ -145,7 +145,7 @@ assert_target_and_setup() {
 	exit 1
     fi
 
-    if [ $(check_target_visible $target) == "no" ]; then
+    if [[ $(check_target_visible $target) == "no" ]]; then
 	echo "Target $target is not accessible"
 	exit 1
     fi
@@ -211,7 +211,7 @@ t_register() {
 
     tgt=$1
     domain=$(sudo -i -u $sdk_user bash -c "sb2 -t $tgt sdk-register -d")
-    if [ z"$domain" == zjolla ]; then
+    if [[ z"$domain" == zjolla ]]; then
 	echo -n "$tgt: "
 	sudo -i -u $sdk_user bash -c "sb2 -t $tgt -m sdk-install -R sdk-register -u $reg_username -p $reg_password"
     else
@@ -236,7 +236,7 @@ get_targets() {
     [[ $? -ne 0 ]] && return 0
 
     for t in $tgts; do
-	if [ $(check_target_visible $t) == "yes" ]; then
+	if [[ $(check_target_visible $t) == "yes" ]]; then
 	    echo $t
 	fi
     done
@@ -339,7 +339,7 @@ install_target() {
     fi
 
     local_file=""
-    if [[ $url = file\:\/\/\/* ]]; then
+    if [[ $url == file\:\/\/\/* ]]; then
 	local_file=${url//file\:\/\//}
     else
 	echo Downloading target
@@ -531,7 +531,7 @@ register_sdk() {
     local domain
     get_register_credentials "$@"
     domain=$(sdk-register -d)
-    if [ z"$domain" == zjolla ]; then
+    if [[ z"$domain" == zjolla ]]; then
 	echo -n "MerSDK: "
 	sdk-register -u ${reg_username:-} -p ${reg_password:-}
     else
