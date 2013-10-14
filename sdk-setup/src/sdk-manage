@@ -261,6 +261,7 @@ synchronise_target() {
     # This is now a minimal set of files to sync
     if ! [ -d $mer_targets/$1 ]; then
 	echo No target called $1
+	return
     fi
     echo "Synchronising target to host"
     # The filter=". -" means to read filters from stdin (the <<EOF)
@@ -339,6 +340,7 @@ install_target() {
     fi
 
     local_file=""
+    local target_downloaded=0
     if [[ $url == file\:\/\/\/* ]]; then
 	local_file=${url//file\:\/\//}
     else
@@ -352,6 +354,7 @@ install_target() {
 	    rm -f $local_file
 	    return 3
 	fi
+	target_downloaded=1
     fi
 
     # Virtualbox shared folders don't work too well at the moment
@@ -384,6 +387,12 @@ install_target() {
     [ $? -ne 0 ] && echo "Rsync didn't exactly run as intended, expect problems."
 
     [[ ! $local_file ]] && rm "$mer_targets/$target.tar.bz2"
+
+    # remove the target tarball if it was downloaded
+    if [[ target_downloaded -eq 1 && $local_file ]]; then
+	echo "local_file: $local_file => rm"
+	rm "$local_file"
+    fi
 
     echo Setting up SB2
 
