@@ -301,13 +301,16 @@ run_rpm() {
 
 run_deploy() {
     [[ "$device_type" ]] || fatal "deploy must have a valid --device"
-	while [[ $1 ]]; do
+    local fail_text="deploy must use one of --pkcon, --rsync or --zypper"
+    [[ -z ${1:-} ]] && fatal $fail_text
+
+    while [[ $1 ]]; do
 	case "$1" in
 	    "--pkcon" ) shift
 		run_rpm
 		rpms=$(find RPMS -name \*rpm | grep -v -- "-debug")
 		rsync_as root -av ${rpms} $device_ip:/root/RPMS/
-		ssh_as root pkcon --noninteractive install-local ${rpms}
+		ssh_as root pkcon --plain --noninteractive install-local ${rpms}
 		;;
             "--zypper" ) shift
 		run_rpm
@@ -322,7 +325,7 @@ run_deploy() {
 		rsync_as $user -av ${buildroot}/. $device_ip:/opt/sdk/$name
 		;;
 	    *)
-		fatal "deploy must use one of --pkcon, --rsync or --zypper" ;;
+		fatal $fail_text ;;
 	esac
     done
 }
