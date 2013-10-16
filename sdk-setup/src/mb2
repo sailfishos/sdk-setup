@@ -215,6 +215,7 @@ run_build() {
 
     (
 	cd_to_spec_setup_dir;
+	rm -f $_basedir/RPMS/*;
 	eval sb2 -t $target rpmbuild --build-in-place \
 	    $BUILD_DEBUG \
 	    --define \"_smp_mflags -j$BUILD_JOBS\" \
@@ -286,6 +287,7 @@ run_install() {
 run_rpm() {
     (
 	cd_to_spec_setup_dir;
+	rm -f $_basedir/RPMS/*;
 	eval sb2 -t $target rpmbuild --build-in-place \
 	    --define \"qtc_builddir $_basedir \" \
 	    --define \"_rpmdir $_basedir/RPMS \" \
