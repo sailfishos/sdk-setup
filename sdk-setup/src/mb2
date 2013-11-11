@@ -311,8 +311,8 @@ run_deploy() {
 	    "--pkcon" ) shift
 		run_rpm
 		rpms=$(find RPMS -name \*rpm | grep -v -- "-debug")
-		rsync_as root -av ${rpms} $device_ip:/root/RPMS/
-		ssh_as root pkcon --plain --noninteractive install-local ${rpms}
+		rsync_as $deviceuser -av ${rpms} $device_ip:/home/$deviceuser/RPMS/
+		ssh_as $deviceuser pkcon --plain --noninteractive install-local ${rpms}
 		;;
             "--zypper" ) shift
 		run_rpm
@@ -321,10 +321,9 @@ run_deploy() {
 		ssh_as root zypper --non-interactive in -f ${rpms}
 		;;
             "--rsync" ) shift
-		user=$deviceuser
 		run_install
 		name=$(get_spec_tag "%{name}")
-		rsync_as $user -av ${buildroot}/. $device_ip:/opt/sdk/$name
+		rsync_as $deviceuser -av ${buildroot}/. $device_ip:/opt/sdk/$name
 		;;
 	    *)
 		fatal $fail_text ;;
