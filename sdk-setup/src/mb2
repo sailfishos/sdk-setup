@@ -184,17 +184,17 @@ get_device() {
 }
 
 rsync_as() {
-    local user=$1;shift
+    local user="$1";shift
     local key=$(dirname "$DEVICES_XML")/${device_sshkeypath}/$user
     [[ -f "$key" ]] || fatal "No key for user $user on $device_name given in devices.xml (rsync $key)"
     RSYNC_RSH="ssh -F /etc/ssh/ssh_config.sdk -l $user -i \"$key\"" rsync "$@"
 }
 
 ssh_as() {
-    local user=$1;shift
+    local user="$1";shift
     local key=$(dirname "$DEVICES_XML")/${device_sshkeypath}/$user
     [[ -f "$key" ]] || fatal "No key for user $user on $device_name given in devices.xml ($key)"
-    ssh -F /etc/ssh/ssh_config.sdk -i "$key" -l $user $device_ip $@
+    ssh -F /etc/ssh/ssh_config.sdk -i "$key" -l $user $device_ip "$@"
 }
 
 cd_to_spec_setup_dir() {
@@ -205,6 +205,17 @@ cd_to_spec_setup_dir() {
 	setup_dir=$(get_spec_tag "$setup_dir")
 	cd "$setup_dir"
     fi
+}
+
+# escape possible whitespace arguments
+fix_arguments() {
+    local orig_args=("$@")
+    local num_oargs=${#orig_args[@]}
+
+    for ((i=0; i<$num_oargs; i++)); do
+	local tmp_arg=$(printf '%q\n' "${orig_args[${i}]}")
+	fixed_args="$fixed_args $tmp_arg"
+    done
 }
 
 run_build() {
@@ -234,6 +245,11 @@ run_build() {
 
 run_qmake() {
     if [[ "$spec" ]]; then
+	# The paths that are passed to rpmbuild via the --define
+	# options can contain whitespace, which requires extra
+	# escaping
+	fix_arguments "$@"
+
 	# This is a good time to verify the target dependencies as per mb
 	verify_target_dependencies
 	(
@@ -243,8 +259,8 @@ run_qmake() {
 		--define \"noecho 1 \" \
 		--define \"qtc_builddir $_basedir \" \
 		--define \"qtc_make true ignoring make\" \
-		--define \"qtc_qmake5  %qmake5 $@\" \
-		--define \"qtc_qmake  %qmake $@\" \
+		--define \"qtc_qmake5 %qmake5 $fixed_args\" \
+		--define \"qtc_qmake %qmake $fixed_args\" \
 		\"$spec\"
 	)
     else
@@ -262,7 +278,7 @@ run_make() {
 		--define \"qtc_builddir $_basedir \" \
 		--define \"qtc_qmake5 true ignoring qmake\" \
 		--define \"qtc_qmake true ignoring qmake\" \
-		--define \"qtc_make  make  %{?_smp_mflags} $@\" \
+		--define \"qtc_make make %{?_smp_mflags} "$@"\" \
 		\"$spec\"
 	)
     else
