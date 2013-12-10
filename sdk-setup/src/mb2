@@ -92,14 +92,18 @@ usage() {
 EOF
 }
 
+notice() {
+    echo "NOTICE: $*"
+}
+
 fatal() {
     echo "Fatal: $*"
     exit 1
 }
 
-assert_spec_supports_mb2() {
+check_spec_supports_qtc() {
     if ! grep "define qtc_qmake" "$spec" >/dev/null 2>&1 ; then
-	fatal "This specfile does not have the qtc_* macros defined"
+	notice "This specfile does not have the qtc_* macros defined"
     fi
 }
 
@@ -448,7 +452,7 @@ case "$1" in
     qmake | make | install | rpm | deploy )
 	cmd=run_$1
 	if [[ "$spec" ]]; then
-	    assert_spec_supports_mb2
+	    check_spec_supports_qtc
 	fi
         shift
         ;;
