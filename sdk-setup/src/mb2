@@ -109,18 +109,19 @@ check_spec_supports_qtc() {
 
 try_to_make_spec() { # Tries to create a missing spec
     [[ -f "$1" ]] && return # It's not missing
-    yaml=$(dirname "$1")/$(basename "$1" .spec).yaml
+    yaml="$(dirname "$1")/$(basename "$1" .spec)".yaml
     [[ -f "$yaml" ]] || return # No yaml
     ANSI_COLORS_DISABLED=1 specify -n -N "$yaml"
 }
 
 try_to_make_spec_from_yaml() {
     # Tries to create a missing spec from a given yaml
-    try_to_make_spec $(dirname "$1")/$(basename "$1" .yaml).spec
+    local arg="$(dirname "$1")/$(basename "$1" .yaml)".spec
+    try_to_make_spec "$arg"
 }
 
 ensure_spec_newer_than_yaml() {
-    yaml=$(dirname "$spec")/$(basename "$spec" .spec).yaml
+    yaml="$(dirname "$spec")/$(basename "$spec" .spec)".yaml
     [[ -f "$yaml" ]] || return # User has decided not to use yaml
     if [[ "$yaml" -nt "$spec" ]]; then # -nt is newer than
 	ANSI_COLORS_DISABLED=1 specify -n -N "$yaml"
@@ -211,13 +212,13 @@ cd_to_spec_setup_dir() {
     fi
 }
 
-# escape possible whitespace arguments
+# quote possible whitespace arguments
 fix_arguments() {
     local orig_args=("$@")
     local num_oargs=${#orig_args[@]}
 
     for ((i=0; i<$num_oargs; i++)); do
-	local tmp_arg=$(printf '%q\n' "${orig_args[${i}]}")
+	local tmp_arg=$(printf "'%s' " "${orig_args[${i}]}")
 	fixed_args="$fixed_args $tmp_arg"
     done
 }
@@ -250,8 +251,7 @@ run_build() {
 run_qmake() {
     if [[ "$spec" ]]; then
 	# The paths that are passed to rpmbuild via the --define
-	# options can contain whitespace, which requires extra
-	# escaping
+	# options can contain whitespace so let's quote all args
 	fix_arguments "$@"
 
 	# This is a good time to verify the target dependencies as per mb
@@ -425,10 +425,10 @@ if [[ ! "$spec" ]]; then
 	# No spec, try to find a yaml
 	numyaml=$(ls "$pkgdir"/*yaml 2>/dev/null | wc -l)
 	if [[ $numyaml -eq 1 ]]; then
-	    try_to_make_spec_from_yaml $(ls "$pkgdir"/*yaml)
+	    try_to_make_spec_from_yaml "$(ls "$pkgdir"/*yaml)"
 	    numspec=$(ls "$pkgdir"/*spec 2>/dev/null | wc -l)
 	else
-	    [[ $needspec ]] && fatal "No spec file found in '$pkgdir/' and couldn't make one from a yaml"
+	    [[ $needspec ]] && fatal "No spec file found in '$pkgdir/' and couldn't make one from a yaml #1"
 	fi
     fi
 
@@ -436,7 +436,7 @@ if [[ ! "$spec" ]]; then
 	spec=$(ls "$pkgdir"/*spec)
     else
 	# this is because we did try_to_make_spec_from_yaml and failed
-	[[ $needspec ]] && fatal "No spec file found in '$pkgdir/' and couldn't make one from a yaml"
+	[[ $needspec ]] && fatal "No spec file found in '$pkgdir/' and couldn't make one from a yaml #2"
 	
     fi
 fi
