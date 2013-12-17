@@ -212,6 +212,46 @@ cd_to_spec_setup_dir() {
     fi
 }
 
+# handle release tags with format "x" or "x.y", where x and y are
+# numbers, leave others untouched
+#  get tag
+#  check if it has x.y
+#  if it is x.y get y and check if y is number
+#  if y is number => increment
+#  if it only is x check if x is number
+#  if x is number => increment
+#  else leave untouched
+increment_build_number() {
+    local release=$(get_spec_tag "%{release}")
+    local x=$(echo $release | cut -f 1 -d .)
+    local y=$(echo $release | cut -s -f 2 -d .)
+    local z=$(echo $release | cut -s -f 3- -d .)
+
+    # more than one dot found => don't touch
+    [[ -n "$z" ]] && return
+
+    if [[ -n "$y" ]]; then
+	if [[ $y =~ ^-?[0-9]+$ ]]; then
+	    let new_release=$y+1
+	    echo "Incrementing release: $x.$y -> $x.$new_release"
+	    sed -i "s/^Release:.*/Release: $x.$new_release/" "$spec"
+	    return
+	else
+	    # non-numeric after dot => don't touch
+	    return
+	fi
+    fi
+
+    if [[ -n "$x" ]]; then
+	if [[ $x =~ ^-?[0-9]+$ ]]; then
+	    let new_release=$x+1
+	    echo "Incrementing release: $x -> $new_release"
+	    sed -i "s/^Release:.*/Release: $new_release/" "$spec"
+	    return
+	fi
+    fi
+}
+
 # quote possible whitespace arguments
 fix_arguments() {
     local orig_args=("$@")
@@ -308,6 +348,7 @@ run_rpm() {
     (
 	cd_to_spec_setup_dir;
 	rm -f $_basedir/RPMS/*;
+	increment_build_number;
 	eval sb2 -t $target rpmbuild --build-in-place \
 	    --define \"qtc_builddir $_basedir \" \
 	    --define \"_rpmdir $_basedir/RPMS \" \
