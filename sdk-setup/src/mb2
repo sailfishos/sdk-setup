@@ -367,29 +367,43 @@ run_deploy() {
     local fail_text="deploy must use one of --pkcon, --rsync or --zypper"
     [[ -z ${1:-} ]] && fatal $fail_text
 
+    local retcode=0
+
     while [[ $1 ]]; do
 	case "$1" in
 	    "--pkcon" ) shift
 		run_rpm
+		[ $? -ne 0 ] && return 1
 		rpms=$(find RPMS -name \*rpm | grep -v -- "-debug")
 		rsync_as $deviceuser -av ${rpms} $device_ip:/home/$deviceuser/RPMS/
+		[ $? -ne 0 ] && return 1
 		ssh_as $deviceuser pkcon --plain --noninteractive install-local ${rpms}
+		retcode=$?
+		ssh_as $deviceuser rm -f ${rpms}
 		;;
             "--zypper" ) shift
 		run_rpm
+		[ $? -ne 0 ] && return 1
 		rpms=$(find RPMS -name \*rpm | grep -v -- "-debug")
 		rsync_as root -av ${rpms} $device_ip:/root/RPMS/
+		[ $? -ne 0 ] && return 1
 		ssh_as root zypper --non-interactive in -f ${rpms}
+		retcode=$?
+		ssh_as root rm -f ${rpms}
 		;;
             "--rsync" ) shift
 		run_install
+		[ $? -ne 0 ] && return 1
 		name=$(get_spec_tag "%{name}")
 		rsync_as $deviceuser -av ${buildroot}/. $device_ip:/opt/sdk/$name
+		retcode=$?
 		;;
 	    *)
 		fatal $fail_text ;;
 	esac
     done
+
+    if [ $retcode -ne 0 ]; then return 1; fi
 }
 
 ME=$(basename $0)
