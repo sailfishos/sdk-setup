@@ -59,7 +59,7 @@ usage() {
                        given sb2 target. Produces an rpm package.
                      : -d     enable debug build
                      : -j <n> use only 'n' CPUs to build
-                     : can use -s -t -p
+                     : can use -s -t -p -i
 
   $ME qmake [<args>] : runs qmake in the 'build' phase
                        Note that this also verifies target
@@ -67,12 +67,12 @@ usage() {
                      : can use -s -t -p  
 
   $ME make [<args>]  : run make in the 'build' phase
-                     : can use -s -t -p  
+                     : can use -s -t -p
 
   $ME deploy --zypper|--pkcon|--rsync
                      : runs the install or rpm-creation phase and then
                        copies/installs the relevant files to the device
-                     : can use -s -t -p -d
+                     : can use -s -t -p -d -i
 
   $ME run|ssh [<args>] : runs a command (on device if --device given);
                          intended for running gdb and a gdb server
@@ -80,10 +80,11 @@ usage() {
 
   $ME install [<args>] : runs the 'install' phase to install to $buildroot
                      : can use -s -t -p
+
   $ME rpm [<args>]   : runs the install & rpm-creation phases
-                     : can use -s -t -p
+                     : can use -s -t -p -i
 
-
+  -i | --increment   : increment release number in spec file
   -t | --target      : specify the sb2 target to use
   -d | --device      : specify the device
   -p | --projectdir  : when running shadow build/deploy from another dir
@@ -222,6 +223,8 @@ cd_to_spec_setup_dir() {
 #  if x is number => increment
 #  else leave untouched
 increment_build_number() {
+    [[ -z $do_increment_build_number ]] && return
+
     local release=$(get_spec_tag "%{release}")
     local x=$(echo $release | cut -f 1 -d .)
     local y=$(echo $release | cut -s -f 2 -d .)
@@ -272,6 +275,7 @@ run_build() {
     (
 	cd_to_spec_setup_dir;
 	rm -f $_basedir/RPMS/*;
+	increment_build_number;
 	eval sb2 -t $target rpmbuild --build-in-place \
 	    $BUILD_DEBUG \
 	    --define \"_smp_mflags -j$BUILD_JOBS\" \
@@ -437,6 +441,9 @@ while [[ "$1" ]]; do
 	    spec="$1"; shift
 	    try_to_make_spec "$spec"
 	    [[ -f "$spec" ]] || fatal "'$spec' doesn't exist (and couldn't be made from a yaml)"
+	    ;;
+	"-i" | "--increment" ) shift
+	    do_increment_build_number=1
 	    ;;
 	install | rpm | deploy | build )
 	    needspec=1;
