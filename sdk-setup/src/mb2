@@ -111,7 +111,7 @@ try_to_make_spec() { # Tries to create a missing spec
     [[ -f "$1" ]] && return # It's not missing
     yaml="$(dirname "$1")/$(basename "$1" .spec)".yaml
     [[ -f "$yaml" ]] || return # No yaml
-    ANSI_COLORS_DISABLED=1 specify -n -N "$yaml"
+    ANSI_COLORS_DISABLED=1 specify -n -N "$yaml" || fatal "unable to convert yaml to spec"
 }
 
 try_to_make_spec_from_yaml() {
@@ -124,7 +124,7 @@ ensure_spec_newer_than_yaml() {
     yaml="$(dirname "$spec")/$(basename "$spec" .spec)".yaml
     [[ -f "$yaml" ]] || return # User has decided not to use yaml
     if [[ "$yaml" -nt "$spec" ]]; then # -nt is newer than
-	ANSI_COLORS_DISABLED=1 specify -n -N "$yaml"
+	ANSI_COLORS_DISABLED=1 specify -n -N "$yaml" || fatal "unable to convert yaml to spec"
     fi
 }
 
