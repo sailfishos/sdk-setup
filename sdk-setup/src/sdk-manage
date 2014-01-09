@@ -368,31 +368,30 @@ install_target() {
     echo
     echo Unpacking target
     tar xf "$local_file"
+    local tar_retcode=$?
 
-    if [ $? -ne 0 ]; then
+    if [[ ! -z $local_file ]]; then
+	if [[ $target_downloaded -eq 1 ]]; then
+	    rm -f "$local_file"
+	fi
+    else
+	rm -f "$mer_targets/$target.tar.bz2"
+    fi
+
+    if [ $tar_retcode -ne 0 ]; then
 	if [ "$( df --sync / | tr -s ' ' | tail -n 1 | cut -d ' ' -f 4 )" -lt 10000 ]; then
 	    echo "Not enough disk space to unpack target image"
 	else
-	    echo "Couldn't unpack target image"
+	    echo "Could not unpack target image"
 	fi
 	rm -rf $mer_targets/$target
-
 	return 4
     fi
 
     chown -R $sdk_user:$sdk_user $mer_targets/$target
 
     synchronise_target $target
-
     [ $? -ne 0 ] && echo "Rsync didn't exactly run as intended, expect problems."
-
-    [[ ! $local_file ]] && rm "$mer_targets/$target.tar.bz2"
-
-    # remove the target tarball if it was downloaded
-    if [[ target_downloaded -eq 1 && $local_file ]]; then
-	echo "local_file: $local_file => rm"
-	rm "$local_file"
-    fi
 
     echo Setting up SB2
 
