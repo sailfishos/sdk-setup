@@ -58,10 +58,10 @@ _mb2_comp()
     esac
 
     if [[ "$cur" == -* ]]; then
-	COMPREPLY=( $( compgen -W '-d -p -s -t --target --device --projectdir --specfile' -- "$cur" ) )
+	COMPREPLY=( $( compgen -W '-d -i -p -s -t --target --device --increment --projectdir --specfile' -- "$cur" ) )
     else
 	COMPREPLY=( $( compgen -W 'build qmake make ssh install rpm deploy run \
-                                   -d -p -s -t --device --projectdir --specfile --target' -- "$cur" ) )
+                                   -d -p -s -t -i --device --increment --projectdir --specfile --target' -- "$cur" ) )
     fi
 
     return 0;
