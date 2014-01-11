@@ -347,7 +347,7 @@ install_target() {
 	echo Downloading target
 	local_file=$mer_targets/$target.tar.bz2
 	echo "curl $url > $local_file"
-	curl "$url" > $local_file
+	curl -# "$url" > $local_file
 	curl_status=$?
 	if [ \( $curl_status -ne 0 \) -o \( $(stat -c %s "$local_file") -lt 10000 \) ]; then #hash check anybody?
 	    echo "Download failed"
