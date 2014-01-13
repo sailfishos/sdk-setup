@@ -349,7 +349,7 @@ install_target() {
 	echo "curl $url > $local_file"
 	curl -# "$url" > $local_file
 	curl_status=$?
-	if [ \( $curl_status -ne 0 \) -o \( $(stat -c %s "$local_file") -lt 10000 \) ]; then #hash check anybody?
+	if [[ $curl_status -ne 0 ]] || [[ ! -f $local_file ]] || [[ $(stat -c %s "$local_file") -lt 10000 ]]; then
 	    echo "Download failed"
 	    rm -f $local_file
 	    return 3
