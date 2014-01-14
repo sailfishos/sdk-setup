@@ -344,16 +344,42 @@ install_target() {
     if [[ $url == file\:\/\/\/* ]]; then
 	local_file=${url//file\:\/\//}
     else
-	echo Downloading target
+	pushd $mer_targets >/dev/null
 	local_file=$mer_targets/$target.tar.bz2
-	echo "curl $url > $local_file"
-	curl -# "$url" > $local_file
+	local orig_file=$(echo $url | rev | cut -f 1 -d / | rev)
+	local md5file="$orig_file.md5sum"
+	local download_failed=0
+
+	echo Downloading "$orig_file"
+	curl -# "$url" > "$orig_file"
 	curl_status=$?
-	if [[ $curl_status -ne 0 ]] || [[ ! -f $local_file ]] || [[ $(stat -c %s "$local_file") -lt 10000 ]]; then
-	    echo "Download failed"
+
+	if [ $curl_status -eq 0 ] ; then
+            # check if md5sum file exists
+	    if curl --output /dev/null --silent --head --fail "$url.md5sum"; then
+                # md5sum exists, let's check it
+		curl --silent "$url.md5sum" > "$md5file"
+		if ! md5sum --status -c "$md5file"; then
+		    echo "ERROR: md5sum check failed for file $orig_file!"
+		    download_failed=1
+		else
+		    echo "INFO: md5sum matches - download ok"
+		fi
+		rm -f "$md5file"
+	    else
+		echo "WARNING: No md5sum file found - can not verify file integrity."
+	    fi
+	fi
+
+	mv -f $orig_file $local_file
+	if [[ $download_failed -ne 0 ]] || [[ $curl_status -ne 0 ]] ||
+           [[ ! -f $local_file ]] || [[ $(stat -c %s "$local_file") -lt 10000 ]]; then
+	    echo "Download failed!"
 	    rm -f $local_file
+	    popd >/dev/null
 	    return 3
 	fi
+	popd >/dev/null
 	target_downloaded=1
     fi
 
@@ -366,7 +392,7 @@ install_target() {
     cd $mer_targets/$target
 
     echo
-    echo Unpacking target
+    echo "Unpacking target ..."
     tar xf "$local_file"
     local tar_retcode=$?
 
@@ -391,7 +417,7 @@ install_target() {
     chown -R $sdk_user:$sdk_user $mer_targets/$target
 
     synchronise_target $target
-    [ $? -ne 0 ] && echo "Rsync didn't exactly run as intended, expect problems."
+    [ $? -ne 0 ] && echo "Rsync did not exactly run as intended, expect problems."
 
     echo Setting up SB2
 
