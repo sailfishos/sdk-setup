@@ -21,6 +21,7 @@ SubPackages:
     Summary: Mer SDK files for the chroot variant
     Description: Contains the mer_sdk_chroot script and supporting configs
     Group: System/Base
+    BuildArch: noarch
     RequiresPre:
       - rpm
       - /bin/rm
@@ -36,6 +37,7 @@ SubPackages:
     Summary: Mer SDK files for the VM variant
     Description: Contains the supporting configs for VMs
     Group: System/Base
+    BuildArch: noarch
     Conflicts:
       - sdk-chroot
     RequiresPost:
@@ -69,6 +71,7 @@ SubPackages:
       - '%attr(-,mersdk,mersdk) %{_sysconfdir}/mersdk/'
   - Name: sdk-sb2-config
     AsWholeName: true
+    BuildArch: noarch
     Summary: Mer SDK files to configure sb2
     Description: Contains the sdk build and install modes used by scratchbox2 in the
       SDK
@@ -82,6 +85,7 @@ SubPackages:
     Summary: Mer SDK utility scripts
     Description: Contains some utility scripts to support Mer SDK development
     Group: System/Base
+    BuildArch: noarch
     Requires:
       - rpm-build
       - python-lxml
@@ -100,6 +104,7 @@ SubPackages:
   - Name: sdk-mer-branding
     Summary: Mer Branding for the SDK Engine
     AsWholeName: true
+    BuildArch: noarch
     Description: Splash screen for the SDK Engine
     Group: System/Base
     Provides:
@@ -113,6 +118,7 @@ SubPackages:
   - Name: connman-configs-mersdk-emul
     Summary: Connman configs for SDK Emulator
     AsWholeName: true
+    BuildArch: noarch
     Description: Connman configs for SDK emulator to ensure session is started
     Group: System/Base
     Provides:

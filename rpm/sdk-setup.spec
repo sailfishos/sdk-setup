@@ -30,6 +30,7 @@ Scripts, configurations and utilities to build Mer SDK and variants
 %package -n sdk-chroot
 Summary:    Mer SDK files for the chroot variant
 Group:      System/Base
+BuildArch:  noarch
 Requires(pre): rpm
 Requires(pre): /bin/rm
 Conflicts:  sdk-vm
@@ -40,6 +41,7 @@ Contains the mer_sdk_chroot script and supporting configs
 %package -n sdk-vm
 Summary:    Mer SDK files for the VM variant
 Group:      System/Base
+BuildArch:  noarch
 Requires:   sdk-utils == %{version}
 Requires:   connman >= 1.14
 Requires:   virtualbox-guest-tools
@@ -53,6 +55,7 @@ Contains the supporting configs for VMs
 %package -n sdk-sb2-config
 Summary:    Mer SDK files to configure sb2
 Group:      System/Base
+BuildArch:  noarch
 Requires:   scratchbox2 >= 2.3.90
 
 %description -n sdk-sb2-config
@@ -61,6 +64,7 @@ Contains the sdk build and install modes used by scratchbox2 in the SDK
 %package -n sdk-utils
 Summary:    Mer SDK utility scripts
 Group:      System/Base
+BuildArch:  noarch
 Requires:   rpm-build
 Requires:   python-lxml
 Requires:   sudo
@@ -73,6 +77,7 @@ Contains some utility scripts to support Mer SDK development
 %package -n sdk-mer-branding
 Summary:    Mer Branding for the SDK Engine
 Group:      System/Base
+BuildArch:  noarch
 Requires:   plymouth-lite
 Requires:   sdk-vm
 Provides:   boot-splash-screen
@@ -83,6 +88,7 @@ Splash screen for the SDK Engine
 %package -n connman-configs-mersdk-emul
 Summary:    Connman configs for SDK Emulator
 Group:      System/Base
+BuildArch:  noarch
 Requires:   connman
 Provides:   connman-configs
 
