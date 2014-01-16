@@ -29,6 +29,7 @@
 short_usage() {
     cat <<EOF
 usage: $ME [-t <target>] [-s <specfile>] [-d <device>] [-p <projectdir>]
+           [-f <folder>] [-i]
            build [-d] [-j <n>] [<args>] | qmake [<args>] | make [<args>] | ssh <args>
            install [<args>] | rpm [<args>] | deploy <args> | run <args>
        $ME --help
@@ -72,7 +73,7 @@ usage() {
   $ME deploy --zypper|--pkcon|--rsync
                      : runs the install or rpm-creation phase and then
                        copies/installs the relevant files to the device
-                     : can use -s -t -p -d -i
+                     : can use -s -t -p -d -i -f
 
   $ME run|ssh [<args>] : runs a command (on device if --device given);
                          intended for running gdb and a gdb server
@@ -84,11 +85,14 @@ usage() {
   $ME rpm [<args>]   : runs the install & rpm-creation phases
                      : can use -s -t -p -i
 
-  -i | --increment   : increment release number in spec file
-  -t | --target      : specify the sb2 target to use
-  -d | --device      : specify the device
-  -p | --projectdir  : when running shadow build/deploy from another dir
-  -s | --specfile    : if the specfile is not in rpm/*.spec and cannot be found using -p
+  -i | --increment     : increment release number in spec file
+  -t | --target        : specify the sb2 target to use
+  -d | --device        : specify the device
+  -p | --projectdir    : when running shadow build/deploy from another dir
+  -s | --specfile      : if the specfile is not in rpm/*.spec and cannot be found using -p
+  -f | --shared-folder : the folder where QtCreator shares devices.xml and ssh keys
+                         this option is useful if deploy option is used outside of virtual
+                         machine
 
 EOF
 }
@@ -191,14 +195,14 @@ get_device() {
 
 rsync_as() {
     local user="$1";shift
-    local key=$(dirname "$DEVICES_XML")/${device_sshkeypath}/$user
+    local key=$(get_shared_dir)/${device_sshkeypath}/$user
     [[ -f "$key" ]] || fatal "No key for user $user on $device_name given in devices.xml (rsync $key)"
     RSYNC_RSH="ssh -F /etc/ssh/ssh_config.sdk -l $user -i \"$key\"" rsync "$@"
 }
 
 ssh_as() {
     local user="$1";shift
-    local key=$(dirname "$DEVICES_XML")/${device_sshkeypath}/$user
+    local key=$(get_shared_dir)/${device_sshkeypath}/$user
     [[ -f "$key" ]] || fatal "No key for user $user on $device_name given in devices.xml ($key)"
     ssh -F /etc/ssh/ssh_config.sdk -i "$key" -l $user $device_ip "$@"
 }
@@ -410,10 +414,14 @@ run_deploy() {
     if [ $retcode -ne 0 ]; then return 1; fi
 }
 
+get_shared_dir() {
+    echo "$OPT_SHARED_DIR"
+}
+
 ME=$(basename $0)
 target=""
 pkgdir="./rpm"
-DEVICES_XML=/etc/mersdk/share/devices.xml
+OPT_SHARED_DIR=/etc/mersdk/share
 deviceuser=nemo
 
 # Virtualbox environment will install in this hardcoded location
@@ -424,13 +432,16 @@ else
 fi
 
 while [[ "$1" ]]; do
+    # only set variables in this loop
     case "$1" in
         "-t" | "--target") shift
 	    target="$1"; shift
 	    ;;
+	"-f" | "--shared-folder") shift
+	    OPT_SHARED_DIR="$1"; shift
+	    ;;
         "-d" | "--device") shift
 	    device="$1"; shift
-	    get_device "$device" < $DEVICES_XML || fatal "'$device' not found in devices.xml"
 	    ;;
         "-p" | "--projectdir") shift
 	    projdir="$1"; shift
@@ -439,8 +450,6 @@ while [[ "$1" ]]; do
 	    ;;
         "-s" | "--specfile" ) shift
 	    spec="$1"; shift
-	    try_to_make_spec "$spec"
-	    [[ -f "$spec" ]] || fatal "'$spec' doesn't exist (and couldn't be made from a yaml)"
 	    ;;
 	"-i" | "--increment" ) shift
 	    do_increment_build_number=1
@@ -456,6 +465,16 @@ while [[ "$1" ]]; do
             ;;
     esac
 done
+
+if [[ -n "$spec" ]]; then
+    try_to_make_spec "$spec"
+    [[ -f "$spec" ]] || fatal "'$spec' doesn't exist (and could not be made from a yaml)"
+fi
+
+if [[ -n "$device" ]]; then
+    [[ -f $(get_shared_dir)/devices.xml ]] || fatal "Unable to open $(get_shared_dir)/devices.xml"
+    get_device "$device" < $(get_shared_dir)/devices.xml || fatal "'$device' not found in devices.xml"
+fi
 
 if [[ ! "$target" ]]; then
     if [[ -f ~/.scratchbox2/config ]]; then
