@@ -1,5 +1,6 @@
 #!/bin/bash
-# Copyright (C) 2013 Jolla Ltd.
+#
+# Copyright (C) 2013 - 2014 Jolla Ltd.
 # Contact: David Greaves <david.greaves@jollamobile.com>
 # All rights reserved.
 #
@@ -107,7 +108,7 @@ fatal() {
 }
 
 check_spec_supports_qtc() {
-    if ! grep "define qtc_qmake" "$spec" >/dev/null 2>&1 ; then
+    if ! grep "define qtc_qmake" "$OPT_SPEC" >/dev/null 2>&1 ; then
 	notice "This specfile does not have the qtc_* macros defined"
     fi
 }
@@ -126,20 +127,20 @@ try_to_make_spec_from_yaml() {
 }
 
 ensure_spec_newer_than_yaml() {
-    yaml="$(dirname "$spec")/$(basename "$spec" .spec)".yaml
+    yaml="$(dirname "$OPT_SPEC")/$(basename "$OPT_SPEC" .spec)".yaml
     [[ -f "$yaml" ]] || return # User has decided not to use yaml
-    if [[ "$yaml" -nt "$spec" ]]; then # -nt is newer than
+    if [[ "$yaml" -nt "$OPT_SPEC" ]]; then # -nt is newer than
 	ANSI_COLORS_DISABLED=1 specify -n -N "$yaml" || fatal "unable to convert yaml to spec"
     fi
 }
 
 verify_target_dependencies() {
-    rpmspec --query --buildrequires "$spec" | \
-        xargs --no-run-if-empty sb2 -t "$target" -m sdk-install -R zypper --non-interactive in
+    rpmspec --query --buildrequires "$OPT_SPEC" | \
+        xargs --no-run-if-empty sb2 -t "$OPT_TARGET" -m sdk-install -R zypper --non-interactive in
 }
 
 get_spec_tag() {
-    rpmspec --query --srpm --queryformat="$1" "$spec"
+    rpmspec --query --srpm --queryformat="$1" "$OPT_SPEC"
 }
 
 # Helper to read XML
@@ -209,7 +210,7 @@ ssh_as() {
 
 cd_to_spec_setup_dir() {
     _basedir=$(pwd)
-    local setup_dir=$(grep -Po '%setup.*-n.*' "$spec" | cut -s -f2 -d'/')
+    local setup_dir=$(grep -Po '%setup.*-n.*' "$OPT_SPEC" | cut -s -f2 -d'/')
     if [ -n "$setup_dir" ]; then
 	# in case we got a spec %{tag} out of this, try to expand it
 	setup_dir=$(get_spec_tag "$setup_dir")
@@ -227,7 +228,7 @@ cd_to_spec_setup_dir() {
 #  if x is number => increment
 #  else leave untouched
 increment_build_number() {
-    [[ -z $do_increment_build_number ]] && return
+    [[ $OPT_INC_BUILD_NUMBER -eq 0 ]] && return
 
     local release=$(get_spec_tag "%{release}")
     local x=$(echo $release | cut -f 1 -d .)
@@ -241,7 +242,7 @@ increment_build_number() {
 	if [[ $y =~ ^-?[0-9]+$ ]]; then
 	    let new_release=$y+1
 	    echo "Incrementing release: $x.$y -> $x.$new_release"
-	    sed -i "s/^Release:.*/Release: $x.$new_release/" "$spec"
+	    sed -i "s/^Release:.*/Release: $x.$new_release/" "$OPT_SPEC"
 	    return
 	else
 	    # non-numeric after dot => don't touch
@@ -253,7 +254,7 @@ increment_build_number() {
 	if [[ $x =~ ^-?[0-9]+$ ]]; then
 	    let new_release=$x+1
 	    echo "Incrementing release: $x -> $new_release"
-	    sed -i "s/^Release:.*/Release: $new_release/" "$spec"
+	    sed -i "s/^Release:.*/Release: $new_release/" "$OPT_SPEC"
 	    return
 	fi
     fi
@@ -274,13 +275,13 @@ run_build() {
     # intended to provide mb build behaviour
     verify_target_dependencies
 
-    sed -e '/^%patch/d' "$spec" > "$spec".$$
+    sed -e '/^%patch/d' "$OPT_SPEC" > "$OPT_SPEC".$$
 
     (
 	cd_to_spec_setup_dir;
 	rm -f $_basedir/RPMS/*;
 	increment_build_number;
-	eval sb2 -t $target rpmbuild --build-in-place \
+	eval sb2 -t $OPT_TARGET rpmbuild --build-in-place \
 	    $BUILD_DEBUG \
 	    --define \"_smp_mflags -j$BUILD_JOBS\" \
 	    --define \"_rpmdir $_basedir/RPMS \" \
@@ -291,13 +292,13 @@ run_build() {
 	    --doinstall \
 	    --dobinary \
 	    --docheck \
-	    \"$spec\".$$
+	    \"$OPT_SPEC\".$$
     )
-    rm -f "$spec".$$
+    rm -f "$OPT_SPEC".$$
 }
 
 run_qmake() {
-    if [[ "$spec" ]]; then
+    if [[ "$OPT_SPEC" ]]; then
 	# The paths that are passed to rpmbuild via the --define
 	# options can contain whitespace so let's quote all args
 	fix_arguments "$@"
@@ -306,35 +307,35 @@ run_qmake() {
 	verify_target_dependencies
 	(
 	    cd_to_spec_setup_dir;
-	    eval sb2 -t $target rpmbuild --build-in-place \
+	    eval sb2 -t $OPT_TARGET rpmbuild --build-in-place \
 		--dobuild \
 		--define \"noecho 1 \" \
 		--define \"qtc_builddir $_basedir \" \
 		--define \"qtc_make true ignoring make\" \
 		--define \"qtc_qmake5 %qmake5 $fixed_args\" \
 		--define \"qtc_qmake %qmake $fixed_args\" \
-		\"$spec\"
+		\"$OPT_SPEC\"
 	)
     else
-	sb2 -t $target qmake "$@"
+	sb2 -t $OPT_TARGET qmake "$@"
     fi
 }
 
 run_make() {
-    if [[ "$spec" ]]; then
+    if [[ "$OPT_SPEC" ]]; then
 	(
 	    cd_to_spec_setup_dir;
-	    eval sb2 -t $target rpmbuild --build-in-place \
+	    eval sb2 -t $OPT_TARGET rpmbuild --build-in-place \
 		--dobuild \
 		--define \"noecho 1 \" \
 		--define \"qtc_builddir $_basedir \" \
 		--define \"qtc_qmake5 true ignoring qmake\" \
 		--define \"qtc_qmake true ignoring qmake\" \
 		--define \"qtc_make make %{?_smp_mflags} "$@"\" \
-		\"$spec\"
+		\"$OPT_SPEC\"
 	)
     else
-	sb2 -t $target make "$@"
+	sb2 -t $OPT_TARGET make "$@"
     fi
 }
 
@@ -342,13 +343,13 @@ run_install() {
     # Install to buildroot which should be rsync'ed to /opt/sdk/$package on device
     (
 	cd_to_spec_setup_dir;
-	eval sb2 -t $target rpmbuild --build-in-place \
+	eval sb2 -t $OPT_TARGET rpmbuild --build-in-place \
 	    --define \"noecho 1 \" \
 	    --define \"qtc_builddir $_basedir \" \
 	    --define \"_sourcedir $_basedir/rpm \" \
 	    --buildroot=\"$buildroot\" \
 	    --doinstall \
-	    \"$spec\"
+	    \"$OPT_SPEC\"
     )
 }
 
@@ -357,7 +358,7 @@ run_rpm() {
 	cd_to_spec_setup_dir;
 	rm -f $_basedir/RPMS/*;
 	increment_build_number;
-	eval sb2 -t $target rpmbuild --build-in-place \
+	eval sb2 -t $OPT_TARGET rpmbuild --build-in-place \
 	    --define \"qtc_builddir $_basedir \" \
 	    --define \"_rpmdir $_basedir/RPMS \" \
 	    --define \"_sourcedir $_basedir/rpm \" \
@@ -366,7 +367,7 @@ run_rpm() {
 	    --doinstall \
 	    --dobinary \
 	    --docheck \
-	    \"$spec\"
+	    \"$OPT_SPEC\"
     )
 }
 
@@ -419,9 +420,14 @@ get_shared_dir() {
 }
 
 ME=$(basename $0)
-target=""
-pkgdir="./rpm"
+OPT_SPEC=
+OPT_TARGET=
+OPT_DEVICE=
+OPT_PKGDIR="./rpm"
+OPT_PROJDIR=
+OPT_NEEDSPEC=
 OPT_SHARED_DIR=/etc/mersdk/share
+OPT_INC_BUILD_NUMBER=0
 deviceuser=nemo
 
 # Virtualbox environment will install in this hardcoded location
@@ -435,27 +441,27 @@ while [[ "$1" ]]; do
     # only set variables in this loop
     case "$1" in
         "-t" | "--target") shift
-	    target="$1"; shift
+	    OPT_TARGET="$1"; shift
 	    ;;
 	"-f" | "--shared-folder") shift
 	    OPT_SHARED_DIR="$1"; shift
 	    ;;
         "-d" | "--device") shift
-	    device="$1"; shift
+	    OPT_DEVICE="$1"; shift
 	    ;;
         "-p" | "--projectdir") shift
-	    projdir="$1"; shift
-	    pkgdir="$projdir"/rpm
-	    [[ -d "$projdir" ]] || fatal "'$projdir' is not a directory"
+	    OPT_PROJDIR="$1"; shift
+	    OPT_PKGDIR="$OPT_PROJDIR"/rpm
+	    [[ -d "$OPT_PROJDIR" ]] || fatal "'$OPT_PROJDIR' is not a directory"
 	    ;;
         "-s" | "--specfile" ) shift
-	    spec="$1"; shift
+	    OPT_SPEC="$1"; shift
 	    ;;
 	"-i" | "--increment" ) shift
-	    do_increment_build_number=1
+	    OPT_INC_BUILD_NUMBER=1
 	    ;;
 	install | rpm | deploy | build )
-	    needspec=1;
+	    OPT_NEEDSPEC=1;
 	    break 2 ;;
 	qmake | make | run | ssh )
 	    break 2 ;;
@@ -466,25 +472,25 @@ while [[ "$1" ]]; do
     esac
 done
 
-if [[ -n "$spec" ]]; then
-    try_to_make_spec "$spec"
-    [[ -f "$spec" ]] || fatal "'$spec' doesn't exist (and could not be made from a yaml)"
+if [[ -n "$OPT_SPEC" ]]; then
+    try_to_make_spec "$OPT_SPEC"
+    [[ -f "$OPT_SPEC" ]] || fatal "'$OPT_SPEC' doesn't exist (and could not be made from a yaml)"
 fi
 
-if [[ -n "$device" ]]; then
+if [[ -n "$OPT_DEVICE" ]]; then
     [[ -f $(get_shared_dir)/devices.xml ]] || fatal "Unable to open $(get_shared_dir)/devices.xml"
-    get_device "$device" < $(get_shared_dir)/devices.xml || fatal "'$device' not found in devices.xml"
+    get_device "$OPT_DEVICE" < $(get_shared_dir)/devices.xml || fatal "'$OPT_DEVICE' not found in devices.xml"
 fi
 
-if [[ ! "$target" ]]; then
+if [[ ! "$OPT_TARGET" ]]; then
     if [[ -f ~/.scratchbox2/config ]]; then
 	. ~/.scratchbox2/config
-	target=$DEFAULT_TARGET
+	OPT_TARGET=$DEFAULT_TARGET
     fi
-    [[ "$target" ]] || fatal "You must specify an sb2 target or have a default configured"
+    [[ "$OPT_TARGET" ]] || fatal "You must specify an sb2 target or have a default configured"
 fi
 
-[[ -d ~/.scratchbox2/$target ]] || fatal "$target is an invalid sb2 target"
+[[ -d ~/.scratchbox2/$OPT_TARGET ]] || fatal "$OPT_TARGET is an invalid sb2 target"
 
 # spec rules are complex:
 #  a .spec is required for some but not all operations
@@ -494,45 +500,44 @@ fi
 #  if there is a rpm/*.spec then that is used
 #  if there is a rpm/*.yaml then a spec is made and used
 
-if [[ ! "$spec" ]]; then
-    numspec=$(ls "$pkgdir"/*spec 2>/dev/null | wc -l)
+if [[ ! "$OPT_SPEC" ]]; then
+    numspec=$(ls "$OPT_PKGDIR"/*spec 2>/dev/null | wc -l)
     if [[ $numspec -gt 1 ]]; then
-	[[ $needspec ]] && fatal "Too many spec files - please use -s to identify which to use"
+	[[ $OPT_NEEDSPEC ]] && fatal "Too many spec files - please use -s to identify which one to use"
 	echo "Too many spec files - not using any. Use -s to identify a specific one"
 	# spec is not set
     fi
 
     if [[ $numspec -eq 0 ]]; then
 	# No spec, try to find a yaml
-	numyaml=$(ls "$pkgdir"/*yaml 2>/dev/null | wc -l)
+	numyaml=$(ls "$OPT_PKGDIR"/*yaml 2>/dev/null | wc -l)
 	if [[ $numyaml -eq 1 ]]; then
-	    try_to_make_spec_from_yaml "$(ls "$pkgdir"/*yaml)"
-	    numspec=$(ls "$pkgdir"/*spec 2>/dev/null | wc -l)
+	    try_to_make_spec_from_yaml "$(ls "$OPT_PKGDIR"/*yaml)"
+	    numspec=$(ls "$OPT_PKGDIR"/*spec 2>/dev/null | wc -l)
 	else
-	    [[ $needspec ]] && fatal "No spec file found in '$pkgdir/' and couldn't make one from a yaml #1"
+	    [[ $OPT_NEEDSPEC ]] && fatal "No spec file found in '$OPT_PKGDIR/' and couldn't make one from a yaml #1"
 	fi
     fi
 
     if [[ $numspec -eq 1 ]]; then
-	spec=$(ls "$pkgdir"/*spec)
+	OPT_SPEC=$(ls "$OPT_PKGDIR"/*spec)
     else
 	# this is because we did try_to_make_spec_from_yaml and failed
-	[[ $needspec ]] && fatal "No spec file found in '$pkgdir/' and couldn't make one from a yaml #2"
-	
+	[[ $OPT_NEEDSPEC ]] && fatal "No spec file found in '$OPT_PKGDIR/' and couldn't make one from a yaml #2"
     fi
 fi
 
 # Now if there is a spec given, make sure it is up-to-date
-if [[ "$spec" ]]; then
+if [[ "$OPT_SPEC" ]]; then
     # turn 'spec' into an absolute path
-    spec=$(readlink -f "$spec")
+    OPT_SPEC=$(readlink -f "$OPT_SPEC")
     ensure_spec_newer_than_yaml
 fi
 
 case "$1" in
     qmake | make | install | rpm | deploy )
 	cmd=run_$1
-	if [[ "$spec" ]]; then
+	if [[ "$OPT_SPEC" ]]; then
 	    check_spec_supports_qtc
 	fi
         shift
@@ -562,7 +567,7 @@ case "$1" in
 	done
         ;;
     run | ssh ) shift
-	if [[ "$device" ]]; then
+	if [[ "$OPT_DEVICE" ]]; then
 	    cmd="ssh_as $deviceuser"
 	else
 	    cmd="eval"
