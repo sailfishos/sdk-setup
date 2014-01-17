@@ -128,15 +128,16 @@ try_to_make_spec_from_yaml() {
 
 ensure_spec_newer_than_yaml() {
     yaml="$(dirname "$OPT_SPEC")/$(basename "$OPT_SPEC" .spec)".yaml
-    [[ -f "$yaml" ]] || return # User has decided not to use yaml
-    if [[ "$yaml" -nt "$OPT_SPEC" ]]; then # -nt is newer than
+    if [[ -f "$yaml" && "$yaml" -nt "$OPT_SPEC" ]]; then # -nt is newer than
 	ANSI_COLORS_DISABLED=1 specify -n -N "$yaml" || fatal "unable to convert yaml to spec"
     fi
+
+    # it's ok also not to have a yaml
 }
 
 verify_target_dependencies() {
     rpmspec --query --buildrequires "$OPT_SPEC" | \
-        xargs --no-run-if-empty sb2 -t "$OPT_TARGET" -m sdk-install -R zypper --non-interactive in
+        xargs --no-run-if-empty sb2 -t "$OPT_TARGET" -m sdk-install -R zypper --quiet --non-interactive in
 }
 
 get_spec_tag() {
@@ -209,8 +210,14 @@ ssh_as() {
 }
 
 cd_to_spec_setup_dir() {
-    _basedir=$(pwd)
-    local setup_dir=$(grep -Po '%setup.*-n.*' "$OPT_SPEC" | cut -s -f2 -d'/')
+    _basedir=$PWD
+    # avoid spawning another process for | cut -s -f2 -d '/'
+    local setup_dir=$(grep -Po '%setup.*-n.*' "$OPT_SPEC")
+    # if setup_dir has '/' return the part after it
+    setup_dir=${setup_dir/#*\//}
+    # if it did not have a '/' then we got the original match => erase it
+    setup_dir=${setup_dir/#%setup*/}
+
     if [ -n "$setup_dir" ]; then
 	# in case we got a spec %{tag} out of this, try to expand it
 	setup_dir=$(get_spec_tag "$setup_dir")
@@ -394,7 +401,7 @@ run_deploy() {
 	    "--pkcon" ) shift
 		run_rpm
 		[ $? -ne 0 ] && return 1
-		rpms=$(find RPMS -name \*rpm | grep -v -- "-debug")
+		rpms=$(find RPMS -name '*.rpm' -a ! -name '*-debug*.rpm')
 		rsync_as $deviceuser -av ${rpms} $device_ip:/home/$deviceuser/RPMS/
 		[ $? -ne 0 ] && return 1
 		ssh_as $deviceuser pkcon --plain --noninteractive install-local ${rpms}
@@ -404,10 +411,10 @@ run_deploy() {
             "--zypper" ) shift
 		run_rpm
 		[ $? -ne 0 ] && return 1
-		rpms=$(find RPMS -name \*rpm | grep -v -- "-debug")
+		rpms=$(find RPMS -name '*.rpm' -a ! -name '*-debug*.rpm')
 		rsync_as root -av ${rpms} $device_ip:/root/RPMS/
 		[ $? -ne 0 ] && return 1
-		ssh_as root zypper --non-interactive in -f ${rpms}
+		ssh_as root zypper --non-interactive --quiet in -f ${rpms}
 		retcode=$?
 		ssh_as root rm -f ${rpms}
 		;;
@@ -445,7 +452,7 @@ deviceuser=nemo
 if [[ -f /etc/mer-sdk-vbox ]]; then
     buildroot=/home/deploy/installroot
 else
-    buildroot=$(pwd)/installroot
+    buildroot=$PWD/installroot
 fi
 
 while [[ "$1" ]]; do
@@ -540,7 +547,7 @@ fi
 
 # Now if there is a spec given, make sure it is up-to-date
 if [[ "$OPT_SPEC" ]]; then
-    # turn 'spec' into an absolute path
+    # turn 'OPT_SPEC' into an absolute path
     OPT_SPEC=$(readlink -f "$OPT_SPEC")
     ensure_spec_newer_than_yaml
 fi
