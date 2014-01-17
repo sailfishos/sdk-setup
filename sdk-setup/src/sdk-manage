@@ -72,7 +72,8 @@ umask 022
 # Our toolchains are available through zypper as Mer-SB2-* patterns
 
 get_toolchains() {
-    zypper --no-refresh --non-interactive search -t pattern Mer-SB2-* | grep Mer-SB2 | while IFS='| ' read installed pkg dummy; do
+    zypper --quiet --no-refresh --non-interactive search -t pattern Mer-SB2-* | \
+	grep Mer-SB2 | while IFS='| ' read installed pkg dummy; do
 	echo "${pkg},${installed}"
     done
     return ${PIPESTATUS[0]}
@@ -89,7 +90,7 @@ ensure_installable() {
 install_toolchain() {
     pkg=$1
     if ensure_installable $pkg; then
-	zypper --non-interactive install -t pattern $pkg
+	zypper --quiet --non-interactive install -t pattern $pkg
 	return $?
     else
 	echo "Toolchain $pkg doesn't exist or is already installed- can not install."
@@ -100,7 +101,7 @@ install_toolchain() {
 remove_toolchain() {
     pkg=$1
     if ensure_installed $pkg; then
-	zypper --no-refresh --non-interactive remove -t pattern $pkg
+	zypper --quiet --no-refresh --non-interactive remove -t pattern $pkg
 	return $?
     else
 	echo "Toolchain $pkg is not installed - can not remove."
@@ -153,13 +154,14 @@ assert_target_and_setup() {
 
 t_zypper() {
     (
-	sudo -i -u $sdk_user bash -c "sb2 -t $target -m sdk-install -R zypper $*"
+	sudo -i -u $sdk_user bash -c "sb2 -t $target -m sdk-install -R zypper --quiet $*"
     )
 }
 
 get_develpkgs() {
     search=${1:-}
-    t_zypper --non-interactive --no-refresh search -- "$search" 2>&1 | sed '0,/---------/d' | while IFS='| ' read installed pkg dummy; do
+    t_zypper --non-interactive --no-refresh search -- "$search" 2>&1 | \
+	sed '0,/---------/d' | while IFS='| ' read installed pkg dummy; do
 	echo "${pkg},${installed}"
     done
     return ${PIPESTATUS[0]}
@@ -555,12 +557,12 @@ get_sdk_version() {
 }
 
 upgrade_sdk() {
-    zypper --non-interactive refresh -f
-    zypper --non-interactive dup
+    zypper --quiet --non-interactive refresh -f
+    zypper --quiet --non-interactive dup
 }
 
 refresh_sdk() {
-    zypper --non-interactive refresh -f
+    zypper --quiet --non-interactive refresh -f
 }
 
 register_sdk() {
@@ -606,7 +608,7 @@ manage_sdk() {
 	    sdk_status
 	    ;;
 	--upgradable ) shift
-	    zypper --non-interactive --no-refresh --quiet lu
+	    zypper --non-interactive --no-refresh --quiet list-updates
 	    ;;
 	--upgrade ) shift
 	    upgrade_sdk "$@"
