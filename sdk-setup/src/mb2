@@ -283,10 +283,10 @@ run_build() {
     # intended to provide mb build behaviour
     verify_target_dependencies
 
+    increment_build_number;
     sed -e '/^%patch/d' "$OPT_SPEC" > "$OPT_SPEC".$$
     local build_tgt=$(sb2 -t $OPT_TARGET gcc -dumpmachine)
     build_tgt=${build_tgt%-gnueabi}
-    increment_build_number;
     (
 	cd_to_spec_setup_dir;
 	rm -f "$_basedir/RPMS/*.rpm";
@@ -374,9 +374,9 @@ run_rpm() {
     local build_tgt=$(sb2 -t $OPT_TARGET gcc -dumpmachine)
     build_tgt=${build_tgt%-gnueabi}
     (
+	increment_build_number;
 	cd_to_spec_setup_dir;
 	rm -f "$_basedir/RPMS/*.rpm";
-	increment_build_number;
 	eval sb2 -t $OPT_TARGET rpmbuild --build-in-place \
 	    --define \"noecho 1 \" \
 	    --define \"qtc_builddir $_basedir \" \
