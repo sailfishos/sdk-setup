@@ -27,13 +27,10 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
-#set -o monitor
-#trap "((++fork))" CHLD
-
 short_usage() {
     cat <<EOF
 usage: $ME [-t <target>] [-s <specfile>] [-d <device>] [-p <projectdir>]
-           [-f <folder>] [-i]
+           [-f <folder>] [-i] [-P]
            build [-d] [-j <n>] [<args>] | qmake [<args>] | make [<args>] | ssh <args>
            install [<args>] | rpm [<args>] | deploy <args> | run <args>
        $ME --help
@@ -97,6 +94,7 @@ usage() {
   -f | --shared-folder : the folder where QtCreator shares devices.xml and ssh keys
                          this option is useful if deploy option is used outside of virtual
                          machine
+  -P | --pedantic      : do extra checks
 
 EOF
 }
@@ -130,7 +128,7 @@ try_to_make_spec_from_yaml() {
 
 ensure_spec_newer_than_yaml() {
     local yaml="${OPT_SPEC%.spec}.yaml"
-    if [[ -f "$yaml" && "$yaml" -nt "$OPT_SPEC" ]]; then # -nt is newer than
+    if [[ -f "$yaml" ]] && [[ "$yaml" -nt "$OPT_SPEC" ]]; then # -nt is newer than
 	ANSI_COLORS_DISABLED=1 specify -n -N "$yaml" || fatal "unable to convert yaml to spec"
     fi
 
@@ -212,7 +210,8 @@ ssh_as() {
 }
 
 cd_to_spec_setup_dir() {
-    _basedir="$(pwd)"
+    _basedir="$PWD"
+
     # avoid spawning another process for | cut -s -f2 -d '/'
     local setup_dir=$(grep -Po '%setup.*-n.*' "$OPT_SPEC")
     # if setup_dir has '/' return the part after it
@@ -290,7 +289,7 @@ run_build() {
     increment_build_number;
     (
 	cd_to_spec_setup_dir;
-	rm -f $_basedir/RPMS/*.rpm;
+	rm -f "$_basedir/RPMS/*.rpm";
 	eval sb2 -t $OPT_TARGET rpmbuild --build-in-place --target=$build_tgt \
 	    $BUILD_DEBUG \
 	    --define \"_smp_mflags -j$BUILD_JOBS\" \
@@ -376,9 +375,10 @@ run_rpm() {
     build_tgt=${build_tgt%-gnueabi}
     (
 	cd_to_spec_setup_dir;
-	rm -f $_basedir/RPMS/*.rpm;
+	rm -f "$_basedir/RPMS/*.rpm";
 	increment_build_number;
 	eval sb2 -t $OPT_TARGET rpmbuild --build-in-place --target=$build_tgt \
+	    --define \"noecho 1 \" \
 	    --define \"qtc_builddir $_basedir \" \
 	    --define \"_rpmdir $_basedir/RPMS \" \
 	    --define \"_sourcedir $_basedir/rpm \" \
@@ -386,7 +386,6 @@ run_rpm() {
 	    --buildroot=\"$buildroot\" \
 	    --doinstall \
 	    --dobinary \
-	    --docheck \
 	    \"$OPT_SPEC\"
     )
 }
@@ -432,20 +431,24 @@ run_deploy() {
 	esac
     done
 
-    [[ $retcode -ne 0 ]] && return 1
+    [[ $retcode -eq 0 ]] || { echo "Deploy failed"; return 1; }
 }
 
 get_shared_dir() {
     echo "$OPT_SHARED_DIR"
 }
 
-ME=$(basename $0)
+# this is same as basename $0
+ME=${0/#*\//}
+
+# option variables
 OPT_SPEC=
 OPT_TARGET=
 OPT_DEVICE=
 OPT_PKGDIR="./rpm"
 OPT_PROJDIR=
 OPT_NEEDSPEC=
+OPT_PEDANTIC=0
 OPT_SHARED_DIR=/etc/mersdk/share
 OPT_INC_BUILD_NUMBER=0
 deviceuser=nemo
@@ -454,7 +457,7 @@ deviceuser=nemo
 if [[ -f /etc/mer-sdk-vbox ]]; then
     buildroot=/home/deploy/installroot
 else
-    buildroot="$(pwd)/installroot"
+    buildroot="$PWD/installroot"
 fi
 
 while [[ "$1" ]]; do
@@ -479,6 +482,9 @@ while [[ "$1" ]]; do
 	    ;;
 	"-i" | "--increment" ) shift
 	    OPT_INC_BUILD_NUMBER=1
+	    ;;
+	"-P" | "--pedantic" ) shift
+	    OPT_PEDANTIC=1
 	    ;;
 	install | rpm | deploy | build )
 	    OPT_NEEDSPEC=1;
@@ -512,18 +518,6 @@ fi
 
 [[ -d ~/.scratchbox2/$OPT_TARGET ]] || fatal "$OPT_TARGET is an invalid sb2 target"
 
-# function to get the number of given files in a directory without the
-# need to call external processes
-get_num_files() {
-    local IFS=
-    local a=($@)
-    if [[ "${a[0]}" == "$@" ]]; then
-	echo 0
-    else
-	echo ${#a[@]}
-    fi
-}
-
 # spec rules are complex:
 #  a .spec is required for some but not all operations
 #  if -s is given then
@@ -533,7 +527,11 @@ get_num_files() {
 #  if there is a rpm/*.yaml then a spec is made and used
 
 if [[ ! "$OPT_SPEC" ]]; then
-    numspec=$(get_num_files "$OPT_PKGDIR/*.spec")
+    # set nullglob on so that the shell glob expansions will return
+    # empty if files are not found
+    shopt -s nullglob
+    spec_files=("$OPT_PKGDIR"/*.spec)
+    numspec=${#spec_files[@]}
     if [[ $numspec -gt 1 ]]; then
 	[[ $OPT_NEEDSPEC ]] && fatal "Too many spec files - please use -s to identify which one to use"
 	echo "Too many spec files - not using any. Use -s to identify a specific one"
@@ -542,10 +540,13 @@ if [[ ! "$OPT_SPEC" ]]; then
 
     if [[ $numspec -eq 0 ]]; then
 	# No spec, try to find a yaml
-	if [[ $(get_num_files "$OPT_PKGDIR/*.yaml") -eq 1 ]]; then
+	yaml_files=("$OPT_PKGDIR"/*.yaml)
+	numyaml=${#yaml_files[@]}
+	if [[ $numyaml -eq 1 ]]; then
 	    theyaml=("$OPT_PKGDIR"/*.yaml)
 	    try_to_make_spec_from_yaml "${theyaml[0]}"
-	    numspec=$(get_num_files "$OPT_PKGDIR/*.spec")
+	    spec_files=("$OPT_PKGDIR"/*.spec)
+	    numspec=${#spec_files[@]}
 	else
 	    [[ $OPT_NEEDSPEC ]] && fatal "No spec file found in '$OPT_PKGDIR/' and couldn't make one from a yaml #1"
 	fi
@@ -558,6 +559,9 @@ if [[ ! "$OPT_SPEC" ]]; then
 	# this is because we did try_to_make_spec_from_yaml and failed
 	[[ $OPT_NEEDSPEC ]] && fatal "No spec file found in '$OPT_PKGDIR/' and couldn't make one from a yaml #2"
     fi
+
+    # unset nullglob so that any further globbing works normally
+    shopt -u nullglob
 fi
 
 # Now if there is a spec given, make sure it is up-to-date
@@ -570,7 +574,7 @@ fi
 case "$1" in
     qmake | make | install | rpm | deploy )
 	cmd=run_$1
-	if [[ "$OPT_SPEC" ]]; then
+	if [[ "$OPT_PEDANTIC" -eq 1 && "$OPT_SPEC" ]]; then
 	    check_spec_supports_qtc
 	fi
         shift
@@ -578,7 +582,7 @@ case "$1" in
     build )
 	cmd=run_$1; shift
 	BUILD_DEBUG='--define "debug_package %{nil} "'
-	BUILD_JOBS=$(getconf _NPROCESSORS_ONLN)
+	BUILD_JOBS=
 	while [[ "$1" ]]; do
 	    case "$1" in
 		-d|--enable-debug) shift
@@ -598,6 +602,7 @@ case "$1" in
 		    ;;
 	    esac
 	done
+	[[ $BUILD_JOBS ]] || BUILD_JOBS=$(getconf _NPROCESSORS_ONLN)
         ;;
     run | ssh ) shift
 	if [[ "$OPT_DEVICE" ]]; then
@@ -612,5 +617,3 @@ case "$1" in
 esac
 
 $cmd "$@"
-
-#echo $fork FORKS
