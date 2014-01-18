@@ -27,6 +27,9 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
+#set -o monitor
+#trap "((++fork))" CHLD
+
 short_usage() {
     cat <<EOF
 usage: $ME [-t <target>] [-s <specfile>] [-d <device>] [-p <projectdir>]
@@ -36,7 +39,7 @@ usage: $ME [-t <target>] [-s <specfile>] [-d <device>] [-p <projectdir>]
        $ME --help
 EOF
     # exit if any argument is given
-    [ -n "$1" ] && exit 1
+    [[ -n "$1" ]] && exit 1
 }
 
 usage() {
@@ -217,7 +220,7 @@ cd_to_spec_setup_dir() {
     # if it did not have a '/' then we got the original match => erase it
     setup_dir=${setup_dir/#%setup*/}
 
-    if [ -n "$setup_dir" ]; then
+    if [[ -n "$setup_dir" ]]; then
 	# in case we got a spec %{tag} out of this, try to expand it
 	setup_dir=$(get_spec_tag "$setup_dir")
 	cd "$setup_dir"
@@ -399,27 +402,27 @@ run_deploy() {
 	case "$1" in
 	    "--pkcon" ) shift
 		run_rpm
-		[ $? -ne 0 ] && return 1
+		[[ $? -ne 0 ]] && return 1
 		rpms=$(find RPMS -name '*.rpm' -a ! -name '*-debug*.rpm')
 		rsync_as $deviceuser -av ${rpms} $device_ip:/home/$deviceuser/RPMS/
-		[ $? -ne 0 ] && return 1
+		[[ $? -ne 0 ]] && return 1
 		ssh_as $deviceuser pkcon --plain --noninteractive install-local ${rpms}
 		retcode=$?
 		ssh_as $deviceuser rm -f ${rpms}
 		;;
             "--zypper" ) shift
 		run_rpm
-		[ $? -ne 0 ] && return 1
+		[[ $? -ne 0 ]] && return 1
 		rpms=$(find RPMS -name '*.rpm' -a ! -name '*-debug*.rpm')
 		rsync_as root -av ${rpms} $device_ip:/root/RPMS/
-		[ $? -ne 0 ] && return 1
+		[[ $? -ne 0 ]] && return 1
 		ssh_as root zypper --non-interactive --quiet in -f ${rpms}
 		retcode=$?
 		ssh_as root rm -f ${rpms}
 		;;
             "--rsync" ) shift
 		run_install
-		[ $? -ne 0 ] && return 1
+		[[ $? -ne 0 ]] && return 1
 		name=$(get_spec_tag "%{name}")
 		rsync_as $deviceuser -av ${buildroot}/. $device_ip:/opt/sdk/$name
 		retcode=$?
@@ -429,7 +432,7 @@ run_deploy() {
 	esac
     done
 
-    if [ $retcode -ne 0 ]; then return 1; fi
+    [[ $retcode -ne 0 ]] && return 1
 }
 
 get_shared_dir() {
@@ -583,10 +586,10 @@ case "$1" in
 		-j*)
 		    # support giving -j with and without space between
 		    # it and the 'n'
-		    if [ ${#1} -gt 2 ]; then
+		    if [[ ${#1} -gt 2 ]]; then
 			BUILD_JOBS=${1:2}; shift
 		    else
-			[ -z "$2" ] && short_usage quit
+			[[ -z "$2" ]] && short_usage quit
 			BUILD_JOBS="$2"; shift 2;
 		    fi
 		    ;;
@@ -609,3 +612,5 @@ case "$1" in
 esac
 
 $cmd "$@"
+
+#echo $fork FORKS
