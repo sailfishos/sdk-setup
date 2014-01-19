@@ -386,6 +386,7 @@ run_rpm() {
 	    --buildroot=\"$buildroot\" \
 	    --doinstall \
 	    --dobinary \
+	    --docheck \
 	    \"$OPT_SPEC\"
     )
 }
