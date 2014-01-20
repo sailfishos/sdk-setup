@@ -323,6 +323,22 @@ target_uuidgen()
     sudo -i -u $sdk_user bash -c "sb2 -t $mytarget -m sdk-install -R dbus-uuidgen --ensure"
 }
 
+# handler for failed or canceled target installations
+download_cleanup()
+{
+    # reset the handler
+    trap - EXIT
+
+    #echo "orig_downloaded_file: $orig_downloaded_file"
+    #echo "target_downloded: $target_downloaded"
+    #echo "local_file: $local_file"
+    #echo "mer_targets/target: $mer_targets/$target"
+
+    [[ -f "$orig_downloaded_file" ]] && rm -f "$orig_downloaded_file"
+    [[ $target_downloaded -eq 1 ]] && [[ -f "$local_file" ]] && rm -f "$local_file"
+    [[ -d "$mer_targets/$target" ]] && rm -rf "$mer_targets/$target"
+}
+
 # Download and install a rootfs
 install_target() {
     skip_toolchain_check=0
@@ -341,19 +357,22 @@ install_target() {
 	fi
     fi
 
+    # set cleanup handler for downloaded rootstraps
+    trap download_cleanup EXIT
+
     local_file=""
-    local target_downloaded=0
+    target_downloaded=0
     if [[ $url == file\:\/\/\/* ]]; then
 	local_file=${url//file\:\/\//}
     else
 	pushd $mer_targets >/dev/null
 	local_file=$mer_targets/$target.tar.bz2
-	local orig_file=$(echo $url | rev | cut -f 1 -d / | rev)
-	local md5file="$orig_file.md5sum"
+	orig_downloaded_file=$(echo $url | rev | cut -f 1 -d / | rev)
+	local md5file="$orig_downloaded_file.md5sum"
 	local download_failed=0
 
-	echo Downloading "$orig_file"
-	curl -# "$url" > "$orig_file"
+	echo Downloading "$orig_downloaded_file"
+	curl -# "$url" > "$orig_downloaded_file"
 	curl_status=$?
 
 	if [ $curl_status -eq 0 ] ; then
@@ -362,7 +381,7 @@ install_target() {
                 # md5sum exists, let's check it
 		curl --silent "$url.md5sum" > "$md5file"
 		if ! md5sum --status -c "$md5file"; then
-		    echo "ERROR: md5sum check failed for file $orig_file!"
+		    echo "ERROR: md5sum check failed for file $orig_downloaded_file!"
 		    download_failed=1
 		else
 		    echo "INFO: md5sum matches - download ok"
@@ -373,7 +392,7 @@ install_target() {
 	    fi
 	fi
 
-	mv -f $orig_file $local_file
+	mv -f $orig_downloaded_file $local_file
 	if [[ $download_failed -ne 0 ]] || [[ $curl_status -ne 0 ]] ||
            [[ ! -f $local_file ]] || [[ $(stat -c %s "$local_file") -lt 10000 ]]; then
 	    echo "Download failed!"
@@ -415,6 +434,9 @@ install_target() {
 	rm -rf $mer_targets/$target
 	return 4
     fi
+
+    # reset the cleanup trap
+    trap - EXIT
 
     chown -R $sdk_user:$sdk_user $mer_targets/$target
 
