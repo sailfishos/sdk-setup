@@ -30,7 +30,7 @@ _mb2_comp()
 		return 0
 		;;
 	    deploy)
-		COMPREPLY=( $(compgen -W " --rsync --zypper" -- "${cur}") )
+		COMPREPLY=( $(compgen -W " --rsync --zypper --pkcon" -- "${cur}") )
 		return 0
 		;;
 	    *)
@@ -46,7 +46,7 @@ _mb2_comp()
 	    COMPREPLY=( $(compgen -W "${targets}" -- "${cur}") )
 	    return 0
 	    ;;
-	-p|--projectdir|-s|--specfile)
+	-p|--projectdir|-s|--specfile|-f|--shared-folder)
 	    COMPREPLY=()
 	    return 0
 	    ;;
@@ -58,10 +58,10 @@ _mb2_comp()
     esac
 
     if [[ "$cur" == -* ]]; then
-	COMPREPLY=( $( compgen -W '-d -i -p -s -t --target --device --increment --projectdir --specfile' -- "$cur" ) )
+	COMPREPLY=( $( compgen -W '-d -i -p -s -t -f --shared-folder --target --device --increment --projectdir --specfile' -- "$cur" ) )
     else
 	COMPREPLY=( $( compgen -W 'build qmake make ssh install rpm deploy run \
-                                   -d -p -s -t -i --device --increment --projectdir --specfile --target' -- "$cur" ) )
+                                   -d -p -s -t -i -f --shared-folder --device --increment --projectdir --specfile --target' -- "$cur" ) )
     fi
 
     return 0;
