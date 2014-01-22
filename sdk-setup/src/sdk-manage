@@ -372,7 +372,7 @@ install_target() {
 	local download_failed=0
 
 	echo Downloading "$orig_downloaded_file"
-	curl -# "$url" > "$orig_downloaded_file"
+	curl -# "$url" -o "$orig_downloaded_file" 2>&1
 	curl_status=$?
 
 	if [ $curl_status -eq 0 ] ; then
@@ -392,7 +392,8 @@ install_target() {
 	    fi
 	fi
 
-	mv -f $orig_downloaded_file $local_file
+	[[ -f $orig_downloaded_file ]] && mv -f $orig_downloaded_file $local_file
+
 	if [[ $download_failed -ne 0 ]] || [[ $curl_status -ne 0 ]] ||
            [[ ! -f $local_file ]] || [[ $(stat -c %s "$local_file") -lt 10000 ]]; then
 	    echo "Download failed!"
