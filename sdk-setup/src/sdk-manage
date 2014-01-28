@@ -472,10 +472,7 @@ install_target() {
 
     assert_target_and_setup
 
-    echo "Refreshing target ..."
-    t_zypper --non-interactive refresh
-
-    echo "Notifying QtCreator of new target"
+    echo Notifying QtCreator of new target
     sudo -i -u $sdk_user updateQtCreatorTargets --name $target --target-xml $target_xml
 
     echo Target $target now setup
