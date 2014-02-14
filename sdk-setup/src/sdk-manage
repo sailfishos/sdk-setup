@@ -329,11 +329,6 @@ download_cleanup()
     # reset the handler
     trap - EXIT
 
-    #echo "orig_downloaded_file: $orig_downloaded_file"
-    #echo "target_downloded: $target_downloaded"
-    #echo "local_file: $local_file"
-    #echo "mer_targets/target: $mer_targets/$target"
-
     [[ -f "$orig_downloaded_file" ]] && rm -f "$orig_downloaded_file"
     [[ $target_downloaded -eq 1 ]] && [[ -f "$local_file" ]] && rm -f "$local_file"
     [[ -d "$mer_targets/$target" ]] && rm -rf "$mer_targets/$target"
@@ -359,6 +354,9 @@ install_target() {
 
     # set cleanup handler for downloaded rootstraps
     trap download_cleanup EXIT
+
+    # avoid unbound variable in cleanup in case of a local file
+    orig_downloaded_file=
 
     local_file=""
     target_downloaded=0
