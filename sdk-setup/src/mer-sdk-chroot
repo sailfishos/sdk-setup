@@ -234,32 +234,6 @@ run_user_hook() {
 }
 ################
 
-add_pid_to_active_chroot_list() {
-    mkdir -p $sdkroot/.active_chroots/
-    touch $sdkroot/.active_chroots/$$
-}
-rm_pid_from_active_chroot_list() {
-    rm $sdkroot/.active_chroots/$$
-}
-ensure_active_chroot_list_is_empty() {
-    mkdir -p $sdkroot/.active_chroots/
-    pids=$(ls $sdkroot/.active_chroots/)
-    stillused=""
-    [[ -z "$pids" ]] || {
-	for pid in $pids; do
-	    if [[ -d /proc/$pid ]] && [[ `ls -l /proc/${pid}/fd | grep -w "${sdkroot}"` ]] ; then
-		stillused="$stillused $pid"
-	    else
-		rm $sdkroot/.active_chroots/$pid
-	    fi
-	done
-	[[ -z "$stillused" ]] || {
-	    echo "There appears to be $(wc -w <<< $stillused) chroot(s) still using this SDK"
-	    echo "Process(es) $stillused    are still in use, exiting without unmounting..."
-	    exit 1;
-	}
-    }
-}
 
 ################################################################
 
@@ -295,7 +269,6 @@ setup_user_hooks      # (after prepare so HOMEDIR is known)
 prepare_etc           # resolv.conf and ssl certs
 run_user_hook mount_sdk
 run_user_hook enter_sdk
-add_pid_to_active_chroot_list
 
 case "$#" in
     0 )
@@ -322,7 +295,6 @@ EOF
 	fi
 	;;
 esac
-rm_pid_from_active_chroot_list
 run_user_hook leave_sdk
 
 exit $retval
