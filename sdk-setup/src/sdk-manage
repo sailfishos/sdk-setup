@@ -284,6 +284,8 @@ synchronise_target() {
 + /usr/lib/qt5/qml**
 + /usr/include**
 + /usr/share/qt**
++ /usr/lib/pkgconfig**
++ /usr/share/pkgconfig**
 # and nothing else
 - *
 EOF
