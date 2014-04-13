@@ -372,7 +372,7 @@ install_target() {
 	local download_failed=0
 
 	echo Downloading "$orig_downloaded_file"
-	curl -# "$url" -o "$orig_downloaded_file" 2>&1
+	curl "$url" -o "$orig_downloaded_file" 2>&1
 	curl_status=$?
 
 	if [ $curl_status -eq 0 ] ; then
