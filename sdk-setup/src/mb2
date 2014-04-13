@@ -284,7 +284,15 @@ run_build() {
     verify_target_dependencies
 
     increment_build_number;
-    sed -e '/^%patch/d' "$OPT_SPEC" > "$OPT_SPEC".$$
+    local tmp_spec="$OPT_SPEC.$$"
+    sed -e '/^%patch/d' "$OPT_SPEC" > "$tmp_spec"
+
+    if [[ -f ${OPT_SPEC%.spec}.changes ]]; then
+	notice "Appending changelog entries to spec ..."
+	echo "%changelog" >> "$tmp_spec"
+	cat ${OPT_SPEC%.spec}.changes >> "$tmp_spec"
+    fi
+
     local build_tgt=$(sb2 -t $OPT_TARGET gcc -dumpmachine)
     build_tgt=${build_tgt%-gnueabi}
     (
@@ -301,9 +309,11 @@ run_build() {
 	    --doinstall \
 	    --dobinary \
 	    --docheck \
-	    \"$OPT_SPEC\".$$
+	    \"$tmp_spec\"
     )
-    rm -f "$OPT_SPEC".$$
+    local rc=$?
+    rm -f "$tmp_spec"
+    return $rc
 }
 
 run_qmake() {
@@ -373,6 +383,15 @@ run_install() {
 run_rpm() {
     local build_tgt=$(sb2 -t $OPT_TARGET gcc -dumpmachine)
     build_tgt=${build_tgt%-gnueabi}
+
+    local tmp_spec="$OPT_SPEC.$$"
+    cp -a "$OPT_SPEC" "$tmp_spec"
+    if [[ -f ${OPT_SPEC%.spec}.changes ]]; then
+	notice "Appending changelog entries to spec ..."
+	echo "%changelog" >> "$tmp_spec"
+	cat "${OPT_SPEC%.spec}".changes >> "$tmp_spec"
+    fi
+
     (
 	increment_build_number;
 	cd_to_spec_setup_dir;
@@ -387,8 +406,11 @@ run_rpm() {
 	    --doinstall \
 	    --dobinary \
 	    --docheck \
-	    \"$OPT_SPEC\"
+	    \"$tmp_spec\"
     )
+    local rc=$?
+    rm -f "$tmp_spec"
+    return $rc
 }
 
 run_deploy() {
