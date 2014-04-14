@@ -160,7 +160,8 @@ t_zypper() {
 
 get_develpkgs() {
     search=${1:-}
-    t_zypper --non-interactive --no-refresh search -- "$search" 2>&1 | \
+    # do not include sourcepackages to the list (-t package -t pattern)
+    t_zypper --non-interactive --no-refresh search -t package -t pattern -- "$search" 2>&1 | \
 	sed '0,/---------/d' | while IFS='| ' read installed pkg dummy; do
 	echo "${pkg},${installed}"
     done
