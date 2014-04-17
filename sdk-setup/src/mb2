@@ -71,7 +71,7 @@ usage() {
   $ME make [<args>]  : run make in the 'build' phase
                      : can use -s -t -p
 
-  $ME deploy --zypper|--pkcon|--rsync
+  $ME deploy --zypper|--pkcon|--rsync|--sdk
                      : runs the install or rpm-creation phase and then
                        copies/installs the relevant files to the device
                      : can use -s -t -p -d -i -f
@@ -415,7 +415,7 @@ run_rpm() {
 
 run_deploy() {
     [[ "$device_type" ]] || fatal "deploy must have a valid --device"
-    local fail_text="deploy must use one of --pkcon, --rsync or --zypper"
+    local fail_text="deploy must use one of --pkcon, --rsync , --sdk or --zypper"
     [[ -z ${1:-} ]] && fatal $fail_text
 
     local retcode=0
@@ -429,6 +429,16 @@ run_deploy() {
 		rsync_as $deviceuser -av ${rpms} $device_ip:/home/$deviceuser/RPMS/
 		[[ $? -ne 0 ]] && return 1
 		ssh_as $deviceuser pkcon --plain --noninteractive install-local ${rpms}
+		retcode=$?
+		ssh_as $deviceuser rm -f ${rpms}
+		;;
+	    "--sdk" ) shift
+		run_rpm
+		[[ $? -ne 0 ]] && return 1
+		rpms=$(find RPMS -name '*.rpm' -a ! -name '*-debug*.rpm')
+		rsync_as $deviceuser -av ${rpms} $device_ip:/home/$deviceuser/RPMS/
+		[[ $? -ne 0 ]] && return 1
+		ssh_as $deviceuser sdk-deploy-rpm ${rpms}
 		retcode=$?
 		ssh_as $deviceuser rm -f ${rpms}
 		;;
