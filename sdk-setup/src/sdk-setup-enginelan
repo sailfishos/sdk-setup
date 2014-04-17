@@ -6,6 +6,9 @@
 # up the ethernet for connman; connman will immediately reconfigure the 2nd adapter
 DEVICES_XML=/etc/mersdk/share/devices.xml
 
+DEF_SUBNET="10.220.220"
+MAC2=$(cat /sys/class/net/eth?/address | grep -iv 08:00:5A:11:F1:55)
+
 read_dom () {
     local IFS=\>
     read -d \< ENTITY CONTENT
@@ -35,17 +38,27 @@ get_engine() {
 	esac
     done
     if [[ $subnet ]]; then
-	echo Wil set IP=$subnet.254 for $NAME
+	echo "Will set IP=$subnet.254 for $NAME"
 	return 0
     fi
     return 1
 }
 
-if get_engine < $DEVICES_XML ; then
-    echo "Setting up SDK Engine internal LAN to $subnet.254"
-    MAC2=$(cat /sys/class/net/eth?/address | grep -iv 08:00:5A:11:F1:55)
-    mkdir -p /var/lib/connman
-    cat <<EOF > /var/lib/connman/sdkengine.config
+
+mkdir -p /var/lib/connman
+
+if [[ -f $DEVICES_XML ]]; then
+    if ! get_engine < $DEVICES_XML ; then
+	echo "No <engine><subnet> found in devices.xml - using default ($DEF_SUBNET)"
+	subnet=$DEF_SUBNET
+    fi
+else
+    echo "$DEVICES_XML not found - using default ($DEF_SUBNET)"
+    subnet=$DEF_SUBNET
+fi
+
+echo "Setting up SDK Engine internal LAN to $subnet.254"
+cat <<EOF > /var/lib/connman/sdkengine.config
 [global]
 Name = SDK Engine
 Description = SDK Engine Configuration
@@ -63,9 +76,5 @@ IPv6 = off
 MAC = $MAC2
 
 EOF
-    exit 0
-else
-    echo "No <engine><subnet> found in devices.xml"
-    exit 1
-fi
+
 
