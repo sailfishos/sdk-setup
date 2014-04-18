@@ -361,6 +361,9 @@ install_target() {
     # avoid unbound variable in cleanup in case of a local file
     orig_downloaded_file=
 
+    # make sure the target dir exists
+    [[ ! -d $mer_targets ]] && mkdir -p $mer_targets
+
     local_file=""
     target_downloaded=0
     if [[ $url == file\:\/\/\/* ]]; then
