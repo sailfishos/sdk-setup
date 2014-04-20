@@ -422,23 +422,20 @@ run_deploy() {
 
     while [[ $1 ]]; do
 	case "$1" in
-	    "--pkcon" ) shift
+	    "--sdk" | "--pkcon" )
+		local method;
+		if [[ "$1" == "--sdk" ]]; then
+		    method="sdk-deploy-rpm"
+		else
+		    method="pkcon --plain --noninteractive install-local"
+		fi
+		shift
 		run_rpm
 		[[ $? -ne 0 ]] && return 1
 		rpms=$(find RPMS -name '*.rpm' -a ! -name '*-debug*.rpm')
 		rsync_as $deviceuser -av ${rpms} $device_ip:/home/$deviceuser/RPMS/
 		[[ $? -ne 0 ]] && return 1
-		ssh_as $deviceuser pkcon --plain --noninteractive install-local ${rpms}
-		retcode=$?
-		ssh_as $deviceuser rm -f ${rpms}
-		;;
-	    "--sdk" ) shift
-		run_rpm
-		[[ $? -ne 0 ]] && return 1
-		rpms=$(find RPMS -name '*.rpm' -a ! -name '*-debug*.rpm')
-		rsync_as $deviceuser -av ${rpms} $device_ip:/home/$deviceuser/RPMS/
-		[[ $? -ne 0 ]] && return 1
-		ssh_as $deviceuser sdk-deploy-rpm ${rpms}
+		ssh_as $deviceuser $method ${rpms}
 		retcode=$?
 		ssh_as $deviceuser rm -f ${rpms}
 		;;
