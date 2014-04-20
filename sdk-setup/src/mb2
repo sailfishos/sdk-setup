@@ -297,7 +297,7 @@ run_build() {
     build_tgt=${build_tgt%-gnueabi}
     (
 	cd_to_spec_setup_dir;
-	rm -f "$_basedir/RPMS/*.rpm";
+	rm -f "$_basedir/RPMS/"*.rpm;
 	eval sb2 -t $OPT_TARGET rpmbuild --build-in-place \
 	    $BUILD_DEBUG \
 	    --define \"_smp_mflags -j$BUILD_JOBS\" \
@@ -395,7 +395,7 @@ run_rpm() {
     (
 	increment_build_number;
 	cd_to_spec_setup_dir;
-	rm -f "$_basedir/RPMS/*.rpm";
+	rm -f "$_basedir/RPMS/"*.rpm;
 	eval sb2 -t $OPT_TARGET rpmbuild --build-in-place \
 	    --define \"noecho 1 \" \
 	    --define \"qtc_builddir $_basedir \" \
