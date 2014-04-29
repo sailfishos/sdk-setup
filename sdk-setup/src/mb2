@@ -374,6 +374,7 @@ run_install() {
 	    --define \"noecho 1 \" \
 	    --define \"qtc_builddir $_basedir \" \
 	    --define \"_sourcedir $_basedir/rpm \" \
+	    --define \"_skip_install_processing 1\" \
 	    --buildroot=\"$buildroot\" \
 	    --doinstall \
 	    \"$OPT_SPEC\"
