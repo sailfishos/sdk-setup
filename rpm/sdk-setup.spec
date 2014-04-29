@@ -44,13 +44,13 @@ Conflicts:  sdk-chroot
 Contains the supporting configs for VMs
 
 %package -n sdk-sb2-config
-Summary:    Mer SDK files to configure sb2
+Summary:    Mer SDK mode names for sb2
 Group:      System/Base
 BuildArch:  noarch
-Requires:   scratchbox2 >= 2.3.90
+Requires:   scratchbox2 >= 2.3.90+git1
 
 %description -n sdk-sb2-config
-Contains the sdk build and install modes used by scratchbox2 in the SDK
+Contains the sdk-build and sdk-install mode symlinks for scratchbox2.
 
 %package -n sdk-utils
 Summary:    Mer SDK utility scripts
@@ -130,7 +130,9 @@ cp etc/mersdk.env.systemd  %{buildroot}/%{_sysconfdir}/
 
 # sdk-sb2-config
 mkdir -p %{buildroot}/usr/share/scratchbox2/modes/
-cp -ar modes/* %{buildroot}/usr/share/scratchbox2/modes/
+ln -sf obs-rpm-build  %{buildroot}/usr/share/scratchbox2/modes/sdk-build
+ln -sf obs-rpm-build+pp  %{buildroot}/usr/share/scratchbox2/modes/sdk-build+pp
+ln -sf obs-rpm-install  %{buildroot}/usr/share/scratchbox2/modes/sdk-install
 
 # sdk-utils
 cp src/mb %{buildroot}%{_bindir}/
