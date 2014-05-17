@@ -293,6 +293,9 @@ run_build() {
 	cat ${OPT_SPEC%.spec}.changes >> "$tmp_spec"
     fi
 
+    # get rid of potential windows linefeeds
+    sed -i "s/\x0D$//g" "$tmp_spec"
+
     local build_tgt=$(sb2 -t $OPT_TARGET gcc -dumpmachine)
     build_tgt=${build_tgt%-gnueabi}
     (
@@ -321,6 +324,12 @@ run_qmake() {
 	local build_tgt=$(sb2 -t $OPT_TARGET gcc -dumpmachine)
 	build_tgt=${build_tgt%-gnueabi}
 
+	local tmp_spec="$OPT_SPEC.$$"
+	cp -a "$OPT_SPEC" "$tmp_spec"
+
+        # get rid of potential windows linefeeds
+	sed -i "s/\x0D$//g" "$tmp_spec"
+
 	# The paths that are passed to rpmbuild via the --define
 	# options can contain whitespace so let's quote all args
 	fix_arguments "$@"
@@ -336,8 +345,11 @@ run_qmake() {
 		--define \"qtc_make true ignoring make\" \
 		--define \"qtc_qmake5 %qmake5 $fixed_args\" \
 		--define \"qtc_qmake %qmake $fixed_args\" \
-		\"$OPT_SPEC\"
+		\"$tmp_spec\"
 	)
+	local rc=$?
+	rm -f "$tmp_spec"
+	return $rc
     else
 	sb2 -t $OPT_TARGET qmake "$@"
     fi
@@ -345,6 +357,13 @@ run_qmake() {
 
 run_make() {
     if [[ "$OPT_SPEC" ]]; then
+
+	local tmp_spec="$OPT_SPEC.$$"
+	cp -a "$OPT_SPEC" "$tmp_spec"
+
+        # get rid of potential windows linefeeds
+	sed -i "s/\x0D$//g" "$tmp_spec"
+
 	local build_tgt=$(sb2 -t $OPT_TARGET gcc -dumpmachine)
 	build_tgt=${build_tgt%-gnueabi}
 	(
@@ -356,8 +375,11 @@ run_make() {
 		--define \"qtc_qmake5 true ignoring qmake\" \
 		--define \"qtc_qmake true ignoring qmake\" \
 		--define \"qtc_make make %{?_smp_mflags} "$@"\" \
-		\"$OPT_SPEC\"
+		\"$tmp_spec\"
 	)
+	local rc=$?
+	rm -f "$tmp_spec"
+	return $rc
     else
 	sb2 -t $OPT_TARGET make "$@"
     fi
@@ -366,6 +388,12 @@ run_make() {
 run_install() {
     local build_tgt=$(sb2 -t $OPT_TARGET gcc -dumpmachine)
     build_tgt=${build_tgt%-gnueabi}
+
+    local tmp_spec="$OPT_SPEC.$$"
+    cp -a "$OPT_SPEC" "$tmp_spec"
+
+    # get rid of potential windows linefeeds
+    sed -i "s/\x0D$//g" "$tmp_spec"
 
     # Install to buildroot which should be rsync'ed to /opt/sdk/$package on device
     (
@@ -377,8 +405,11 @@ run_install() {
 	    --define \"_skip_install_processing 1\" \
 	    --buildroot=\"$buildroot\" \
 	    --doinstall \
-	    \"$OPT_SPEC\"
+	    \"$tmp_spec\"
     )
+    local rc=$?
+    rm -f "$tmp_spec"
+    return $rc
 }
 
 run_rpm() {
@@ -392,6 +423,9 @@ run_rpm() {
 	echo "%changelog" >> "$tmp_spec"
 	cat "${OPT_SPEC%.spec}".changes >> "$tmp_spec"
     fi
+
+    # get rid of potential windows linefeeds
+    sed -i "s/\x0D$//g" "$tmp_spec"
 
     (
 	increment_build_number;
