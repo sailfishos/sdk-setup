@@ -43,6 +43,8 @@ usage()
 
            $0 --register-all --user <username> --password <password>
 
+           $0 --version
+
        This is the Mer SDK VM manager
        For information see https://wiki.merproject.org/wiki/Platform_SDK_on_VirtualBox
        It is primarily intended for use by the SDK web interface.
@@ -719,6 +721,10 @@ case "$1" in
 	# expects to get --user and --password too
 	manage_sdk --register "$@"
 	manage_targets --register "$@" --all
+	;;
+    --version)
+	echo "$0, version VERSION_FROM_SPEC"
+	exit 0
 	;;
     * )
 	echo "$1 not recognised"

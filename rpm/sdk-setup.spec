@@ -141,6 +141,10 @@ cp src/qb %{buildroot}%{_bindir}/
 cp src/sdk-manage %{buildroot}%{_bindir}/
 cp src/updateQtCreatorTargets %{buildroot}%{_bindir}/updateQtCreatorTargets
 
+# update version info to scripts
+sed -i "s/VERSION_FROM_SPEC/%{version}/" %{buildroot}%{_bindir}/mb2
+sed -i "s/VERSION_FROM_SPEC/%{version}/" %{buildroot}%{_bindir}/sdk-manage
+
 mkdir -p %{buildroot}/%{_sysconfdir}/ssh/
 cp etc/ssh_config.sdk %{buildroot}/%{_sysconfdir}/ssh/
 install -D -m 644 src/mb.bash %{buildroot}/%{_sysconfdir}/bash_completion.d/mb.bash

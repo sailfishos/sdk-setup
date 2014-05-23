@@ -33,6 +33,7 @@ usage: $ME [-t <target>] [-s <specfile>] [-d <device>] [-p <projectdir>]
            [-f <folder>] [-i] [-P]
            build [-d] [-j <n>] [<args>] | qmake [<args>] | make [<args>] | ssh <args>
            install [<args>] | rpm [<args>] | deploy <args> | run <args>
+       $ME --version
        $ME --help
 EOF
     # exit if any argument is given
@@ -553,13 +554,22 @@ while [[ "$1" ]]; do
 	    ;;
 	install | rpm | deploy | build )
 	    OPT_NEEDSPEC=1;
-	    break 2 ;;
+	    break
+	    ;;
 	qmake | make | run | ssh )
-	    break 2 ;;
-	*)
+	    break
+	    ;;
+	--version )
+	    echo "$ME, version VERSION_FROM_SPEC"
+	    exit 0
+	    ;;
+	--help )
 	    usage
-	    exit 1
+	    exit 0
             ;;
+	*)
+	    short_usage quit
+	    ;;
     esac
 done
 
