@@ -328,6 +328,20 @@ target_uuidgen()
     sudo -i -u $sdk_user bash -c "sb2 -t $mytarget -m sdk-install -R dbus-uuidgen --ensure"
 }
 
+# add the MerSDK hostname to target's /etc/hosts
+amend_target_hosts()
+{
+    local mytarget=$1
+    local myhostname=$(hostname)
+
+    if [[ -z "$mytarget" ]]; then
+	echo "NOTICE: amend_target_hosts: empty target name given"
+	return 0
+    fi
+
+    sudo -i -u $sdk_user bash -c "sb2 -t $mytarget -m sdk-install -R sed -i 's,\(127.0.0.1.*\),\1 $myhostname,' /etc/hosts"
+}
+
 # handler for failed or canceled target installations
 download_cleanup()
 {
@@ -475,6 +489,9 @@ install_target() {
 
     # make sure the created target gets a unique id
     target_uuidgen $target
+
+    # fix target's /etc/hosts
+    amend_target_hosts $target
 
     assert_target_and_setup
 
