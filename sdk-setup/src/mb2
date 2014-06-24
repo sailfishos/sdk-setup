@@ -137,7 +137,7 @@ ensure_spec_newer_than_yaml() {
 }
 
 verify_target_dependencies() {
-    rpmspec --query --buildrequires "$OPT_SPEC" | \
+    sb2 -t "$OPT_TARGET" rpmspec --query --buildrequires "$OPT_SPEC" | \
         xargs --no-run-if-empty sb2 -t "$OPT_TARGET" -m sdk-install -R zypper --quiet --non-interactive in
 }
 
