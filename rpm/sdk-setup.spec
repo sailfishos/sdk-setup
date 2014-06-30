@@ -59,7 +59,7 @@ BuildArch:  noarch
 Requires:   rpm-build
 Requires:   python-lxml
 Requires:   sudo
-Requires:   scratchbox2 >= 2.3.90
+Requires:   scratchbox2 >= 2.3.90+git2
 Requires:   sdk-register
 
 %description -n sdk-utils
@@ -139,6 +139,7 @@ cp src/mb %{buildroot}%{_bindir}/
 cp src/mb2 %{buildroot}%{_bindir}/
 cp src/qb %{buildroot}%{_bindir}/
 cp src/sdk-manage %{buildroot}%{_bindir}/
+cp src/sdk-assistant %{buildroot}%{_bindir}/
 cp src/updateQtCreatorTargets %{buildroot}%{_bindir}/updateQtCreatorTargets
 
 # update version info to scripts
@@ -149,6 +150,7 @@ mkdir -p %{buildroot}/%{_sysconfdir}/ssh/
 cp etc/ssh_config.sdk %{buildroot}/%{_sysconfdir}/ssh/
 install -D -m 644 src/mb.bash %{buildroot}/%{_sysconfdir}/bash_completion.d/mb.bash
 install -D -m 644 src/mb2.bash %{buildroot}/%{_sysconfdir}/bash_completion.d/mb2.bash
+install -D -m 644 src/sdk-assistant.bash %{buildroot}/%{_sysconfdir}/bash_completion.d/sdk-assistant.bash
 
 # sdk-mer-branding
 install -D -m 644 branding/mer-splash.png %{buildroot}%{_datadir}/plymouth/splash.png
@@ -232,10 +234,12 @@ fi
 %{_bindir}/mb2
 %{_bindir}/qb
 %{_bindir}/sdk-manage
+%{_bindir}/sdk-assistant
 %{_bindir}/updateQtCreatorTargets
 %config %{_sysconfdir}/ssh/ssh_config.sdk
 %config %{_sysconfdir}/bash_completion.d/mb.bash
 %config %{_sysconfdir}/bash_completion.d/mb2.bash
+%config %{_sysconfdir}/bash_completion.d/sdk-assistant.bash
 
 %files -n sdk-mer-branding
 %defattr(-,root,root,-)

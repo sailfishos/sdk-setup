@@ -1,19 +1,17 @@
 #!/bin/bash
-
+#
 # This is a helper script for the Mer SDK to manage sb2 target and
 # toolchain installation
-
-sdk_user=mersdk
-mer_targets=/srv/mer/targets
-host_targets=/host_targets
-sbox2dir=/home/$sdk_user/.scratchbox2
-target_xml=${host_targets}/targets.xml
 
 usage()
 {
     cat <<EOF
     usage (keep the arguments order):
-
+           $0 --use-chroot-as <name>  - Use the script in MerSDK chroot mode (not default)
+                                        The option has to be the first option given.
+                                        The <name> is the name of the chroot user.
+                                        This option is supposed to be used only from another
+                                        script.
            $0 --toolchain --list
            $0 --toolchain --install <arch>
            $0 --toolchain --remove <arch>
@@ -139,7 +137,7 @@ manage_toolchains() {
 ################################################################'
 # Devel packages
 
-# Our devel packages are available through zypper as -devel packages :)
+# Our devel packages are available through zypper as -devel packages
 
 assert_target_and_setup() {
     assert_target_name_valid "$target"
@@ -237,14 +235,7 @@ check_target_visible() {
 }
 
 get_targets() {
-    tgts=$(sudo -i -u $sdk_user sb2-config -l 2>&1)
-    [[ $? -ne 0 ]] && return 0
-
-    for t in $tgts; do
-	if [[ $(check_target_visible $t) == "yes" ]]; then
-	    echo $t
-	fi
-    done
+    echo $(sudo -i -u $sdk_user sb2-config -f 2>&1)
 }
 
 assert_target_name_valid() {
@@ -382,7 +373,10 @@ install_target() {
 
     local_file=""
     target_downloaded=0
-    if [[ $url == file\:\/\/\/* ]]; then
+
+    if [[ $url != file\:\/\/\/* ]] && [[ $url != http\:\/\/* ]] && [[ $url != https\:\/\/* ]]; then
+	local_file=$(readlink -f $url)
+    elif [[ $url == file\:\/\/\/* ]]; then
 	local_file=${url//file\:\/\//}
     else
 	pushd $mer_targets >/dev/null
@@ -429,9 +423,10 @@ install_target() {
     # Unpack targets to a private area within the VM
     rm -rf $mer_targets/$target
     mkdir -p $mer_targets/$target
-    mkdir -p $host_targets/$target
-
     cd $mer_targets/$target
+
+    # only create host_targets dirs if inside the VM
+    [[ ! $OPT_USE_CHROOT ]] && mkdir -p $host_targets/$target
 
     echo
     echo "Unpacking target ..."
@@ -461,10 +456,12 @@ install_target() {
 
     chown -R $sdk_user:$sdk_user $mer_targets/$target
 
-    synchronise_target $target
-    [ $? -ne 0 ] && echo "Rsync did not exactly run as intended, expect problems."
+    if [[ ! $OPT_USE_CHROOT ]]; then
+	synchronise_target $target
+	[ $? -ne 0 ] && echo "Rsync did not exactly run as intended, expect problems."
+    fi
 
-    echo Setting up SB2
+    echo "Setting up SB2"
 
     case $toolchain in
 	*-arm*)
@@ -485,6 +482,13 @@ install_target() {
 	    ;;
     esac
 
+    if [[ $OPT_USE_CHROOT ]]; then
+	local id_u=$(sudo -i -u $sdk_user id -u)
+	local id_g=$(sudo -i -u $sdk_user id -g)
+	sudo -i -u $sdk_user bash -c "cd $PWD; grep :$id_u: /etc/passwd >> etc/passwd"
+	sudo -i -u $sdk_user bash -c "cd $PWD; grep :$id_g: /etc/group >> etc/group"
+    fi
+
     sudo -i -u $sdk_user bash -c "cd $PWD; sb2-init -L \"--sysroot=/\" -C \"--sysroot=/\" $transparency -m sdk-build -n -N $toolsdir $target $compiler"
 
     # make sure the created target gets a unique id
@@ -495,10 +499,12 @@ install_target() {
 
     assert_target_and_setup
 
-    echo Notifying QtCreator of new target
-    sudo -i -u $sdk_user updateQtCreatorTargets --name $target --target-xml $target_xml
+    if [[ ! $OPT_USE_CHROOT ]]; then
+	echo "Notifying Qt Creator of new target"
+	sudo -i -u $sdk_user updateQtCreatorTargets --name $target --target-xml $target_xml
+    fi
 
-    echo Target $target now setup
+    echo "Target $target now setup"
 }
 
 remove_target() {
@@ -506,16 +512,19 @@ remove_target() {
     if [ -d $sbox2dir/$target ]; then
 	rm -r $sbox2dir/$target
 	rm -rf $mer_targets/$target
-	rm -rf $host_targets/$target
-
-	echo "Notifying QtCreator of removed target"
+	if [[ ! $OPT_USE_CHROOT ]]; then
+	    rm -rf $host_targets/$target
+	    echo "Notifying Qt Creator of removed target"
+	fi
     else
 	echo "Note: target $target was not seen by sb2"
     fi
 
-    # Notify QtCreator anyways, in case the target information was not
-    # in sync
-    sudo -i -u $sdk_user updateQtCreatorTargets --delete --name $target --target-xml $target_xml
+    if [[ ! $OPT_USE_CHROOT ]]; then
+       # Notify Qt Creator always when we're in the VM to keep the
+       # target information in sync
+	sudo -i -u $sdk_user updateQtCreatorTargets --delete --name $target --target-xml $target_xml
+    fi
 }
 
 
@@ -710,6 +719,19 @@ get_register_credentials() {
 
 ################
 
+OPT_SDK_USER=mersdk
+OPT_TARGET_ROOT=
+OPT_USE_CHROOT=
+
+set_options() {
+    sdk_user=$OPT_SDK_USER
+    mer_targets=$OPT_TARGET_ROOT/srv/mer/targets
+    host_targets=/host_targets
+    sbox2dir=/home/$sdk_user/.scratchbox2
+    target_xml=${host_targets}/targets.xml
+}
+
+
 ################################################################
 # Main
 
@@ -717,6 +739,20 @@ if ! [[ ${1:-} ]]; then
     usage --exit
 fi
 
+# set the default options
+set_options
+
+# check if the first cmd line option is for chroot usage
+case "$1" in
+    --use-chroot-as ) shift
+	OPT_SDK_USER=$1; shift
+	OPT_TARGET_ROOT=/parentroot
+	OPT_USE_CHROOT=1
+	set_options
+	;;
+esac
+
+# handle the rest of the command line options
 case "$1" in
     --toolchain ) shift
 	manage_toolchains "$@"
