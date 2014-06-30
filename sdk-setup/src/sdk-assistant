@@ -148,7 +148,6 @@ while [[ ${1:-} ]]; do
             OPT_TARGET=$1; shift
             OPT_ROOTSTRAP=$1; shift
             [[ -z $OPT_ROOTSTRAP ]] && fail "create: target name and a rootstrap URL or filename required"
-            [[ ! -f $OPT_ROOTSTRAP ]] && fail "create: rootstrap file $OPT_ROOTSTRAP - not found"
             ;;
     esac
 done
