@@ -30,7 +30,7 @@
 short_usage() {
     cat <<EOF
 usage: $ME [-t <target>] [-s <specfile>] [-d <device>] [-p <projectdir>]
-           [-f <folder>] [-i] [-P]
+           [-f <folder>] [-i] [-P] [-x]
            build [-d] [-j <n>] [<args>] | qmake [<args>] | make [<args>] | ssh <args>
            install [<args>] | rpm [<args>] | deploy <args> | run <args>
        $ME --version
@@ -62,7 +62,7 @@ usage() {
                        given sb2 target. Produces an rpm package.
                      : -d     enable debug build
                      : -j <n> use only 'n' CPUs to build
-                     : can use -s -t -p -i
+                     : can use -s -t -p -i -x
 
   $ME qmake [<args>] : runs qmake in the 'build' phase
                        Note that this also verifies target
@@ -75,7 +75,7 @@ usage() {
   $ME deploy --zypper|--pkcon|--rsync|--sdk
                      : runs the install or rpm-creation phase and then
                        copies/installs the relevant files to the device
-                     : can use -s -t -p -d -i -f
+                     : can use -s -t -p -d -i -f -x
 
   $ME run|ssh [<args>] : runs a command (on device if --device given);
                          intended for running gdb and a gdb server
@@ -85,7 +85,7 @@ usage() {
                      : can use -s -t -p
 
   $ME rpm [<args>]   : runs the install & rpm-creation phases
-                     : can use -s -t -p -i
+                     : can use -s -t -p -i -x
 
   -i | --increment     : increment release number in spec file
   -t | --target        : specify the sb2 target to use
@@ -96,6 +96,7 @@ usage() {
                          this option is useful if deploy option is used outside of virtual
                          machine
   -P | --pedantic      : do extra checks
+  -x | --fix-version   : use the latest tag from the current git branch as package version
 
 EOF
 }
@@ -143,6 +144,15 @@ verify_target_dependencies() {
 
 get_spec_tag() {
     rpmspec --query --srpm --queryformat="$1" "$OPT_SPEC"
+}
+
+fix_package_version() {
+    [[ ! $OPT_FIX_VERSION ]] && return
+
+    local ver=$(git describe --tags --abbrev=0 2>/dev/null)
+    if [[ -n $ver ]]; then
+	sed -i "s/^Version:.*/Version: $ver/" "$1"
+    fi
 }
 
 # Helper to read XML
@@ -297,6 +307,8 @@ run_build() {
     # get rid of potential windows linefeeds
     sed -i "s/\x0D$//g" "$tmp_spec"
 
+    fix_package_version "$tmp_spec"
+
     local build_tgt=$(sb2 -t $OPT_TARGET gcc -dumpmachine)
     build_tgt=${build_tgt%-gnueabi}
     (
@@ -428,6 +440,8 @@ run_rpm() {
     # get rid of potential windows linefeeds
     sed -i "s/\x0D$//g" "$tmp_spec"
 
+    fix_package_version "$tmp_spec"
+
     (
 	increment_build_number;
 	cd_to_spec_setup_dir;
@@ -551,6 +565,9 @@ while [[ "$1" ]]; do
 	    ;;
 	"-P" | "--pedantic" ) shift
 	    OPT_PEDANTIC=1
+	    ;;
+	"-x" | "--fix-version" ) shift
+	    OPT_FIX_VERSION=1
 	    ;;
 	install | rpm | deploy | build )
 	    OPT_NEEDSPEC=1;
