@@ -215,6 +215,17 @@ if [[ $OPT_CREATE ]]; then
             ;;
     esac
 
+    if [[ -z $(zypper pt -i | grep $TOOLCHAIN) ]]; then
+        cat <<EOF
+FAIL: Toolchain pattern $TOOLCHAIN is not installed.
+Please install it by issuing the following command:
+
+sudo zypper in -t pattern $TOOLCHAIN
+
+EOF
+        exit 1
+    fi
+
     _ sdk-manage --use-chroot-as $USER --target --install $OPT_TARGET $TOOLCHAIN $OPT_ROOTSTRAP
     exit $?
 fi
