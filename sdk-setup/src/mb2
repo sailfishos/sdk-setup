@@ -149,9 +149,19 @@ get_spec_tag() {
 fix_package_version() {
     [[ ! $OPT_FIX_VERSION ]] && return
 
-    local ver=$(git describe --tags --abbrev=0 2>/dev/null)
-    if [[ -n $ver ]]; then
-	sed -i "s/^Version:.*/Version: $ver/" "$1"
+    local tag=$(git describe --tags --abbrev=0 2>/dev/null)
+    if [[ -n $tag ]]; then
+        # tagver piece copied from tar_git service
+        if [[ $(echo $tag | grep "/") ]] ; then
+            # allow tags to have a prefix to allow vendor marking
+            tagver=$(echo $tag | cut -f2 -d'/')
+        # some people like to prefix versions with a v
+        elif [[ $(echo $tag | grep -Po "^v") ]]; then
+            tagver=$(echo $tag | cut -f2 -d'v')
+        else
+            tagver=$tag
+        fi
+        sed -i "s/^Version:.*/Version: $tagver/" "$1"
     fi
 }
 
@@ -709,3 +719,12 @@ case "$1" in
 esac
 
 $cmd "$@"
+
+# For Emacs:
+# Local Variables:
+# indent-tabs-mode:nil
+# tab-width:4
+# mode: sh
+# End:
+# For VIM:
+# vim:set softtabstop=4 shiftwidth=4 tabstop=4 expandtab:
