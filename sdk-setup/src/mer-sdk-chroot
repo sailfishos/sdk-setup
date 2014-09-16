@@ -63,8 +63,11 @@ EOF
     return 0
 }
 
+MY_SSH_AUTH_SOCK=${SSH_AUTH_SOCK#/parentroot}
+[[ $MY_SSH_AUTH_SOCK ]] && MY_SSH_AUTH_SOCK="/parentroot$MY_SSH_AUTH_SOCK"
+
 if [[ $EUID -ne 0 ]]; then
-    exec sudo $0 "$@"
+    exec sudo SSH_AGENT_PID=${SSH_AGENT_PID:-} SSH_AUTH_SOCK=${MY_SSH_AUTH_SOCK} $0 "$@"
     echo "$0 must be run as root and sudo failed; exiting"
     exit 1
 fi
@@ -155,6 +158,7 @@ mount_bind() {
 }
 prepare_mountpoints() {
     # Make parent mountpoint not shared with parent namespace
+    # This prevents mounts in the sdk from appearing in the parent fs
     mount --make-slave "$sdkparent/"
 
     echo "Mounting system directories..."
@@ -193,7 +197,9 @@ prepare_user() {
 	echo "Mounting home directory: ${HOMEDIR}"
 	mkdir -p ${sdkroot}${HOMEDIR}
 	mount --bind ${HOMEDIR} ${sdkroot}${HOMEDIR}
-	mount --make-unbindable ${sdkroot}${HOMEDIR}
+	# Now the sdk uses a private namespace, there's no need to
+	# make it unbindable
+	mount --make-shared ${sdkroot}${HOMEDIR}
     fi
     echo "$user ALL=NOPASSWD: ALL" > ${sdkroot}/etc/sudoers.d/$user
     chmod 0440 ${sdkroot}/etc/sudoers.d/$user
@@ -231,32 +237,6 @@ run_user_hook() {
 }
 ################
 
-add_pid_to_active_chroot_list() {
-    mkdir -p $sdkroot/.active_chroots/
-    touch $sdkroot/.active_chroots/$$
-}
-rm_pid_from_active_chroot_list() {
-    rm $sdkroot/.active_chroots/$$
-}
-ensure_active_chroot_list_is_empty() {
-    mkdir -p $sdkroot/.active_chroots/
-    pids=$(ls $sdkroot/.active_chroots/)
-    stillused=""
-    [[ -z "$pids" ]] || {
-	for pid in $pids; do
-	    if [[ -d /proc/$pid ]] && [[ `ls -l /proc/${pid}/fd | grep -w "${sdkroot}"` ]] ; then
-		stillused="$stillused $pid"
-	    else
-		rm $sdkroot/.active_chroots/$pid
-	    fi
-	done
-	[[ -z "$stillused" ]] || {
-	    echo "There appears to be $(wc -w <<< $stillused) chroot(s) still using this SDK"
-	    echo "Process(es) $stillused    are still in use, exiting without unmounting..."
-	    exit 1;
-	}
-    }
-}
 
 ################################################################
 
@@ -292,12 +272,11 @@ setup_user_hooks      # (after prepare so HOMEDIR is known)
 prepare_etc           # resolv.conf and ssl certs
 run_user_hook mount_sdk
 run_user_hook enter_sdk
-add_pid_to_active_chroot_list
 
 case "$#" in
     0 )
 	echo "Entering chroot as $user"
-	setarch i386 chroot ${sdkroot} /bin/su -s /bin/bash -l $user -- -c "if [ -d \"$cwd\" ]; then cd \"$cwd\"; fi; exec bash --init-file /mer-bash-setup -i"
+	setarch i386 chroot ${sdkroot} /bin/su -p -s /bin/bash -l $user -- -c "if [ -d \"$cwd\" ]; then cd \"$cwd\"; fi;  SSH_AUTH_SOCK='${MY_SSH_AUTH_SOCK}' SSH_AGENT_PID=${SSH_AGENT_PID:-} exec bash --init-file /mer-bash-setup -i"
 	;;
     * )
 	if [[ $1 == 'exec' ]]; then
@@ -319,7 +298,6 @@ EOF
 	fi
 	;;
 esac
-rm_pid_from_active_chroot_list
 run_user_hook leave_sdk
 
 exit $retval
