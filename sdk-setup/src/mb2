@@ -32,7 +32,8 @@ short_usage() {
 usage: $ME [-t <target>] [-s <specfile>] [-d <device>] [-p <projectdir>]
            [-f <folder>] [-i] [-P] [-x]
            build [-d] [-j <n>] [<args>] | qmake [<args>] | make [<args>] | ssh <args>
-           install [<args>] | rpm [<args>] | deploy <args> | run <args>
+           install [<args>] | installdeps <args> | rpm [<args>] | deploy <args>
+           run <args>
        $ME --version
        $ME --help
 EOF
@@ -82,6 +83,10 @@ usage() {
                      : can use -s -t -p -d
 
   $ME install [<args>] : runs the 'install' phase to install to $buildroot
+                     : can use -s -t -p
+
+  $ME installdeps [<args>] : refresh the zypper cache of the given target and
+                             if required installs build-dependencies
                      : can use -s -t -p
 
   $ME rpm [<args>]   : runs the install & rpm-creation phases
@@ -298,6 +303,12 @@ fix_arguments() {
 	local tmp_arg=$(printf "'%s' " "${orig_args[${i}]}")
 	fixed_args="$fixed_args $tmp_arg"
     done
+}
+
+run_installdeps() {
+    # Refresh repos before installing dependencies
+    sb2 -t "$target" -m sdk-install -R zypper --non-interactive ref
+    verify_target_dependencies
 }
 
 run_build() {
@@ -579,7 +590,7 @@ while [[ "$1" ]]; do
 	"-x" | "--fix-version" ) shift
 	    OPT_FIX_VERSION=1
 	    ;;
-	install | rpm | deploy | build )
+	install | rpm | deploy | build | installdeps )
 	    OPT_NEEDSPEC=1;
 	    break
 	    ;;
@@ -681,7 +692,7 @@ case "$1" in
 	fi
         shift
         ;;
-    build )
+    build | installdeps )
 	cmd=run_$1; shift
 	BUILD_DEBUG='--define "debug_package %{nil} "'
 	BUILD_JOBS=
