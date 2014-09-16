@@ -63,8 +63,11 @@ EOF
     return 0
 }
 
+MY_SSH_AUTH_SOCK=${SSH_AUTH_SOCK#/parentroot}
+[[ $MY_SSH_AUTH_SOCK ]] && MY_SSH_AUTH_SOCK="/parentroot$MY_SSH_AUTH_SOCK"
+
 if [[ $EUID -ne 0 ]]; then
-    exec sudo SSH_AGENT_PID=${SSH_AGENT_PID:-} SSH_AUTH_SOCK=${SSH_AUTH_SOCK:-} $0 "$@"
+    exec sudo SSH_AGENT_PID=${SSH_AGENT_PID:-} SSH_AUTH_SOCK=${MY_SSH_AUTH_SOCK} $0 "$@"
     echo "$0 must be run as root and sudo failed; exiting"
     exit 1
 fi
@@ -273,7 +276,7 @@ run_user_hook enter_sdk
 case "$#" in
     0 )
 	echo "Entering chroot as $user"
-	setarch i386 chroot ${sdkroot} /bin/su -p -s /bin/bash -l $user -- -c "if [ -d \"$cwd\" ]; then cd \"$cwd\"; fi;  SSH_AUTH_SOCK='${SSH_AUTH_SOCK:-}' SSH_AGENT_PID=${SSH_AGENT_PID:-} exec bash --init-file /mer-bash-setup -i"
+	setarch i386 chroot ${sdkroot} /bin/su -p -s /bin/bash -l $user -- -c "if [ -d \"$cwd\" ]; then cd \"$cwd\"; fi;  SSH_AUTH_SOCK='${MY_SSH_AUTH_SOCK}' SSH_AGENT_PID=${SSH_AGENT_PID:-} exec bash --init-file /mer-bash-setup -i"
 	;;
     * )
 	if [[ $1 == 'exec' ]]; then
