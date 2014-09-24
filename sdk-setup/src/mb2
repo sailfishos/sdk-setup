@@ -167,8 +167,7 @@ fix_package_version() {
             tagver=$tag
         fi
         # '-' is not an allowed character in the version field
-        tagver=$(sed -e "s/-/+/g" <<< $tagver)
-        sed -i "s/^Version:.*/Version: $tagver/" "$1"
+        sed -i "s,^Version:.*,Version: ${tagver//-/+}," "$1"
     fi
 }
 
