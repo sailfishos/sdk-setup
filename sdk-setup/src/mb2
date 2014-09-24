@@ -117,7 +117,7 @@ fatal() {
 
 check_spec_supports_qtc() {
     if ! grep "define qtc_qmake" "$OPT_SPEC" >/dev/null 2>&1 ; then
-	notice "This specfile does not have the qtc_* macros defined"
+    notice "This specfile does not have the qtc_* macros defined"
     fi
 }
 
@@ -136,7 +136,7 @@ try_to_make_spec_from_yaml() {
 ensure_spec_newer_than_yaml() {
     local yaml="${OPT_SPEC%.spec}.yaml"
     if [[ -f "$yaml" ]] && [[ "$yaml" -nt "$OPT_SPEC" ]]; then # -nt is newer than
-	ANSI_COLORS_DISABLED=1 specify -n -N "$yaml" || fatal "unable to convert yaml to spec"
+    ANSI_COLORS_DISABLED=1 specify -n -N "$yaml" || fatal "unable to convert yaml to spec"
     fi
 
     # it's ok also not to have a yaml
@@ -188,36 +188,36 @@ get_device() {
     local IN_DEVICE=
     local maintag=
     while read_dom; do
-	case $TAG_NAME in
-	    device )
-		maintag=$TAG_NAME
-		eval local $ATTRIBUTES
-		if [[ "$name" == "$1" ]] ; then
-		    FOUND_DEVICE=1
-		    IN_DEVICE=1
-		    device_name="$name"
-		    device_type="$type"
-		else
-		    IN_DEVICE=
-		fi
-		;;
-	    engine )
-		maintag=$TAG_NAME
-		eval local $ATTRIBUTES
-		;;
-	    mac|index|subnet|ip|sshkeypath )
-		# Don't process and store nested tags if we're in
-		# device with wrong name
-		if [[ "$maintag" == "device" ]] && [[ $IN_DEVICE != 1 ]]; then
-		    continue
-		fi
-		eval ${maintag}_$TAG_NAME=\"$CONTENT\"
-		;;
-	esac
+    case $TAG_NAME in
+        device )
+        maintag=$TAG_NAME
+        eval local $ATTRIBUTES
+        if [[ "$name" == "$1" ]] ; then
+            FOUND_DEVICE=1
+            IN_DEVICE=1
+            device_name="$name"
+            device_type="$type"
+        else
+            IN_DEVICE=
+        fi
+        ;;
+        engine )
+        maintag=$TAG_NAME
+        eval local $ATTRIBUTES
+        ;;
+        mac|index|subnet|ip|sshkeypath )
+        # Don't process and store nested tags if we're in
+        # device with wrong name
+        if [[ "$maintag" == "device" ]] && [[ $IN_DEVICE != 1 ]]; then
+            continue
+        fi
+        eval ${maintag}_$TAG_NAME=\"$CONTENT\"
+        ;;
+    esac
     done
     # Set this up as it's useful
     if [[ "$device_subnet" ]]; then
-	device_ip="$device_subnet".$device_index
+    device_ip="$device_subnet".$device_index
     fi
     if [[ "$FOUND_DEVICE" == 1 ]]; then return 0; else return 1; fi
 }
@@ -247,9 +247,9 @@ cd_to_spec_setup_dir() {
     setup_dir=${setup_dir/#%setup*/}
 
     if [[ -n "$setup_dir" ]]; then
-	# in case we got a spec %{tag} out of this, try to expand it
-	setup_dir=$(get_spec_tag "$setup_dir")
-	cd "$setup_dir"
+    # in case we got a spec %{tag} out of this, try to expand it
+    setup_dir=$(get_spec_tag "$setup_dir")
+    cd "$setup_dir"
     fi
 }
 
@@ -274,24 +274,24 @@ increment_build_number() {
     [[ -n "$z" ]] && return
 
     if [[ -n "$y" ]]; then
-	if [[ $y =~ ^-?[0-9]+$ ]]; then
-	    let new_release=$y+1
-	    echo "Incrementing release: $x.$y -> $x.$new_release"
-	    sed -i "s/^Release:.*/Release: $x.$new_release/" "$OPT_SPEC"
-	    return
-	else
-	    # non-numeric after dot => don't touch
-	    return
-	fi
+    if [[ $y =~ ^-?[0-9]+$ ]]; then
+        let new_release=$y+1
+        echo "Incrementing release: $x.$y -> $x.$new_release"
+        sed -i "s/^Release:.*/Release: $x.$new_release/" "$OPT_SPEC"
+        return
+    else
+        # non-numeric after dot => don't touch
+        return
+    fi
     fi
 
     if [[ -n "$x" ]]; then
-	if [[ $x =~ ^-?[0-9]+$ ]]; then
-	    let new_release=$x+1
-	    echo "Incrementing release: $x -> $new_release"
-	    sed -i "s/^Release:.*/Release: $new_release/" "$OPT_SPEC"
-	    return
-	fi
+    if [[ $x =~ ^-?[0-9]+$ ]]; then
+        let new_release=$x+1
+        echo "Incrementing release: $x -> $new_release"
+        sed -i "s/^Release:.*/Release: $new_release/" "$OPT_SPEC"
+        return
+    fi
     fi
 }
 
@@ -301,8 +301,8 @@ fix_arguments() {
     local num_oargs=${#orig_args[@]}
 
     for ((i=0; i<$num_oargs; i++)); do
-	local tmp_arg=$(printf "'%s' " "${orig_args[${i}]}")
-	fixed_args="$fixed_args $tmp_arg"
+    local tmp_arg=$(printf "'%s' " "${orig_args[${i}]}")
+    fixed_args="$fixed_args $tmp_arg"
     done
 }
 
@@ -321,9 +321,9 @@ run_build() {
     sed -e '/^%patch/d' "$OPT_SPEC" > "$tmp_spec"
 
     if [[ -f ${OPT_SPEC%.spec}.changes ]]; then
-	notice "Appending changelog entries to spec ..."
-	echo "%changelog" >> "$tmp_spec"
-	cat ${OPT_SPEC%.spec}.changes >> "$tmp_spec"
+    notice "Appending changelog entries to spec ..."
+    echo "%changelog" >> "$tmp_spec"
+    cat ${OPT_SPEC%.spec}.changes >> "$tmp_spec"
     fi
 
     # get rid of potential windows linefeeds
@@ -334,20 +334,20 @@ run_build() {
     local build_tgt=$(sb2 -t $OPT_TARGET gcc -dumpmachine)
     build_tgt=${build_tgt%-gnueabi}
     (
-	cd_to_spec_setup_dir;
-	rm -f "$_basedir/RPMS/"*.rpm;
-	eval sb2 -t $OPT_TARGET rpmbuild --build-in-place --target=$build_tgt \
-	    $BUILD_DEBUG \
-	    --define \"_smp_mflags -j$BUILD_JOBS\" \
-	    --define \"_rpmdir $_basedir/RPMS \" \
-	    --define \"_sourcedir $_basedir/rpm \" \
-	    --define \"_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm \" \
-	    --buildroot=\"$buildroot\" \
-	    --dobuild \
-	    --doinstall \
-	    --dobinary \
-	    --docheck \
-	    \"$tmp_spec\"
+    cd_to_spec_setup_dir;
+    rm -f "$_basedir/RPMS/"*.rpm;
+    eval sb2 -t $OPT_TARGET rpmbuild --build-in-place --target=$build_tgt \
+        $BUILD_DEBUG \
+        --define \"_smp_mflags -j$BUILD_JOBS\" \
+        --define \"_rpmdir $_basedir/RPMS \" \
+        --define \"_sourcedir $_basedir/rpm \" \
+        --define \"_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm \" \
+        --buildroot=\"$buildroot\" \
+        --dobuild \
+        --doinstall \
+        --dobinary \
+        --docheck \
+        \"$tmp_spec\"
     )
     local rc=$?
     rm -f "$tmp_spec"
@@ -356,67 +356,67 @@ run_build() {
 
 run_qmake() {
     if [[ "$OPT_SPEC" ]]; then
-	local build_tgt=$(sb2 -t $OPT_TARGET gcc -dumpmachine)
-	build_tgt=${build_tgt%-gnueabi}
+    local build_tgt=$(sb2 -t $OPT_TARGET gcc -dumpmachine)
+    build_tgt=${build_tgt%-gnueabi}
 
-	local tmp_spec="$OPT_SPEC.$$"
-	cp -a "$OPT_SPEC" "$tmp_spec"
+    local tmp_spec="$OPT_SPEC.$$"
+    cp -a "$OPT_SPEC" "$tmp_spec"
 
         # get rid of potential windows linefeeds
-	sed -i "s/\x0D$//g" "$tmp_spec"
+    sed -i "s/\x0D$//g" "$tmp_spec"
 
-	# The paths that are passed to rpmbuild via the --define
-	# options can contain whitespace so let's quote all args
-	fix_arguments "$@"
+    # The paths that are passed to rpmbuild via the --define
+    # options can contain whitespace so let's quote all args
+    fix_arguments "$@"
 
-	# This is a good time to verify the target dependencies as per mb
-	verify_target_dependencies
-	(
-	    cd_to_spec_setup_dir;
-	    eval sb2 -t $OPT_TARGET rpmbuild --build-in-place --target=$build_tgt \
-		--dobuild \
-		--define \"noecho 1 \" \
-		--define \"qtc_builddir $_basedir \" \
-		--define \"qtc_make true ignoring make\" \
-		--define \"qtc_qmake5 %qmake5 $fixed_args\" \
-		--define \"qtc_qmake %qmake $fixed_args\" \
-		\"$tmp_spec\"
-	)
-	local rc=$?
-	rm -f "$tmp_spec"
-	return $rc
+    # This is a good time to verify the target dependencies as per mb
+    verify_target_dependencies
+    (
+        cd_to_spec_setup_dir;
+        eval sb2 -t $OPT_TARGET rpmbuild --build-in-place --target=$build_tgt \
+        --dobuild \
+        --define \"noecho 1 \" \
+        --define \"qtc_builddir $_basedir \" \
+        --define \"qtc_make true ignoring make\" \
+        --define \"qtc_qmake5 %qmake5 $fixed_args\" \
+        --define \"qtc_qmake %qmake $fixed_args\" \
+        \"$tmp_spec\"
+    )
+    local rc=$?
+    rm -f "$tmp_spec"
+    return $rc
     else
-	sb2 -t $OPT_TARGET qmake "$@"
+    sb2 -t $OPT_TARGET qmake "$@"
     fi
 }
 
 run_make() {
     if [[ "$OPT_SPEC" ]]; then
 
-	local tmp_spec="$OPT_SPEC.$$"
-	cp -a "$OPT_SPEC" "$tmp_spec"
+    local tmp_spec="$OPT_SPEC.$$"
+    cp -a "$OPT_SPEC" "$tmp_spec"
 
         # get rid of potential windows linefeeds
-	sed -i "s/\x0D$//g" "$tmp_spec"
+    sed -i "s/\x0D$//g" "$tmp_spec"
 
-	local build_tgt=$(sb2 -t $OPT_TARGET gcc -dumpmachine)
-	build_tgt=${build_tgt%-gnueabi}
-	(
-	    cd_to_spec_setup_dir;
-	    eval sb2 -t $OPT_TARGET rpmbuild --build-in-place --target=$build_tgt \
-		--dobuild \
-		--define \"noecho 1 \" \
-		--define \"qtc_builddir $_basedir \" \
-		--define \"qtc_qmake5 true ignoring qmake\" \
-		--define \"qtc_qmake true ignoring qmake\" \
-		--define \"qtc_make make %{?_smp_mflags} "$@"\" \
-		\"$tmp_spec\"
-	)
-	local rc=$?
-	rm -f "$tmp_spec"
-	return $rc
+    local build_tgt=$(sb2 -t $OPT_TARGET gcc -dumpmachine)
+    build_tgt=${build_tgt%-gnueabi}
+    (
+        cd_to_spec_setup_dir;
+        eval sb2 -t $OPT_TARGET rpmbuild --build-in-place --target=$build_tgt \
+        --dobuild \
+        --define \"noecho 1 \" \
+        --define \"qtc_builddir $_basedir \" \
+        --define \"qtc_qmake5 true ignoring qmake\" \
+        --define \"qtc_qmake true ignoring qmake\" \
+        --define \"qtc_make make %{?_smp_mflags} "$@"\" \
+        \"$tmp_spec\"
+    )
+    local rc=$?
+    rm -f "$tmp_spec"
+    return $rc
     else
-	sb2 -t $OPT_TARGET make "$@"
+    sb2 -t $OPT_TARGET make "$@"
     fi
 }
 
@@ -432,15 +432,15 @@ run_install() {
 
     # Install to buildroot which should be rsync'ed to /opt/sdk/$package on device
     (
-	cd_to_spec_setup_dir;
-	eval sb2 -t $OPT_TARGET rpmbuild --build-in-place --target=$build_tgt \
-	    --define \"noecho 1 \" \
-	    --define \"qtc_builddir $_basedir \" \
-	    --define \"_sourcedir $_basedir/rpm \" \
-	    --define \"_skip_install_processing 1\" \
-	    --buildroot=\"$buildroot\" \
-	    --doinstall \
-	    \"$tmp_spec\"
+    cd_to_spec_setup_dir;
+    eval sb2 -t $OPT_TARGET rpmbuild --build-in-place --target=$build_tgt \
+        --define \"noecho 1 \" \
+        --define \"qtc_builddir $_basedir \" \
+        --define \"_sourcedir $_basedir/rpm \" \
+        --define \"_skip_install_processing 1\" \
+        --buildroot=\"$buildroot\" \
+        --doinstall \
+        \"$tmp_spec\"
     )
     local rc=$?
     rm -f "$tmp_spec"
@@ -454,9 +454,9 @@ run_rpm() {
     local tmp_spec="$OPT_SPEC.$$"
     cp -a "$OPT_SPEC" "$tmp_spec"
     if [[ -f ${OPT_SPEC%.spec}.changes ]]; then
-	notice "Appending changelog entries to spec ..."
-	echo "%changelog" >> "$tmp_spec"
-	cat "${OPT_SPEC%.spec}".changes >> "$tmp_spec"
+    notice "Appending changelog entries to spec ..."
+    echo "%changelog" >> "$tmp_spec"
+    cat "${OPT_SPEC%.spec}".changes >> "$tmp_spec"
     fi
 
     # get rid of potential windows linefeeds
@@ -465,20 +465,20 @@ run_rpm() {
     fix_package_version "$tmp_spec"
 
     (
-	increment_build_number;
-	cd_to_spec_setup_dir;
-	rm -f "$_basedir/RPMS/"*.rpm;
-	eval sb2 -t $OPT_TARGET rpmbuild --build-in-place --target=$build_tgt \
-	    --define \"noecho 1 \" \
-	    --define \"qtc_builddir $_basedir \" \
-	    --define \"_rpmdir $_basedir/RPMS \" \
-	    --define \"_sourcedir $_basedir/rpm \" \
-	    --define \"_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm \" \
-	    --buildroot=\"$buildroot\" \
-	    --doinstall \
-	    --dobinary \
-	    --docheck \
-	    \"$tmp_spec\"
+    increment_build_number;
+    cd_to_spec_setup_dir;
+    rm -f "$_basedir/RPMS/"*.rpm;
+    eval sb2 -t $OPT_TARGET rpmbuild --build-in-place --target=$build_tgt \
+        --define \"noecho 1 \" \
+        --define \"qtc_builddir $_basedir \" \
+        --define \"_rpmdir $_basedir/RPMS \" \
+        --define \"_sourcedir $_basedir/rpm \" \
+        --define \"_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm \" \
+        --buildroot=\"$buildroot\" \
+        --doinstall \
+        --dobinary \
+        --docheck \
+        \"$tmp_spec\"
     )
     local rc=$?
     rm -f "$tmp_spec"
@@ -493,44 +493,44 @@ run_deploy() {
     local retcode=0
 
     while [[ $1 ]]; do
-	case "$1" in
-	    "--sdk" | "--pkcon" )
-		local method;
-		if [[ "$1" == "--sdk" ]]; then
-		    method="sdk-deploy-rpm"
-		else
-		    method="pkcon --plain --noninteractive install-local"
-		fi
-		shift
-		run_rpm
-		[[ $? -ne 0 ]] && return 1
-		rpms=$(find RPMS -name '*.rpm' -a ! -name '*-debug*.rpm')
-		rsync_as $deviceuser -av ${rpms} $device_ip:/home/$deviceuser/RPMS/
-		[[ $? -ne 0 ]] && return 1
-		ssh_as $deviceuser $method ${rpms}
-		retcode=$?
-		ssh_as $deviceuser rm -f ${rpms}
-		;;
+    case "$1" in
+        "--sdk" | "--pkcon" )
+        local method;
+        if [[ "$1" == "--sdk" ]]; then
+            method="sdk-deploy-rpm"
+        else
+            method="pkcon --plain --noninteractive install-local"
+        fi
+        shift
+        run_rpm
+        [[ $? -ne 0 ]] && return 1
+        rpms=$(find RPMS -name '*.rpm' -a ! -name '*-debug*.rpm')
+        rsync_as $deviceuser -av ${rpms} $device_ip:/home/$deviceuser/RPMS/
+        [[ $? -ne 0 ]] && return 1
+        ssh_as $deviceuser $method ${rpms}
+        retcode=$?
+        ssh_as $deviceuser rm -f ${rpms}
+        ;;
             "--zypper" ) shift
-		run_rpm
-		[[ $? -ne 0 ]] && return 1
-		rpms=$(find RPMS -name '*.rpm' -a ! -name '*-debug*.rpm')
-		rsync_as root -av ${rpms} $device_ip:/root/RPMS/
-		[[ $? -ne 0 ]] && return 1
-		ssh_as root zypper --non-interactive --quiet in -f ${rpms}
-		retcode=$?
-		ssh_as root rm -f ${rpms}
-		;;
+        run_rpm
+        [[ $? -ne 0 ]] && return 1
+        rpms=$(find RPMS -name '*.rpm' -a ! -name '*-debug*.rpm')
+        rsync_as root -av ${rpms} $device_ip:/root/RPMS/
+        [[ $? -ne 0 ]] && return 1
+        ssh_as root zypper --non-interactive --quiet in -f ${rpms}
+        retcode=$?
+        ssh_as root rm -f ${rpms}
+        ;;
             "--rsync" ) shift
-		run_install
-		[[ $? -ne 0 ]] && return 1
-		name=$(get_spec_tag "%{name}")
-		rsync_as $deviceuser -av ${buildroot}/. $device_ip:/opt/sdk/$name
-		retcode=$?
-		;;
-	    *)
-		fatal $fail_text ;;
-	esac
+        run_install
+        [[ $? -ne 0 ]] && return 1
+        name=$(get_spec_tag "%{name}")
+        rsync_as $deviceuser -av ${buildroot}/. $device_ip:/opt/sdk/$name
+        retcode=$?
+        ;;
+        *)
+        fatal $fail_text ;;
+    esac
     done
 
     [[ $retcode -eq 0 ]] || { echo "Deploy failed"; return 1; }
@@ -566,49 +566,49 @@ while [[ "$1" ]]; do
     # only set variables in this loop
     case "$1" in
         "-t" | "--target") shift
-	    OPT_TARGET="$1"; shift
-	    ;;
-	"-f" | "--shared-folder") shift
-	    OPT_SHARED_DIR="$1"; shift
-	    ;;
+        OPT_TARGET="$1"; shift
+        ;;
+    "-f" | "--shared-folder") shift
+        OPT_SHARED_DIR="$1"; shift
+        ;;
         "-d" | "--device") shift
-	    OPT_DEVICE="$1"; shift
-	    ;;
+        OPT_DEVICE="$1"; shift
+        ;;
         "-p" | "--projectdir") shift
-	    OPT_PROJDIR="$1"; shift
-	    OPT_PKGDIR="$OPT_PROJDIR"/rpm
-	    [[ -d "$OPT_PROJDIR" ]] || fatal "'$OPT_PROJDIR' is not a directory"
-	    ;;
+        OPT_PROJDIR="$1"; shift
+        OPT_PKGDIR="$OPT_PROJDIR"/rpm
+        [[ -d "$OPT_PROJDIR" ]] || fatal "'$OPT_PROJDIR' is not a directory"
+        ;;
         "-s" | "--specfile" ) shift
-	    OPT_SPEC="$1"; shift
-	    ;;
-	"-i" | "--increment" ) shift
-	    OPT_INC_BUILD_NUMBER=1
-	    ;;
-	"-P" | "--pedantic" ) shift
-	    OPT_PEDANTIC=1
-	    ;;
-	"-x" | "--fix-version" ) shift
-	    OPT_FIX_VERSION=1
-	    ;;
-	install | rpm | deploy | build | installdeps )
-	    OPT_NEEDSPEC=1;
-	    break
-	    ;;
-	qmake | make | run | ssh )
-	    break
-	    ;;
-	--version )
-	    echo "$ME, version VERSION_FROM_SPEC"
-	    exit 0
-	    ;;
-	--help )
-	    usage
-	    exit 0
+        OPT_SPEC="$1"; shift
+        ;;
+    "-i" | "--increment" ) shift
+        OPT_INC_BUILD_NUMBER=1
+        ;;
+    "-P" | "--pedantic" ) shift
+        OPT_PEDANTIC=1
+        ;;
+    "-x" | "--fix-version" ) shift
+        OPT_FIX_VERSION=1
+        ;;
+    install | rpm | deploy | build | installdeps )
+        OPT_NEEDSPEC=1;
+        break
+        ;;
+    qmake | make | run | ssh )
+        break
+        ;;
+    --version )
+        echo "$ME, version VERSION_FROM_SPEC"
+        exit 0
+        ;;
+    --help )
+        usage
+        exit 0
             ;;
-	*)
-	    short_usage quit
-	    ;;
+    *)
+        short_usage quit
+        ;;
     esac
 done
 
@@ -624,8 +624,8 @@ fi
 
 if [[ ! "$OPT_TARGET" ]]; then
     if [[ -f ~/.scratchbox2/config ]]; then
-	. ~/.scratchbox2/config
-	OPT_TARGET=$DEFAULT_TARGET
+    . ~/.scratchbox2/config
+    OPT_TARGET=$DEFAULT_TARGET
     fi
     [[ "$OPT_TARGET" ]] || fatal "You must specify an sb2 target or have a default configured"
 fi
@@ -647,31 +647,31 @@ if [[ ! "$OPT_SPEC" ]]; then
     spec_files=("$OPT_PKGDIR"/*.spec)
     numspec=${#spec_files[@]}
     if [[ $numspec -gt 1 ]]; then
-	[[ $OPT_NEEDSPEC ]] && fatal "Too many spec files - please use -s to identify which one to use"
-	echo "Too many spec files - not using any. Use -s to identify a specific one"
-	# OPT_SPEC is not set
+    [[ $OPT_NEEDSPEC ]] && fatal "Too many spec files - please use -s to identify which one to use"
+    echo "Too many spec files - not using any. Use -s to identify a specific one"
+    # OPT_SPEC is not set
     fi
 
     if [[ $numspec -eq 0 ]]; then
-	# No spec, try to find a yaml
-	yaml_files=("$OPT_PKGDIR"/*.yaml)
-	numyaml=${#yaml_files[@]}
-	if [[ $numyaml -eq 1 ]]; then
-	    theyaml=("$OPT_PKGDIR"/*.yaml)
-	    try_to_make_spec_from_yaml "${theyaml[0]}"
-	    spec_files=("$OPT_PKGDIR"/*.spec)
-	    numspec=${#spec_files[@]}
-	else
-	    [[ $OPT_NEEDSPEC ]] && fatal "No spec file found in '$OPT_PKGDIR/' and couldn't make one from a yaml #1"
-	fi
+    # No spec, try to find a yaml
+    yaml_files=("$OPT_PKGDIR"/*.yaml)
+    numyaml=${#yaml_files[@]}
+    if [[ $numyaml -eq 1 ]]; then
+        theyaml=("$OPT_PKGDIR"/*.yaml)
+        try_to_make_spec_from_yaml "${theyaml[0]}"
+        spec_files=("$OPT_PKGDIR"/*.spec)
+        numspec=${#spec_files[@]}
+    else
+        [[ $OPT_NEEDSPEC ]] && fatal "No spec file found in '$OPT_PKGDIR/' and couldn't make one from a yaml #1"
+    fi
     fi
 
     if [[ $numspec -eq 1 ]]; then
-	thespec=("$OPT_PKGDIR"/*.spec)
-	OPT_SPEC="${thespec[0]}"
+    thespec=("$OPT_PKGDIR"/*.spec)
+    OPT_SPEC="${thespec[0]}"
     else
-	# this is because we did try_to_make_spec_from_yaml and failed
-	[[ $OPT_NEEDSPEC ]] && fatal "No spec file found in '$OPT_PKGDIR/' and couldn't make one from a yaml #2"
+    # this is because we did try_to_make_spec_from_yaml and failed
+    [[ $OPT_NEEDSPEC ]] && fatal "No spec file found in '$OPT_PKGDIR/' and couldn't make one from a yaml #2"
     fi
 
     # unset nullglob so that any further globbing works normally
@@ -687,47 +687,47 @@ fi
 
 case "$1" in
     qmake | make | install | rpm | deploy )
-	cmd=run_$1
-	if [[ "$OPT_PEDANTIC" -eq 1 && "$OPT_SPEC" ]]; then
-	    check_spec_supports_qtc
-	fi
+    cmd=run_$1
+    if [[ "$OPT_PEDANTIC" -eq 1 && "$OPT_SPEC" ]]; then
+        check_spec_supports_qtc
+    fi
         shift
         ;;
     build | installdeps )
-	cmd=run_$1; shift
-	BUILD_DEBUG='--define "debug_package %{nil} "'
-	BUILD_JOBS=
-	while [[ "$1" ]]; do
-	    case "$1" in
-		-d|--enable-debug) shift
-		    BUILD_DEBUG= ;;
-		-j*)
-		    # support giving -j with and without space between
-		    # it and the 'n'
-		    if [[ ${#1} -gt 2 ]]; then
-			BUILD_JOBS=${1:2}; shift
-		    else
-			[[ -z "$2" ]] && short_usage quit
-			BUILD_JOBS="$2"; shift 2;
-		    fi
-		    ;;
-		*)
-		    break
-		    ;;
-	    esac
-	done
-	[[ $BUILD_JOBS ]] || BUILD_JOBS=$(getconf _NPROCESSORS_ONLN)
+    cmd=run_$1; shift
+    BUILD_DEBUG='--define "debug_package %{nil} "'
+    BUILD_JOBS=
+    while [[ "$1" ]]; do
+        case "$1" in
+        -d|--enable-debug) shift
+            BUILD_DEBUG= ;;
+        -j*)
+            # support giving -j with and without space between
+            # it and the 'n'
+            if [[ ${#1} -gt 2 ]]; then
+            BUILD_JOBS=${1:2}; shift
+            else
+            [[ -z "$2" ]] && short_usage quit
+            BUILD_JOBS="$2"; shift 2;
+            fi
+            ;;
+        *)
+            break
+            ;;
+        esac
+    done
+    [[ $BUILD_JOBS ]] || BUILD_JOBS=$(getconf _NPROCESSORS_ONLN)
         ;;
     run | ssh ) shift
-	if [[ "$OPT_DEVICE" ]]; then
-	    cmd="ssh_as $deviceuser"
-	else
-	    cmd="eval"
-	fi
+    if [[ "$OPT_DEVICE" ]]; then
+        cmd="ssh_as $deviceuser"
+    else
+        cmd="eval"
+    fi
         ;;
     *)
-	short_usage quit
-	;;
+    short_usage quit
+    ;;
 esac
 
 $cmd "$@"
