@@ -148,7 +148,6 @@ sed -i "s/VERSION_FROM_SPEC/%{version}/" %{buildroot}%{_bindir}/sdk-manage
 
 mkdir -p %{buildroot}/%{_sysconfdir}/ssh/
 cp etc/ssh_config.sdk %{buildroot}/%{_sysconfdir}/ssh/
-install -D -m 644 src/mb.bash %{buildroot}/%{_sysconfdir}/bash_completion.d/mb.bash
 install -D -m 644 src/mb2.bash %{buildroot}/%{_sysconfdir}/bash_completion.d/mb2.bash
 install -D -m 644 src/sdk-assistant.bash %{buildroot}/%{_sysconfdir}/bash_completion.d/sdk-assistant.bash
 
@@ -237,7 +236,6 @@ fi
 %{_bindir}/sdk-assistant
 %{_bindir}/updateQtCreatorTargets
 %config %{_sysconfdir}/ssh/ssh_config.sdk
-%config %{_sysconfdir}/bash_completion.d/mb.bash
 %config %{_sysconfdir}/bash_completion.d/mb2.bash
 %config %{_sysconfdir}/bash_completion.d/sdk-assistant.bash
 
