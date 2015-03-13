@@ -40,7 +40,7 @@ cat << EOF
   Virtualbox indicates the <host key> for your installation at the bottom right of this window.
 
   For more information including ssh connection and root access see:
-    https://sailfishos.org/develop-faq.html
+    https://sailfishos.org/develop/sdk-overview/develop-faq/
  
 EOF
 
