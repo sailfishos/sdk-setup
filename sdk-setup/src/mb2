@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (C) 2013 - 2014 Jolla Ltd.
+# Copyright (C) 2013 - 2016 Jolla Ltd.
 # Contact: David Greaves <david.greaves@jollamobile.com>
 # All rights reserved.
 #
@@ -92,6 +92,11 @@ usage() {
   $ME rpm [<args>]   : runs the install & rpm-creation phases
                      : can use -s -t -p -i -x
 
+  $ME apply          : applies all patches defined in spec from rpm directory
+                     : to the source tree, or if detected, submodule
+                     : source tree
+                     : can use -m -R
+
   -i | --increment     : increment release number in spec file
   -t | --target        : specify the sb2 target to use
   -d | --device        : specify the device
@@ -102,6 +107,8 @@ usage() {
                          machine
   -P | --pedantic      : do extra checks
   -x | --fix-version   : use the latest tag from the current git branch as package version
+  -m | --submodule     : use specified directory as submodule when applying patches
+  -R | --reverse       : reverse apply patches (patch -R)
 
 EOF
 }
@@ -310,6 +317,45 @@ run_installdeps() {
     # Refresh repos before installing dependencies
     sb2 -t "$target" -m sdk-install -R zypper --non-interactive ref
     verify_target_dependencies
+}
+
+run_apply() {
+    rpm_dir="$(dirname "$OPT_SPEC")"
+    submodule=""
+    if [ ! -z "$OPT_SUBMODULE" ]; then
+        submodule="$OPT_SUBMODULE"
+    else
+        # try to detect submodule
+        submodule="$(git submodule | awk '{print $2}')"
+    fi
+
+    if [ ! -z "$submodule" ]; then
+        if [ ! -d "$submodule" ]; then
+            echo "Submodule with directory $submodule not found. Define with -m"
+            exit 1
+        fi
+        pushd "$submodule" >/dev/null
+    fi
+
+    reverse="cat"
+    if [ "$OPT_REVERSE_APPLY" -eq 1 ]; then
+        reverse="tac"
+    fi
+    for p in $(sed -e '/^%patch/!d' -e 's/^%patch\([0-9]*\).*/\1/' "$OPT_SPEC" | $reverse); do
+        op="$(grep "^%patch${p}" "$OPT_SPEC" | awk '{print $2}')"
+        patch_file="$(grep "^Patch$p:" "$OPT_SPEC" | awk '{print $2}')"
+        if [ "$OPT_REVERSE_APPLY" -eq 1 ]; then
+            echo "Reversing $patch_file"
+            patch -R $op < "$rpm_dir/$patch_file"
+        else
+            echo "Applying $patch_file"
+            patch $op < "$rpm_dir/$patch_file"
+        fi
+    done
+
+    if [ ! -z "$submodule" ]; then
+        popd >/dev/null
+    fi
 }
 
 run_build() {
@@ -553,6 +599,8 @@ OPT_NEEDSPEC=
 OPT_PEDANTIC=0
 OPT_SHARED_DIR=/etc/mersdk/share
 OPT_INC_BUILD_NUMBER=0
+OPT_REVERSE_APPLY=0
+OPT_SUBMODULE=""
 deviceuser=nemo
 
 # Virtualbox environment will install in this hardcoded location
@@ -591,7 +639,13 @@ while [[ "$1" ]]; do
         "-x" | "--fix-version" ) shift
             OPT_FIX_VERSION=1
             ;;
-        install | rpm | deploy | build | installdeps )
+        "-m" | "--submodule" ) shift
+            OPT_SUBMODULE="$1"; shift
+            ;;
+        "-R" | "--reverse" ) shift
+            OPT_REVERSE_APPLY=1
+            ;;
+        install | rpm | deploy | build | installdeps | apply )
             OPT_NEEDSPEC=1;
             break
             ;;
@@ -686,7 +740,7 @@ if [[ "$OPT_SPEC" ]]; then
 fi
 
 case "$1" in
-    qmake | make | install | rpm | deploy )
+    qmake | make | install | rpm | deploy | apply )
         cmd=run_$1
         if [[ "$OPT_PEDANTIC" -eq 1 && "$OPT_SPEC" ]]; then
             check_spec_supports_qtc
