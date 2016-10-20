@@ -56,6 +56,7 @@ Contains the sdk-build and sdk-install mode symlinks for scratchbox2.
 Summary:    Mer SDK utility scripts
 Group:      System/Base
 BuildArch:  noarch
+Requires:   libxml2
 Requires:   rpm-build
 Requires:   python-lxml
 Requires:   sudo
@@ -139,6 +140,7 @@ ln -sf obs-rpm-install  %{buildroot}/usr/share/scratchbox2/modes/sdk-install
 cp src/mb %{buildroot}%{_bindir}/
 cp src/mb2 %{buildroot}%{_bindir}/
 cp src/qb %{buildroot}%{_bindir}/
+cp src/sdk-foreach %{buildroot}%{_bindir}/
 cp src/sdk-manage %{buildroot}%{_bindir}/
 cp src/sdk-assistant %{buildroot}%{_bindir}/
 cp src/updateQtCreatorTargets %{buildroot}%{_bindir}/updateQtCreatorTargets
@@ -234,6 +236,7 @@ fi
 %{_bindir}/mb
 %{_bindir}/mb2
 %{_bindir}/qb
+%{_bindir}/sdk-foreach
 %{_bindir}/sdk-manage
 %{_bindir}/sdk-assistant
 %{_bindir}/updateQtCreatorTargets

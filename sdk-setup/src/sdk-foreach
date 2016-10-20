@@ -1,0 +1,180 @@
+#!/bin/bash
+#
+# sdk-foreach executes given command on each build target and device
+#
+# Copyright (C) 2016 Jolla Ltd.
+# Contact: Martin Kampas <martin.kampas@jolla.com>
+# All rights reserved.
+#
+# You may use this file under the terms of BSD license as follows:
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+#   * Redistributions of source code must retain the above copyright
+#     notice, this list of conditions and the following disclaimer.
+#   * Redistributions in binary form must reproduce the above copyright
+#     notice, this list of conditions and the following disclaimer in the
+#     documentation and/or other materials provided with the distribution.
+#   * Neither the name of the Jolla Ltd nor the
+#     names of its contributors may be used to endorse or promote products
+#     derived from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+# ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+# WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+# DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS OR CONTRIBUTORS BE LIABLE FOR
+# ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+# (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+# LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+# ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+# SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+#
+
+SELF=$(basename $0)
+DEVICES_XML=/etc/mersdk/share/devices.xml
+
+if tty --silent <&1; then
+    message() {
+        COLOR_info=32
+        COLOR_question=32
+        COLOR_warn=31
+        eval color=\${COLOR_$1}
+        shift
+        printf '\033[%sm%s %s\033[00m\n' $color "$SELF:" "$*"
+    }
+else
+    message() {
+        shift
+        echo "$SELF: $*"
+    }
+fi
+
+maybe_ask() {
+    [[ $OPT_NONINTERACTIVE ]] && return 0
+
+    while true; do
+        read -p "$(message question "$* (y/n) ")" answer
+        case $answer in
+            [yY]*)
+                return 0
+                ;;
+            [nN]*)
+                return 1
+                ;;
+            *)
+                message warn "Please answer yes or no"
+                ;;
+        esac
+    done
+}
+
+fail() {
+    message warn "FAIL: $*"
+    exit 1
+}
+
+usage() {
+    cat <<EOF
+sdk-foreach executes given command on each (selected) build target and device.
+
+Usage:
+    $SELF [OPTION]... [--] COMMAND [ARG]...
+
+Options:
+    -h | --help             : show this help
+    -y | --non-interactive  : do not ask questions; execute on each build
+                              target and device without confirmation
+    -l                      : execute also locally
+
+EOF
+
+    # exit if any argument is given
+    [[ -n "$1" ]] && exit 1
+}
+
+execute_locally() {
+    "$@"
+}
+
+list_targets() {
+    sdk-manage --target --list
+}
+
+execute_in_target() {
+    target="$1"
+    shift
+    sb2 -t $target "$@"
+}
+
+list_devices() {
+    xmllint --xpath '//device/@name' "$DEVICES_XML" |sed 's/ name=/ /g' |tr '"' "'"
+}
+
+execute_on_device() {
+    device="$1"
+    shift
+    mb2 -d "$device" ssh "$@"
+}
+
+# handle commandline options
+while [[ ${1:-} ]]; do
+    case "$1" in
+        -h | --help )
+            usage quit
+            ;;
+        -y | --non-interactive )
+            OPT_NONINTERACTIVE=1
+            ;;
+        -l )
+            OPT_LOCAL=1
+            ;;
+        -- )
+            break
+            ;;
+        -??* )
+            arg="$1"
+            shift
+            set -- "${arg}" -"${arg:1:1}" -"${arg:2}" "${@}"
+            ;;
+        -* )
+            fail "unknown option $1"
+            ;;
+        * )
+            break
+            ;;
+    esac
+
+    shift
+done
+
+if [[ $EUID -eq 0 ]]; then
+    fail "$SELF must not be run as root."
+fi
+
+if [[ $OPT_LOCAL ]]; then
+    message info "Executing locally..."
+    execute_locally "$@"
+fi
+
+for target in $(list_targets); do
+    maybe_ask "Execute in '$target' build target?" || continue
+    message info "Executing in '$target' build target..."
+    execute_in_target "$target" "$@"
+done
+
+eval devices=($(list_devices))
+for device in "${devices[@]}"; do
+    maybe_ask "Execute on '$device' device?" || continue
+    message info "Executing on '$device' device..."
+    execute_on_device "$device" "$@"
+done
+
+# For Emacs:
+# Local Variables:
+# indent-tabs-mode:nil
+# tab-width:4
+# mode: sh
+# End:
+# For VIM:
+# vim:set softtabstop=4 shiftwidth=4 tabstop=4 expandtab:
