@@ -167,6 +167,10 @@ if [[ $OPT_CREATE ]]; then
         fail "create: target name and rootstrap required"
     fi
 
+    if [[ ! ($OPT_ROOTSTRAP =~ ^https?://) && ! -f ${OPT_ROOTSTRAP/#file:\/\/} ]]; then
+        fail "$OPT_ROOTSTRAP: no such file"
+    fi
+
     if [[ -z $OPT_ARCH ]]; then
         guess_target_architecture
     fi
