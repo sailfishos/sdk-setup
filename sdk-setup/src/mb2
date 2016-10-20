@@ -122,8 +122,12 @@ fatal() {
     exit 1
 }
 
+check_spec_supports_qtc_silent() {
+    grep "define qtc_qmake" "$OPT_SPEC" >/dev/null 2>&1
+}
+
 check_spec_supports_qtc() {
-    if ! grep "define qtc_qmake" "$OPT_SPEC" >/dev/null 2>&1 ; then
+    if ! check_spec_supports_qtc_silent; then
         notice "This specfile does not have the qtc_* macros defined"
     fi
 }
@@ -401,7 +405,7 @@ run_build() {
 }
 
 run_qmake() {
-    if [[ "$OPT_SPEC" ]]; then
+    if [[ "$OPT_SPEC" ]] && check_spec_supports_qtc_silent; then
         local build_tgt=$(sb2 -t $OPT_TARGET gcc -dumpmachine)
         build_tgt=${build_tgt%-gnueabi}
 
@@ -437,7 +441,7 @@ run_qmake() {
 }
 
 run_make() {
-    if [[ "$OPT_SPEC" ]]; then
+    if [[ "$OPT_SPEC" ]] && check_spec_supports_qtc_silent; then
 
         local tmp_spec="$OPT_SPEC.$$"
         cp -a "$OPT_SPEC" "$tmp_spec"
