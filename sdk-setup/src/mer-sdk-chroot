@@ -18,9 +18,6 @@ usage()
       If command is not present,
          used to enter the SDK and begin working. The SDK bash shell is a
          login shell. See below for .profile handling
-         Must be preceded by a 'mount' to setup the SDK.
-         May be used in multiple terminals and simply enters the
-         chroot
 
       If command is present,
          used to execute an arbitrary command from within the SDK chroot
