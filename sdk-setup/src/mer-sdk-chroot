@@ -276,7 +276,14 @@ run_user_hook enter_sdk
 case "$#" in
     0 )
 	echo "Entering chroot as $user"
-	setarch i386 chroot ${sdkroot} /bin/su -p -s /bin/bash -l $user -- -c "if [ -d \"$cwd\" ]; then cd \"$cwd\"; fi;  SSH_AUTH_SOCK='${MY_SSH_AUTH_SOCK}' SSH_AGENT_PID=${SSH_AGENT_PID:-} exec bash --init-file /mer-bash-setup -i"
+	setarch i386 chroot ${sdkroot} /bin/su -p -s /bin/bash -l $user -- -c "$(cat <<END
+            [[ -d "$cwd" ]] && cd "$cwd"
+            export SSH_AUTH_SOCK='${MY_SSH_AUTH_SOCK}'
+            export SSH_AGENT_PID=${SSH_AGENT_PID:-}
+
+            exec bash --init-file /mer-bash-setup -i
+END
+)"
 	;;
     * )
 	if [[ $1 == 'exec' ]]; then
@@ -293,7 +300,13 @@ EOF
 	    usage
 	    retval=1
 	else
-	    setarch i386 chroot "${sdkroot}" /bin/su -s /bin/bash -l $user -- -c "export MERSDK=1;if [ -d \"$cwd\" ]; then cd \"$cwd\"; fi; $*"
+	    setarch i386 chroot "${sdkroot}" /bin/su -s /bin/bash -l $user -- -c "$(cat <<END
+                [[ -d "$cwd" ]] && cd "$cwd"
+                export MERSDK=1
+
+                $*
+END
+)"
 	    retval=$?
 	fi
 	;;
