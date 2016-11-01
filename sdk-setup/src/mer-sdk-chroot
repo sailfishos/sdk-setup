@@ -123,6 +123,34 @@ if [[ ! -f ${sdkroot}/etc/MerSDK ]] ; then
     exit 1
 fi
 
+if ! [[ $(basename $(dirname $sdkroot)) == "sdks" ]]; then
+    echo "Non-standard SDK installation layout - cannot determine location for "
+    echo "build targets. Expected layout is:"
+    echo ""
+    echo "    <path/to/SDKs...>/"
+    echo "    ├── sdks/"
+    echo "    │   ├── <sdk_1>/"
+    echo "    │   ├── <sdk_2>/"
+    echo "    │   └── .../"
+    echo "    └── targets/"
+    echo "        ├── <target_1>/"
+    echo "        ├── <target_2>/"
+    echo "        └── .../"
+    exit 1
+fi
+
+targetsdir=$(readlink -f ${sdkroot}/../../targets)
+if [[ ! -d ${targetsdir} ]] ; then
+    echo "Build targets location '$targetsdir' does not exist - about to create it."
+    read -p "Continue, abort? [c/a] (c)" reply
+    if ! [[ $reply =~ ^[cC]?$ ]]; then
+        echo "User aborted"
+        exit 1
+    fi
+
+    mkdir "$targetsdir" || exit
+fi
+
 sdkparent="$(df -P "$sdkroot/" | tail -1 | awk '{print $NF}')"
 if [ -z  "$sdkparent" ] ; then
     echo "Unable to determine mount mouint of filesystem containing \"$sdkroot\""
@@ -167,6 +195,10 @@ prepare_mountpoints() {
     mount_bind /dev/shm
     mount_bind /var/lib/dbus
     mount_bind /var/run/dbus
+
+    echo "Mounting $targetsdir as /srv/mer/targets"
+    mkdir -p ${sdkroot}/srv/mer/targets
+    mount --rbind ${targetsdir} ${sdkroot}/srv/mer/targets/
 
     if [[ $bind_mount_root == "yes" ]] ; then
 	echo "Mounting / as /parentroot"

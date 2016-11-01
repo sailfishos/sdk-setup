@@ -102,6 +102,7 @@ mkdir -p %{buildroot}/%{_sysconfdir}
 cp src/mer-sdk-chroot %{buildroot}/
 cp src/mer-bash-setup %{buildroot}/
 echo "This file tells ssu this is a chroot SDK installation" > %{buildroot}/%{_sysconfdir}/mer-sdk-chroot
+mkdir -p %{buildroot}/srv/mer/targets
 
 # sdk-vm
 mkdir -p %{buildroot}/%{_unitdir}
@@ -198,6 +199,7 @@ fi
 /mer-bash-setup
 %{_bindir}/sdk-version
 %{_sysconfdir}/mer-sdk-chroot
+%dir /srv/mer/targets
 
 %files -n sdk-vm
 %defattr(-,root,root,-)
