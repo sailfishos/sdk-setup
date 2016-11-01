@@ -232,12 +232,12 @@ if [[ -z $OPT_YES ]]; then
 fi
 
 if [[ $OPT_CREATE ]]; then
-    _ sdk-manage --use-chroot-as $USER --target --install $OPT_TARGET $TOOLCHAIN $OPT_ROOTSTRAP
+    _ sdk-manage --target --install $OPT_TARGET $TOOLCHAIN $OPT_ROOTSTRAP
     exit $?
 fi
 
 if [[ $OPT_REMOVE ]]; then
-    _ sdk-manage --use-chroot-as $USER --target --remove $OPT_TARGET
+    _ sdk-manage --target --remove $OPT_TARGET
     exit $?
 fi
 
