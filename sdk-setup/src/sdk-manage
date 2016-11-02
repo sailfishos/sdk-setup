@@ -94,7 +94,7 @@ install_toolchain() {
 	sudo zypper --quiet --non-interactive install -t pattern $pkg
 	return $?
     else
-	echo "Toolchain $pkg doesn't exist or is already installed- can not install."
+	echo >&2 "Toolchain $pkg doesn't exist or is already installed- can not install."
 	exit 2
     fi
 }
@@ -105,7 +105,7 @@ remove_toolchain() {
 	sudo zypper --quiet --no-refresh --non-interactive remove -t pattern $pkg
 	return $?
     else
-	echo "Toolchain $pkg is not installed - can not remove."
+	echo >&2 "Toolchain $pkg is not installed - can not remove."
 	exit 2
     fi
 }
@@ -129,7 +129,7 @@ manage_toolchains() {
 	    return $?
 	    ;;
 	* )
-	    echo "$1 not recognised"
+	    echo >&2 "$1 not recognised"
 	    usage --exit
 	    ;;
     esac
@@ -143,12 +143,12 @@ manage_toolchains() {
 assert_target_and_setup() {
     assert_target_name_valid "$target"
     if ! [[ -f $sbox2dir/$target/sb2.config ]]; then
-	echo "Target $target is not a valid Scratchbox2 target"
+	echo >&2 "Target $target is not a valid Scratchbox2 target"
 	exit 1
     fi
 
     if [[ $(check_target_visible $target) == "no" ]]; then
-	echo "Target $target is not accessible"
+	echo >&2 "Target $target is not accessible"
 	exit 1
     fi
 }
@@ -199,7 +199,7 @@ manage_develpkgs() {
 	    return $?
 	    ;;
 	* )
-	    echo "$1 not recognised"
+	    echo >&2 "$1 not recognised"
 	    usage --exit
 	    ;;
     esac
@@ -216,10 +216,10 @@ t_register() {
     tgt=$1
     domain=$(sb2 -t $tgt sdk-register -d)
     if [[ z"$domain" == zjolla ]]; then
-	echo -n "$tgt: "
+	echo >&2 -n "$tgt: "
 	sb2 -t $tgt -m sdk-install -R sdk-register -u $reg_username -p $reg_password
     else
-	echo "$tgt: Register not needed (domain: ${domain:-empty})"
+	echo >&2 "$tgt: Register not needed (domain: ${domain:-empty})"
     fi
 }
 
@@ -241,7 +241,7 @@ get_targets() {
 
 assert_target_name_valid() {
     if [[ $# -lt 1 ]] || [[ -z $1 ]]; then
-      echo "Target name missing."
+      echo >&2 "Target name missing."
       exit 1
     fi
 
@@ -250,17 +250,17 @@ assert_target_name_valid() {
       return
     fi
 
-    echo "Target name '$1' is not a valid Scratchbox2 target name."
+    echo >&2 "Target name '$1' is not a valid Scratchbox2 target name."
     exit 1
 }
 
 synchronise_target() {
     # This is now a minimal set of files to sync
     if ! [ -d $mer_targets/$1 ]; then
-	echo No target called $1
+	echo >&2 "No target called $1"
 	return
     fi
-    echo "Synchronising target to host"
+    echo >&2 "Synchronising target to host"
     # The filter=". -" means to read filters from stdin (the <<EOF)
     rsync -a --no-devices --no-specials \
           --delete --ignore-errors \
@@ -290,7 +290,7 @@ EOF
     # For Qt5, QtCreator needs to see this dir or it thinks Qt version is not properly installed
     mkdir -p $host_targets/$1/usr/lib/qt5/bin/
 
-    echo "Sync completed"
+    echo >&2 "Sync completed"
 }
 
 import_target() {
@@ -298,7 +298,7 @@ import_target() {
     # Ignore errors as we sometimes have dangling symlinks and
     # still want to keep clean
     if ! [ -d $host_targets/$1 ]; then
-	echo No host target called $1
+	echo >&2 "No host target called $1"
     fi
     rsync -a --no-devices --no-specials \
           --delete --ignore-errors \
@@ -311,11 +311,11 @@ target_uuidgen()
     local mytarget=$1
 
     if [[ -z "$mytarget" ]]; then
-	echo "NOTICE: target_uuidgen: empty target name given"
+	echo >&2 "NOTICE: target_uuidgen: empty target name given"
 	return 0
     fi
 
-    echo "target_uuidgen: generating a unique id for $mytarget target"
+    echo >&2 "target_uuidgen: generating a unique id for $mytarget target"
     sb2 -t $mytarget -m sdk-install -R rm -f /var/lib/dbus/machine-id
     sb2 -t $mytarget -m sdk-install -R dbus-uuidgen --ensure
 }
@@ -327,7 +327,7 @@ amend_target_hosts()
     local myhostname=$(hostname)
 
     if [[ -z "$mytarget" ]]; then
-	echo "NOTICE: amend_target_hosts: empty target name given"
+	echo >&2 "NOTICE: amend_target_hosts: empty target name given"
 	return 0
     fi
 
@@ -356,9 +356,9 @@ install_target() {
     toolchain=$2
     url=$3 #FIXME: check url validity
     if ! [[ $skip_toolchain_check ]]; then
-	echo Making sure the right toolchain exists
+	echo >&2 "Making sure the right toolchain exists"
 	if ! ensure_installed $toolchain; then
-	    echo "Installing required toolchain: $toolchain"
+	    echo >&2 "Installing required toolchain: $toolchain"
 	    install_toolchain $toolchain
 	fi
     fi
@@ -386,7 +386,7 @@ install_target() {
 	local md5file="$orig_downloaded_file.md5sum"
 	local download_failed=0
 
-	echo Downloading "$orig_downloaded_file"
+	echo >&2 "Downloading '$orig_downloaded_file'"
 	curl "$url" -o "$orig_downloaded_file" 2>&1
 	curl_status=$?
 
@@ -396,14 +396,14 @@ install_target() {
                 # md5sum exists, let's check it
 		curl --silent "$url.md5sum" > "$md5file"
 		if ! md5sum --status -c "$md5file"; then
-		    echo "ERROR: md5sum check failed for file $orig_downloaded_file!"
+		    echo >&2 "ERROR: md5sum check failed for file $orig_downloaded_file!"
 		    download_failed=1
 		else
-		    echo "INFO: md5sum matches - download ok"
+		    echo >&2 "INFO: md5sum matches - download ok"
 		fi
 		rm -f "$md5file"
 	    else
-		echo "WARNING: No md5sum file found - can not verify file integrity."
+		echo >&2 "WARNING: No md5sum file found - can not verify file integrity."
 	    fi
 	fi
 
@@ -411,7 +411,7 @@ install_target() {
 
 	if [[ $download_failed -ne 0 ]] || [[ $curl_status -ne 0 ]] ||
            [[ ! -f $local_file ]] || [[ $(stat -c %s "$local_file") -lt 10000 ]]; then
-	    echo "Download failed!"
+	    echo >&2 "Download failed!"
 	    rm -f $local_file
 	    popd >/dev/null
 	    return 3
@@ -429,8 +429,8 @@ install_target() {
     # only create host_targets dirs if inside the VM
     [[ $INSIDE_VBOX ]] && mkdir -p $host_targets/$target
 
-    echo
-    echo "Unpacking target ..."
+    echo >&2
+    echo >&2 "Unpacking target ..."
     sudo tar xf "$local_file"
     local tar_retcode=$?
 
@@ -444,9 +444,9 @@ install_target() {
 
     if [ $tar_retcode -ne 0 ]; then
 	if [ "$( df --sync / | tr -s ' ' | tail -n 1 | cut -d ' ' -f 4 )" -lt 10000 ]; then
-	    echo "Not enough disk space to unpack target image"
+	    echo >&2 "Not enough disk space to unpack target image"
 	else
-	    echo "Could not unpack target image"
+	    echo >&2 "Could not unpack target image"
 	fi
 	sudo rm -rf $mer_targets/$target
 	return 4
@@ -459,10 +459,10 @@ install_target() {
 
     if [[ $INSIDE_VBOX ]]; then
 	synchronise_target $target
-	[ $? -ne 0 ] && echo "Rsync did not exactly run as intended, expect problems."
+	[ $? -ne 0 ] && echo >&2 "Rsync did not exactly run as intended, expect problems."
     fi
 
-    echo "Setting up SB2"
+    echo >&2 "Setting up SB2"
 
     case $toolchain in
 	*-arm*)
@@ -499,11 +499,11 @@ install_target() {
     assert_target_and_setup
 
     if [[ $INSIDE_VBOX ]]; then
-	echo "Notifying Qt Creator of new target"
+	echo >&2 "Notifying Qt Creator of new target"
 	updateQtCreatorTargets --name $target --target-xml $target_xml
     fi
 
-    echo "Target $target now setup"
+    echo >&2 "Target $target now setup"
 }
 
 remove_target() {
@@ -513,10 +513,10 @@ remove_target() {
 	sudo rm -rf $mer_targets/$target
 	if [[ $INSIDE_VBOX ]]; then
 	    rm -rf $host_targets/$target
-	    echo "Notifying Qt Creator of removed target"
+	    echo >&2 "Notifying Qt Creator of removed target"
 	fi
     else
-	echo "Note: target $target was not seen by sb2"
+	echo >&2 "Note: target $target was not seen by sb2"
     fi
 
     if [[ $INSIDE_VBOX ]]; then
@@ -597,7 +597,7 @@ manage_targets() {
 	    done
 	    ;;
 	* )
-	    echo "$1 not recognised"
+	    echo >&2 "$1 not recognised"
 	    usage --exit
 	    ;;
     esac
@@ -624,10 +624,10 @@ register_sdk() {
     get_register_credentials "$@"
     domain=$(sdk-register -d)
     if [[ z"$domain" == zjolla ]]; then
-	echo -n "MerSDK: "
+	echo >&2 -n "MerSDK: "
 	sdk-register -u ${reg_username:-} -p ${reg_password:-}
     else
-	echo "MerSDK: Register not needed (domain: ${domain:-empty})"
+	echo >&2 "MerSDK: Register not needed (domain: ${domain:-empty})"
     fi
 }
 
@@ -675,7 +675,7 @@ manage_sdk() {
 	    register_sdk "$@"
 	    ;;
 	* )
-	    echo "$1 not recognised"
+	    echo >&2 "$1 not recognised"
 	    usage --exit
 	    ;;
     esac
@@ -723,7 +723,7 @@ INSIDE_VBOX=$([[ -e /etc/mer-sdk-vbox ]] && echo 1)
 
 # exactly one must be true
 if [[ $INSIDE_CHROOT$INSIDE_VBOX != 1 ]]; then
-    echo "Internal error: Failed to determine type of SDK installation"
+    echo >&2 "Internal error: Failed to determine type of SDK installation"
     exit 1
 fi
 
@@ -766,7 +766,7 @@ case "$1" in
 	exit 0
 	;;
     * )
-	echo "$1 not recognised"
+	echo >&2 "$1 not recognised"
 	usage --exit
 	;;
 esac
