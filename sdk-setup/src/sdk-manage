@@ -187,7 +187,7 @@ manage_develpkgs() {
 	    assert_target_and_setup
 	    shift
 	    t_zypper --non-interactive --no-refresh install "$@"
-	    synchronise_target $target
+	    [[ $INSIDE_VBOX ]] && synchronise_target $target
 	    return $?
 	    ;;
 	--remove ) shift
@@ -195,7 +195,7 @@ manage_develpkgs() {
 	    assert_target_and_setup
 	    shift
 	    t_zypper --non-interactive --no-refresh remove "$@"
-	    synchronise_target $target
+	    [[ $INSIDE_VBOX ]] && synchronise_target $target
 	    return $?
 	    ;;
 	* )
@@ -568,11 +568,13 @@ manage_targets() {
 	--sync ) shift
 	    target="${1:-}"
 	    assert_target_name_valid "$target"
+	    [[ $INSIDE_VBOX ]] || fail "This operation is only valid for SDK in VirtualBox"
 	    synchronise_target "$@"
 	    updateQtCreatorTargets --name $target --target-xml $target_xml
 	    ;;
 	--import ) shift
 	    assert_target_name_valid "${1:-}"
+	    [[ $INSIDE_VBOX ]] || fail "This operation is only valid for SDK in VirtualBox"
 	    import_target "$@"
 	    ;;
 	--register ) shift
