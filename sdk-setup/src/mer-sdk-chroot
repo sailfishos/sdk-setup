@@ -222,9 +222,10 @@ prepare_user() {
     getent group $group >> ${sdkroot}/etc/group
     HOMEDIR=$(getent passwd $user | cut -f6 -d:)
 
+    install --owner $user --group $(id -gn $user) -d ${sdkroot}${HOMEDIR}
+
     if [[ $bind_mount_home == "yes" ]] ; then
 	echo "Mounting home directory: ${HOMEDIR}"
-	mkdir -p ${sdkroot}${HOMEDIR}
 	mount --bind ${HOMEDIR} ${sdkroot}${HOMEDIR}
 	# Now the sdk uses a private namespace, there's no need to
 	# make it unbindable
