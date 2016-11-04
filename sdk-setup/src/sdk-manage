@@ -636,15 +636,16 @@ register_sdk() {
 sdk_status() {
     systemctl --failed
     ERR=$?
-    if sudo VBoxControl -nologo sharedfolder list | grep ' home$' > /dev/null 2>&1 ; then
+
+    if ! sudo VBoxControl -nologo sharedfolder list | grep -q ' home$'; then
 	echo "'home' shared folder is missing"
 	ERR=1
     fi
-    if sudo VBoxControl -nologo sharedfolder list | grep ' config$' > /dev/null 2>&1 ; then
+    if ! sudo VBoxControl -nologo sharedfolder list | grep -q ' config$'; then
 	echo "'config' shared folder is missing"
 	ERR=1
     fi
-    if sudo VBoxControl -nologo sharedfolder list | grep ' targets$' > /dev/null 2>&1 ; then
+    if ! sudo VBoxControl -nologo sharedfolder list | grep -q ' targets$'; then
 	echo "'targets' shared folder is missing"
 	ERR=1
     fi
