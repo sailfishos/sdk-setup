@@ -634,6 +634,14 @@ register_sdk() {
 }
 
 sdk_status() {
+    ERR=0
+    sdk_vbox_status || ERR=1
+    exit $ERR
+}
+
+sdk_vbox_status() {
+    [[ $INSIDE_VBOX ]] || return 0
+
     systemctl --failed
     ERR=$?
 
@@ -649,7 +657,8 @@ sdk_status() {
 	echo "'targets' shared folder is missing"
 	ERR=1
     fi
-    exit $ERR
+
+    return $ERR
 }
 
 manage_sdk() {
