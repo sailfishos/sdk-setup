@@ -145,9 +145,11 @@ while [[ ${1:-} ]]; do
             fail "unknown option $1"
             ;;
         * )
-            OPT_TARGET=$1; shift
-            OPT_ROOTSTRAP=$1; shift
-            [[ -z $OPT_ROOTSTRAP ]] && fail "create: target name and a rootstrap URL or filename required"
+            if [[ $OPT_CREATE ]]; then
+                OPT_TARGET=$1; shift
+                OPT_ROOTSTRAP=$1; shift
+            fi
+            [[ $# -eq 0 ]] || fail "$1: unexpected argument"
             ;;
     esac
 done
@@ -164,7 +166,11 @@ fi
 
 if [[ $OPT_CREATE ]]; then
     if [[ ! $OPT_TARGET ]] || [[ ! $OPT_ROOTSTRAP ]]; then
-        fail "create: target name and rootstrap required"
+        fail "create: target name and rootstrap URL or filename required"
+    fi
+
+    if [[ ! ($OPT_ROOTSTRAP =~ ^https?://) && ! -f ${OPT_ROOTSTRAP/#file:\/\/} ]]; then
+        fail "$OPT_ROOTSTRAP: no such file"
     fi
 
     if [[ -z $OPT_ARCH ]]; then
