@@ -31,9 +31,9 @@ short_usage() {
     cat <<EOF
 usage: $ME [-t <target>] [-s <specfile>] [-d <device>] [-p <projectdir>]
            [-f <folder>] [-i] [-P] [-x]
-           build [-d] [-j <n>] [<args>] | qmake [<args>] | make [<args>] | ssh <args>
+           build [-p] [-d] [-j <n>] [<args>] | qmake [<args>] | make [<args>] | ssh <args>
            install [<args>] | installdeps <args> | rpm [<args>] | deploy <args>
-           run <args>
+           prep | apply [-R] | run <args>
        $ME --version
        $ME --help
 EOF
@@ -58,9 +58,12 @@ usage() {
   $ME is aware of spectacle and will update the spec file if there is
   an obvious yaml file which is newer.
 
-  $ME build [-d] [-j <n>] [<args>]
+  $ME prep           : runs rpmbuild for %prep phase of the spec file.
+
+  $ME build [-p|--doprep] [-d|--enable-debug] [-j <n>] [<args>]
                      : runs rpmbuild for the given spec file in the
                        given sb2 target. Produces an rpm package.
+                     : -p     run %prep phase as well when building
                      : -d     enable debug build
                      : -j <n> use only 'n' CPUs to build
                      : can use -s -t -p -i -x
@@ -92,10 +95,11 @@ usage() {
   $ME rpm [<args>]   : runs the install & rpm-creation phases
                      : can use -s -t -p -i -x
 
-  $ME apply          : applies all patches defined in spec from rpm directory
+  $ME apply [-R]     : applies all patches defined in spec from rpm directory
                      : to the source tree, or if detected, submodule
                      : source tree
-                     : can use -m -R
+                     : -R    reverse apply patches (patch -R)
+                     : can use -m
 
   -i | --increment     : increment release number in spec file
   -t | --target        : specify the sb2 target to use
@@ -108,7 +112,6 @@ usage() {
   -P | --pedantic      : do extra checks
   -x | --fix-version   : use the latest tag from the current git branch as package version
   -m | --submodule     : use specified directory as submodule when applying patches
-  -R | --reverse       : reverse apply patches (patch -R)
 
 EOF
 }
@@ -342,13 +345,13 @@ run_apply() {
     fi
 
     reverse="cat"
-    if [ "$OPT_REVERSE_APPLY" -eq 1 ]; then
+    if [ "$APPLY_REVERSE" -eq 1 ]; then
         reverse="tac"
     fi
     for p in $(sed -e '/^%patch/!d' -e 's/^%patch\([0-9]*\).*/\1/' "$OPT_SPEC" | $reverse); do
         op="$(grep "^%patch${p}" "$OPT_SPEC" | awk '{print $2}')"
         patch_file="$(grep "^Patch$p:" "$OPT_SPEC" | awk '{print $2}')"
-        if [ "$OPT_REVERSE_APPLY" -eq 1 ]; then
+        if [ "$APPLY_REVERSE" -eq 1 ]; then
             echo "Reversing $patch_file"
             patch -R $op < "$rpm_dir/$patch_file"
         else
@@ -368,7 +371,11 @@ run_build() {
 
     increment_build_number;
     local tmp_spec="$OPT_SPEC.$$"
-    sed -e '/^%patch/d' "$OPT_SPEC" > "$tmp_spec"
+    if [ -z "$BUILD_PREP" ]; then
+        sed -e '/^%patch/d' "$OPT_SPEC" > "$tmp_spec"
+    else
+        cp "$OPT_SPEC" "$tmp_spec"
+    fi
 
     if [[ -f ${OPT_SPEC%.spec}.changes ]]; then
         notice "Appending changelog entries to spec ..."
@@ -393,10 +400,44 @@ run_build() {
             --define \"_sourcedir $_basedir/rpm \" \
             --define \"_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm \" \
             --buildroot=\"$buildroot\" \
+            $BUILD_PREP \
             --dobuild \
             --doinstall \
             --dobinary \
             --docheck \
+            \"$tmp_spec\"
+    )
+    local rc=$?
+    rm -f "$tmp_spec"
+    return $rc
+}
+
+run_prep() {
+    verify_target_dependencies
+
+    increment_build_number;
+    local tmp_spec="$OPT_SPEC.$$"
+    # TODO maybe add toggle here for disabling patch applying?
+    cp "$OPT_SPEC" "$tmp_spec"
+
+    # get rid of potential windows linefeeds
+    sed -i "s/\x0D$//g" "$tmp_spec"
+
+    fix_package_version "$tmp_spec"
+
+    local build_tgt=$(sb2 -t $OPT_TARGET gcc -dumpmachine)
+    build_tgt=${build_tgt%-gnueabi}
+    (
+        cd_to_spec_setup_dir;
+        rm -f "$_basedir/RPMS/"*.rpm;
+        eval sb2 -t $OPT_TARGET rpmbuild --build-in-place --target=$build_tgt \
+            $BUILD_DEBUG \
+            --define \"_smp_mflags -j$BUILD_JOBS\" \
+            --define \"_rpmdir $_basedir/RPMS \" \
+            --define \"_sourcedir $_basedir/rpm \" \
+            --define \"_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm \" \
+            --buildroot=\"$buildroot\" \
+            --doprep \
             \"$tmp_spec\"
     )
     local rc=$?
@@ -603,7 +644,6 @@ OPT_NEEDSPEC=
 OPT_PEDANTIC=0
 OPT_SHARED_DIR=/etc/mersdk/share
 OPT_INC_BUILD_NUMBER=0
-OPT_REVERSE_APPLY=0
 OPT_SUBMODULE=""
 deviceuser=nemo
 
@@ -646,10 +686,7 @@ while [[ "$1" ]]; do
         "-m" | "--submodule" ) shift
             OPT_SUBMODULE="$1"; shift
             ;;
-        "-R" | "--reverse" ) shift
-            OPT_REVERSE_APPLY=1
-            ;;
-        install | rpm | deploy | build | installdeps | apply )
+        install | rpm | deploy | build | installdeps | apply | prep )
             OPT_NEEDSPEC=1;
             break
             ;;
@@ -744,17 +781,31 @@ if [[ "$OPT_SPEC" ]]; then
 fi
 
 case "$1" in
-    qmake | make | install | rpm | deploy | apply )
+    qmake | make | install | rpm | deploy | prep )
         cmd=run_$1
         if [[ "$OPT_PEDANTIC" -eq 1 && "$OPT_SPEC" ]]; then
             check_spec_supports_qtc
         fi
         shift
         ;;
+    apply )
+        cmd=run_$1; shift
+        APPLY_REVERSE=0
+        while [[ "$1" ]]; do
+            case "$1" in
+                -R) shift
+                    APPLY_REVERSE=1 ;;
+                *)
+                    short_usage quit
+                    ;;
+            esac
+        done
+        ;;
     build | installdeps )
         cmd=run_$1; shift
         BUILD_DEBUG='--define "debug_package %{nil} "'
         BUILD_JOBS=
+        BUILD_PREP=
         while [[ "$1" ]]; do
             case "$1" in
                 -d|--enable-debug) shift
@@ -768,6 +819,9 @@ case "$1" in
                         [[ -z "$2" ]] && short_usage quit
                         BUILD_JOBS="$2"; shift 2;
                     fi
+                    ;;
+                -p|--doprep) shift
+                    BUILD_PREP="--doprep"
                     ;;
                 *)
                     break
