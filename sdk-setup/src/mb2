@@ -30,7 +30,7 @@
 short_usage() {
     cat <<EOF
 usage: $ME [-t <target>] [-s <specfile>] [-d <device>] [-p <projectdir>]
-           [-f <folder>] [-i] [-P] [-x]
+           [-f <folder>] [-i] [-P] [-x] [-c[=<args>]]
            build [-p] [-d] [-j <n>] [<args>] | qmake [<args>] | make [<args>] | ssh <args>
            install [<args>] | installdeps <args> | rpm [<args>] | deploy <args>
            prep | apply [-R] | run <args>
@@ -66,7 +66,7 @@ usage() {
                      : -p     run %prep phase as well when building
                      : -d     enable debug build
                      : -j <n> use only 'n' CPUs to build
-                     : can use -s -t -p -i -x
+                     : can use -s -t -p -i -x -c
 
   $ME qmake [<args>] : runs qmake in the 'build' phase
                        Note that this also verifies target
@@ -79,7 +79,7 @@ usage() {
   $ME deploy --zypper|--pkcon|--rsync|--sdk
                      : runs the install or rpm-creation phase and then
                        copies/installs the relevant files to the device
-                     : can use -s -t -p -d -i -f -x
+                     : can use -s -t -p -d -i -f -x -c
 
   $ME run|ssh [<args>] : runs a command (on device if --device given);
                          intended for running gdb and a gdb server
@@ -93,7 +93,7 @@ usage() {
                      : can use -s -t -p
 
   $ME rpm [<args>]   : runs the install & rpm-creation phases
-                     : can use -s -t -p -i -x
+                     : can use -s -t -p -i -x -c
 
   $ME apply [-R]     : applies all patches defined in spec from rpm directory
                      : to the source tree, or if detected, submodule
@@ -111,6 +111,9 @@ usage() {
                          machine
   -P | --pedantic      : do extra checks
   -x | --fix-version   : use the latest tag from the current git branch as package version
+  -c[=<args>] | --git-change-log[=<args>]
+                       : include change log generated from Git history with
+                         'git-change-log' command, forwarding any <args>.
   -m | --submodule     : use specified directory as submodule when applying patches
 
 EOF
@@ -377,7 +380,11 @@ run_build() {
         cp "$OPT_SPEC" "$tmp_spec"
     fi
 
-    if [[ -f ${OPT_SPEC%.spec}.changes ]]; then
+    if [[ $OPT_GIT_CHANGE_LOG ]]; then
+        notice "Auto generating changelog from Git history ..."
+        echo "%changelog" >> "$tmp_spec"
+        git-change-log $OPT_GIT_CHANGE_LOG_ARGS >> "$tmp_spec"
+    elif [[ -f ${OPT_SPEC%.spec}.changes ]]; then
         notice "Appending changelog entries to spec ..."
         echo "%changelog" >> "$tmp_spec"
         cat ${OPT_SPEC%.spec}.changes >> "$tmp_spec"
@@ -544,7 +551,12 @@ run_rpm() {
 
     local tmp_spec="$OPT_SPEC.$$"
     cp -a "$OPT_SPEC" "$tmp_spec"
-    if [[ -f ${OPT_SPEC%.spec}.changes ]]; then
+
+    if [[ $OPT_GIT_CHANGE_LOG ]]; then
+        notice "Auto generating changelog from Git history ..."
+        echo "%changelog" >> "$tmp_spec"
+        git-change-log $OPT_GIT_CHANGE_LOG_ARGS >> "$tmp_spec"
+    elif [[ -f ${OPT_SPEC%.spec}.changes ]]; then
         notice "Appending changelog entries to spec ..."
         echo "%changelog" >> "$tmp_spec"
         cat "${OPT_SPEC%.spec}".changes >> "$tmp_spec"
@@ -642,6 +654,8 @@ OPT_PKGDIR="./rpm"
 OPT_PROJDIR=
 OPT_NEEDSPEC=
 OPT_PEDANTIC=0
+OPT_GIT_CHANGE_LOG=
+OPT_GIT_CHANGE_LOG_ARGS=
 OPT_SHARED_DIR=/etc/mersdk/share
 OPT_INC_BUILD_NUMBER=0
 OPT_SUBMODULE=""
@@ -682,6 +696,19 @@ while [[ "$1" ]]; do
             ;;
         "-x" | "--fix-version" ) shift
             OPT_FIX_VERSION=1
+            ;;
+        "-c" | "--git-change-log" ) shift
+            OPT_GIT_CHANGE_LOG=1
+            ;;
+        "-c="* )
+            OPT_GIT_CHANGE_LOG=1
+            OPT_GIT_CHANGE_LOG_ARGS="${1#-c=}"
+            shift
+            ;;
+        "--git-change-log="* )
+            OPT_GIT_CHANGE_LOG=1
+            OPT_GIT_CHANGE_LOG_ARGS="${1#--git-change-log=}"
+            shift
             ;;
         "-m" | "--submodule" ) shift
             OPT_SUBMODULE="$1"; shift
