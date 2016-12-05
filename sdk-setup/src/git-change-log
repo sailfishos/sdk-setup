@@ -1,0 +1,1379 @@
+#!/bin/bash
+#
+# git-change-log creates change log from Git commit messages and tag annotations
+#
+# Copyright (C) 2016 Jolla Ltd.
+# Contact: Martin Kampas <martin.kampas@jolla.com>
+# All rights reserved.
+#
+# You may use this file under the terms of BSD license as follows:
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+#   * Redistributions of source code must retain the above copyright
+#     notice, this list of conditions and the following disclaimer.
+#   * Redistributions in binary form must reproduce the above copyright
+#     notice, this list of conditions and the following disclaimer in the
+#     documentation and/or other materials provided with the distribution.
+#   * Neither the name of the Jolla Ltd nor the
+#     names of its contributors may be used to endorse or promote products
+#     derived from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+# ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+# WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+# DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS OR CONTRIBUTORS BE LIABLE FOR
+# ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+# (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+# LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+# ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+# SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+#
+
+# not only to get equal results everywhere, but also as a significant
+# performance improvement (about 30% shorter execution time)
+OLD_LC_ALL="$LC_ALL"
+export LC_ALL=C
+
+set -o nounset
+set -o errexit
+set -o pipefail
+#set -v
+
+: ${GIT_CHANGE_LOG_NO_COMPAT_WARNINGS:=}
+
+NL=$'\n'
+SELF="$(basename $0)"
+SHA1_WIDTH=40
+
+SEPARATOR=';'
+cut() { command cut -d $SEPARATOR "$@"; }
+join() { command join -t $SEPARATOR "$@"; }
+nl() { command nl -s $SEPARATOR "$@"; }
+sort() { command sort -t $SEPARATOR "$@"; }
+read() { IFS=$SEPARATOR builtin read "$@"; }
+write() { (IFS=$SEPARATOR; echo "$*"); }
+
+synopsis()
+{
+    cat <<EOF
+usage: $SELF [-a|--auto-add-annotations] [-d|--dense <regexp>]
+       [--favor-tagger] [--no-squeeze-spaces] [--sort-entries]
+       [-t|--tags <pattern>] [--tags-with-prefix]
+       [-<number>] [--] [REVISION]
+   or: $SELF {-u|--untagged-only} [--] [REVISION]
+EOF
+}
+
+brief_usage()
+{
+    cat <<EOF
+$(synopsis)
+
+Pass '--help' for full help.
+EOF
+}
+
+usage()
+{
+    cat <<EOF
+$SELF creates change log from Git commit messages and tag annotations.
+
+$(synopsis)
+
+Lists changes in reverse chronological order, starting at REVISION which
+defaults to current HEAD. REVISION can be any revision as understood by
+git-rev-parse(1).
+
+Unless '--auto-add-annotations' is used, just the lines matching the following
+pattern will be considered for inclusion in change log:
+
+    [BLANKS] '[' SHORT-DESCRIPTION ']' BLANKS LONG-DESCRIPTION
+
+Options:
+    -h | --help                  : show this help
+    -a | --auto-add-annotations  : use the subject (first line) of tag
+                                   annotation when no line would be included
+                                   for a tag otherwise.
+    -d | --dense <regexp>        : group change log entries just by tags
+                                   matching the given <regexp>. This is matched
+                                   agains the full refname, i.e., including the
+                                   'refs/...' prefix.  Implies '--favor-tagger'.
+    --favor-tagger               : use tag-author info instead of commit-author
+                                   info in case of annotated tags
+    --no-squeeze-spaces          : do not replace sequences of blank characters
+                                   with single space character
+    --sort-entries               : sort entries alphabetically according to
+                                   current locale - use thoughtfully! Normally
+                                   entries appear in order of their appearance
+                                   in 'git-log --topo-order' output.
+    -t | --tags <pattern>        : override the default 'refs/tags/*' pattern
+                                   used to enumerate tags. Compared to '--dense'
+                                   this (1) discards annotations from unmatched
+                                   tags, (2) does not imply '--favor-tagger' and
+                                   (3) accepts patterns as understood by
+                                   git-for-each-ref(1).
+    --tags-with-prefix           : do not fully strip the path prefix from tag
+                                   names.  The resulting tag names will be as
+                                   from 'git rev-parse --symbolic --abbrev-ref'.
+    -u | --untagged-only         : print just the most recent entries not
+                                   reachable from any tag
+    -<number>                    : limit output to <number> most recent tags
+
+Examples:
+    Consider a Git history illustrating the situation where, at some point, a
+    decision was taken to
+
+        1) start using annotated tags for change log generation and
+        2) no more require special markup for lines to be included in change log
+
+    In the following scenario, commit author is always John Author, committer is
+    always Alice Committer (never figures in change log) and tagging is always
+    done by Jack Tagger.  They always perform their job on the first, second and
+    third day of a month respectively. The #YYYY-MM task number designates the
+    year and month of the commit/tag creation.
+
+$(sed -n '/^# example_1_begin/,/^# example_1_end/p' $0 \
+    |sed -e '/# example/d' -e 's/^/    \$ /')
+
+    Here is how the corresponding change log with patch-level changes merged
+    together would look like:
+
+$(sed -n '/^# example_1_out_begin/,/^# example_1_out_end/p' $0 \
+    |sed -e '/# example/d' \
+         -e "s/^verify/$ $SELF/" \
+         -e 's/ <<EOF$//' -e '/^EOF$/d' \
+         -e 's/^/    /')
+
+    More examples can be found at the bottom of this shell script, in form of
+    test cases. List them with \`${EDITOR:-vi} $(which $SELF 2>/dev/null \
+        || echo $0)\`.
+
+Environment:
+    All locale(7) related environment variables are ignored and LC_ALL=C is used
+    instead. The only exception is the use of '--sort-entries' switch.
+
+Bugs:
+    Either system 'sort' utility with support for '--version-sort' option, or
+    a Python interpreter with 'distutils.version' module available is required.
+
+    Attach the output of executing with '--self-test' as the only option when
+    reporting bugs.
+
+EOF
+}
+
+warn()
+{
+    echo "$SELF: WARNING: $*" >&2
+}
+
+warn_c()
+{
+    if [[ ! $GIT_CHANGE_LOG_NO_COMPAT_WARNINGS ]]; then
+        warn "$@"
+    fi
+}
+
+bad_usage()
+{
+    echo "$SELF: $*" >&2
+    echo >&2
+    brief_usage >&2
+    exit 1
+}
+
+configure()
+{
+    feature()
+    {
+        local feature="$1"
+        local result="${2:-}"
+
+        eval $feature="$result"
+
+        if [[ $OPT_SELF_TEST ]]; then
+            local ny=(no yes)
+            echo "*** Configured $feature=${ny[${result:-0}]}" >&2
+        fi
+    }
+
+    # compatibility with old 'sort'
+    feature HAS_VERSION_SORT_OPT \
+        $(! sort -V </dev/null &>/dev/null || echo 1)
+    # TODO If Git is upgraded before coreutils, it is possible to let
+    # 'git-for-each-ref' do version sort on refname instead of post-sorting with
+    # 'sort'
+    if [[ $HAS_VERSION_SORT_OPT ]]; then
+        VERSION_SORT_OPT='V'
+    else
+        # Determining the most recent tag is likely to be inaccurate when
+        # multiple tags point to a commit
+        VERSION_SORT_OPT='n'
+
+        # Alternatively perform version sort with python if available
+        python_version_sort_reverse()
+        {
+            local field=$(($1-1))
+            python -c '
+from distutils.version import LooseVersion
+from sys import exit, stdin, stdout, stderr
+import errno
+import csv
+
+reader = csv.reader(stdin, delimiter="'$SEPARATOR'", lineterminator="\n")
+writer = csv.writer(stdout, delimiter="'$SEPARATOR'", lineterminator="\n")
+
+try:
+    writer.writerows(sorted(reader, key=lambda row: LooseVersion(row['$field']), reverse=True))
+except IOError as e:
+    if e.errno == errno.EPIPE:
+        pass
+stderr.close()
+'
+        }
+
+        feature HAS_PYTHON_VERSION_SORT \
+            $(! python_version_sort_reverse 0 </dev/null &>/dev/null || echo 1)
+        if [[ ! $HAS_PYTHON_VERSION_SORT ]]; then
+            warn_c "Your 'sort' utility does not support --version-sort and"
+            warn_c "    you either do not have python installed or the"
+            warn_c "    'distutils.version' module could not be used."
+        fi
+    fi
+
+    # compatibility with old Git
+    feature HAS_GIT_VERSION_SORT \
+        $(! git for-each-ref --sort=version:refname foo &>/dev/null || echo 1)
+
+    feature HAS_GIT_SHOW_NO_PATCH \
+        $(! git show --no-patch &>/dev/null || echo 1)
+    if [[ $HAS_GIT_SHOW_NO_PATCH ]]; then
+        NO_PATCH_OPT='--no-patch'
+    else
+        NO_PATCH_OPT='--quiet'
+    fi
+
+    feature HAS_GIT_MERGED_OPT \
+        $(! git for-each-ref --merged master master &>/dev/null || echo 1)
+
+    feature HAS_GIT_SHORT_LOCAL \
+        $(! git for-each-ref --format="%(authordate:short-local)" refs/heads/master &>/dev/null \
+            || echo 1)
+}
+
+# Output unique lines, keep order
+stable_uniq()
+{
+    nl |sort -k 2 -u |sort -k 1,1 |cut -f 2-
+}
+
+# Each output line describes one tag with the following fields, sorted first by
+# commit-sha1 ascending, then by refname descending
+TI_COMMIT=1
+TI_REFNAME=2
+TI_TYPE=3 # 'commit' or 'tag'
+TI_DATE=4
+TI_NAME=5
+TI_EMAIL=6
+create_tag_info()
+{
+    if [[ $HAS_VERSION_SORT_OPT || ! $HAS_PYTHON_VERSION_SORT ]]; then
+        sort_tag_info()
+        { sort -k $TI_COMMIT,$TI_COMMIT -k $TI_REFNAME,$TI_REFNAME${VERSION_SORT_OPT}r; }
+    else
+        sort_tag_info()
+        { python_version_sort_reverse $TI_REFNAME |sort -k $TI_COMMIT,$TI_COMMIT --stable; }
+    fi
+
+    if [[ $HAS_GIT_MERGED_OPT ]]; then
+        local merged_opt="--merged $OPT_HEAD"
+        merged_filt() { cat; }
+    else
+        local merged_opt=
+        merged_filt() { join <(git rev-list $OPT_HEAD |sort) <(cat); }
+    fi
+
+    if [[ $HAS_GIT_SHORT_LOCAL ]]; then
+        local date_format='short-local'
+        local date_postformat=
+    else
+        local date_format='iso'
+        local date_postformat='date=$(date --date="$date" +%F)'
+    fi
+
+    local format='
+        if [[ %(objecttype) = tag ]]; then
+            commit=%(*objectname)
+            if [[ -z "'$OPT_FAVOR_TAGGER'" ]]; then
+                date=%(*committerdate:'$date_format')
+                name=%(*authorname)
+                email=%(*authoremail)
+            else
+                date=%(taggerdate:'$date_format')
+                name=%(taggername)
+                email=%(taggeremail)
+            fi
+        else
+            commit=%(objectname)
+            date=%(committerdate:'$date_format')
+            name=%(authorname)
+            email=%(authoremail)
+        fi
+        '$date_postformat'
+        write $commit %(refname) %(objecttype) "$date" "$name" "$email"
+    '
+    eval=$(TZ=UTC git for-each-ref --shell --format="$format" $merged_opt "$OPT_TAGS")
+    eval "$eval" |sort_tag_info |merged_filt
+}
+
+# Reads input produced by list_objects and outputs change log entries, each line
+# prefixed with '- '
+extract_entries()
+{
+    for_each_ref_desc()
+    {
+        local format="$1"
+        shift
+        local refs="$*"
+
+        if [[ $HAS_GIT_VERSION_SORT ]]; then
+            git for-each-ref --format="$format" --sort=-v:refname $refs
+        else
+            for ref in $refs; do
+                git for-each-ref --format="$format" $ref
+            done
+        fi
+    }
+
+    maybe_squeeze_spaces()
+    {
+        if [[ ! $OPT_NO_SQUEEZE_SPACES ]]; then
+            tr -s '[:blank:]' ' '
+        else
+            cat
+        fi
+    }
+
+    maybe_sort_entries()
+    {
+        if [[ $OPT_SORT_ENTRIES ]]; then
+            LC_ALL=$OLD_LC_ALL sort
+        else
+            cat
+        fi
+    }
+
+    local allentries=
+    local allobjects=
+    local allannotatedtags=
+    while true; do
+        local commit=
+        local annotatedtags=
+        read commit annotatedtags || true
+        annotatedtags=(${annotatedtags//$SEPARATOR/ })
+
+        allannotatedtags="$allannotatedtags${annotatedtags:+ ${annotatedtags[*]}}"
+        if [[ $commit && ${#annotatedtags[*]} -le 1 ]]; then
+            allobjects="$allobjects${annotatedtags:+ ${annotatedtags[*]}} $commit"
+        else
+            local contents=
+            local allcontents=
+            if [[ $allobjects ]]; then
+                allcontents="$(git show $NO_PATCH_OPT $allobjects)"
+                allobjects=
+            fi
+            if [[ ${#annotatedtags[*]} -gt 1 ]]; then
+                contents="$(for_each_ref_desc "%(contents)" ${annotatedtags[*]})"
+                allcontents="$allcontents$NL$contents"
+            fi
+            if [[ $commit ]]; then
+                contents="$(git show $NO_PATCH_OPT $commit)"
+                allcontents="$allcontents$NL$contents"
+            fi
+
+            # search all objects for lines with special markup
+            local entries="$(sed -n '/^[[:space:]]*\[.*\]/s/^[[:space:]]*//p' <<<"$allcontents")"
+            allentries="${allentries:+$allentries$NL}$entries"
+
+            if [[ ! $commit ]]; then
+                break
+            fi
+        fi
+    done
+
+    if [[ ! $allentries && $allannotatedtags && $OPT_AUTO_ADD_ANNOTATIONS ]]; then
+        allentries="$(for_each_ref_desc "%(contents:subject)" $allannotatedtags)"
+    fi
+
+    if [[ ! $allentries ]]; then
+        return 1
+    fi
+
+    echo -n "$allentries" |maybe_squeeze_spaces |stable_uniq |maybe_sort_entries |sed 's/^/- /'
+}
+
+# Each row enumerates one commit in the given range, all accompanied with all
+# annotated tags pointing to them, in topologic order, most recent first
+list_objects()
+{
+    local range="$1"
+
+    local commit=
+    while read commit; do
+        local commit_tags="$(! [[ -s $TAG_INFO ]] || look $commit $TAG_INFO \
+            |awk -F "$SEPARATOR" '($'$TI_TYPE' == "tag") { print $'$TI_REFNAME' }')"
+        write $commit $commit_tags
+    done < <(git rev-list --topo-order $range)
+}
+
+# Write change log headline for the given tag
+write_headline()
+{
+    local tag="$1"
+
+    local tag_info="$(look $(git rev-parse $tag^{}) $TAG_INFO)"
+    local commit tag_ objecttype date name email
+    read commit tag_ objecttype date name email <<<"$tag_info"
+
+    date="$(date --date=$date '+%a %b %d %Y')"
+
+    local tag_abbrev=
+    if [[ $OPT_TAGS_WITH_PREFIX ]]; then
+        tag_abbrev=$(git rev-parse --symbolic --abbrev-ref $tag)
+    else
+        tag_abbrev=${tag##*/}
+    fi
+
+    printf "* %s %s %s - %s\n" "$date" "$name" "$email" $tag_abbrev
+}
+
+# Outputs rows with tag-date pairs, version-sorted by tag name, most recent
+# first
+list_tags_with_date()
+{
+    sort_tags()
+    {
+        if [[ $HAS_VERSION_SORT_OPT || ! $HAS_PYTHON_VERSION_SORT ]]; then
+            sort -k 1,1r${VERSION_SORT_OPT}
+        else
+            python_version_sort_reverse 1
+        fi
+    }
+
+    uniq -w$SHA1_WIDTH $TAG_INFO |cut -f $TI_REFNAME,$TI_DATE |sort_tags
+}
+
+# Outputs rows with tag-date-range tripples, sorted by date, then version-sorted
+# by tag name, most recent first
+list_tags_dates_ranges()
+{
+    local current_tag=
+    local current_date=
+    local tag=
+    local date=
+    {
+        while read tag date; do
+            if [[ ! $OPT_DENSE ]] || grep -q -e "$OPT_DENSE" <<<"$tag"; then
+                if [[ $current_tag ]]; then
+                    write $current_tag $current_date $tag..$current_tag
+                fi
+                current_tag=$tag
+                current_date=$date
+            fi
+        done
+
+        if [[ $current_tag ]]; then
+            write $current_tag $current_date $current_tag
+        fi
+    } < <(list_tags_with_date) > >(sort -k 2,2r --stable)
+}
+
+OPT_AUTO_ADD_ANNOTATIONS=
+OPT_DENSE=
+OPT_FAVOR_TAGGER=
+OPT_HEAD=
+OPT_NO_SQUEEZE_SPACES=
+OPT_SELF_TEST=
+OPT_SORT_ENTRIES=
+OPT_TAGS='refs/tags/*'
+OPT_TAGS_WITH_PREFIX=
+OPT_UNTAGGED_ONLY=
+OPT_LIMIT=
+while [[ ${1:-} ]]; do
+    case "$1" in
+        -h )
+            brief_usage
+            exit 0
+            ;;
+        --help )
+            usage
+            exit 0
+            ;;
+        -a | --auto-add-annotations )
+            OPT_AUTO_ADD_ANNOTATIONS=1
+            ;;
+        -d | --dense )
+            [[ $2 ]] || bad_usage "Argument expected: '$1'"
+            shift
+            OPT_DENSE="$1"
+            OPT_FAVOR_TAGGER=1
+            ;;
+        --favor-tagger )
+            OPT_FAVOR_TAGGER=1
+            ;;
+        --no-squeeze-spaces )
+            OPT_NO_SQUEEZE_SPACES=1
+            ;;
+        --self-test )
+            OPT_SELF_TEST=1
+            ;;
+        --sort-entries )
+            OPT_SORT_ENTRIES=1
+            ;;
+        -t | --tags )
+            [[ $2 ]] || bad_usage "Argument expected: '$1'"
+            shift
+            OPT_TAGS="$1"
+            ;;
+        --tags-with-prefix )
+            OPT_TAGS_WITH_PREFIX=1
+            ;;
+        -u | --untagged-only )
+            OPT_UNTAGGED_ONLY=1
+            ;;
+        -[1-9]* )
+            OPT_LIMIT="${1:1}"
+            [[ $OPT_LIMIT =~ ^[1-9][0-9]*$ ]] || bad_usage "Natural number expected: '$OPT_LIMIT'"
+            ;;
+        -- )
+            break
+            ;;
+        -[^-]?* )
+            arg="$1"
+            shift
+            set -- "${arg}" -"${arg:1:1}" -"${arg:2}" "${@}"
+            ;;
+        -* )
+            bad_usage "Unexpected option: '$1'"
+            ;;
+        * )
+            if [[ $OPT_HEAD ]]; then
+                bad_usage "No more than one revision can be specified"
+            fi
+            OPT_HEAD="$1"
+            ;;
+    esac
+
+    shift
+done
+
+: ${OPT_HEAD:=HEAD}
+
+configure
+
+##############################################################################
+if [[ ! $OPT_SELF_TEST ]]; then ###  M A I N  EXECUTION BEGINS HERE ##########
+##############################################################################
+
+TAG_INFO=$(mktemp $SELF.tag-info.XXX)
+trap "rm $TAG_INFO" EXIT
+create_tag_info > $TAG_INFO
+
+untagged_entries="$(
+    read last_tag date < <(list_tags_with_date) || true
+    list_objects ${last_tag:+$last_tag..}"$OPT_HEAD" |extract_entries || true
+)"
+
+if [[ $OPT_UNTAGGED_ONLY ]]; then
+    echo "$untagged_entries"
+else
+    if [[ $untagged_entries ]]; then
+        warn "skipping change log entries in untagged commits"
+    fi
+
+    i=0
+    while read tag date range; do
+        [[ $i -eq 0 ]] || echo # blank line separator
+        write_headline $tag
+        if ! list_objects "$range" |extract_entries; then
+            tag_abbrev="$(git rev-parse --symbolic --abbrev-ref $tag)"
+            warn "No change log entries for tag '$tag_abbrev'"
+        fi
+        : $((++i))
+        [[ ! $OPT_LIMIT || $i -lt $OPT_LIMIT ]] || break
+    done < <(list_tags_dates_ranges)
+fi
+
+exit
+
+##############################################################################
+fi ###  S E L F - T E S T  EXECUTION BEGINS HERE #############################
+##############################################################################
+
+some_failed=
+verify()
+{
+    comm="${*#$(dirname $SELF)/}"
+    loc="at line ${BASH_LINENO[0]}"
+    expected="$(cat)"
+
+    if ! out="$(GIT_CHANGE_LOG_NO_COMPAT_WARNINGS=1 $SELF "$@" 2>&1)"; then
+        cat <<EOF
+*** FAIL Command exited with non zero:
+  Command: \`$comm\` $loc
+  Output: {{{
+$out
+}}}
+
+EOF
+        some_failed=1
+    fi
+
+    if [[ "$out" != "$expected" ]]; then
+        cat <<EOF
+*** FAIL Command produced unexpected output:
+  Command: \`$comm\` $loc
+  Expected: {{{
+$expected
+}}}
+  Actual: {{{
+$out
+}}}
+  Git-Log: {{{
+$(command git --no-pager log --graph)
+}}}
+  Git-Tags: {{{
+$(command git --no-pager tag -l -n9)
+}}}
+
+EOF
+        some_failed=1
+    fi
+
+    rm -rf .git
+}
+
+git()
+(
+    BASE_DATE="$(sed -n 's/^.*\(2000-[0-9][0-9]\).*$/\1/p' <<<$*)"
+    export TZ=UTC
+    [[ $BASE_DATE ]] && export GIT_AUTHOR_DATE="$BASE_DATE-01 00:00"
+    export GIT_AUTHOR_NAME='John Author'
+    export GIT_AUTHOR_EMAIL='john.author@example.net'
+    [[ $BASE_DATE ]] && export GIT_COMMITTER_DATE="$BASE_DATE-02 00:00"
+    export GIT_COMMITTER_NAME='Alice Comitter'
+    export GIT_COMMITTER_EMAIL='alice.committer@example.net'
+
+    case "$1" in
+        commit )
+            shift
+            command git commit --allow-empty "$@" >/dev/null
+            ;;
+        tag )
+            [[ $BASE_DATE ]] && export GIT_COMMITTER_DATE="$BASE_DATE-03 00:00"
+            export GIT_COMMITTER_NAME='Jack Tagger'
+            export GIT_COMMITTER_EMAIL='jack.tagger@example.net'
+            command git "$@" >/dev/null
+            ;;
+        checkout )
+            shift
+            command git checkout --quiet "$@" >/dev/null
+            ;;
+        * )
+            command git "$@" >/dev/null
+            ;;
+    esac
+)
+
+REPO=$(readlink -f $(mktemp -d $SELF.test.XXX))
+trap "rm -rf '$REPO/.git' && rm -r '$REPO'" EXIT
+
+cd $REPO
+SELF=$(PATH="$OLDPWD:$PATH" which $SELF)
+
+# Do not test on empty repository - it will fail with error message possibly
+# specific to particular Git version
+
+# Case: No change log entries, no tags
+git init .
+git commit -m 'Commit 2000-01'
+# ------------------------------------------------------------
+verify <<EOF
+EOF
+# ============================================================
+
+# Case: No change log entries, no tags
+git init .
+git commit -m 'Commit 2000-01'
+git commit -m 'Commit 2000-02'
+# ------------------------------------------------------------
+verify <<EOF
+EOF
+# ============================================================
+
+# Case: Has change log entry, no tags
+git init .
+git commit -m 'Commit 2000-01'
+git commit -m 'Commit 2000-02'
+git commit -m '[FooBar] Commit 2000-03'
+# ------------------------------------------------------------
+verify <<EOF
+git-change-log: WARNING: skipping change log entries in untagged commits
+EOF
+# ============================================================
+
+# Case: Has tagged change log entry
+git init .
+git commit -m 'Commit 2000-01'
+git commit -m 'Commit 2000-02'
+git commit -m '[FooBar] Commit 2000-03'
+git tag 0.1
+# ------------------------------------------------------------
+verify <<EOF
+* Thu Mar 02 2000 John Author <john.author@example.net> - 0.1
+- [FooBar] Commit 2000-03
+EOF
+# ============================================================
+
+# Case: Has tagged and untagged change log entries
+git init .
+git commit -m 'Commit 2000-01'
+git commit -m 'Commit 2000-02'
+git commit -m '[FooBar] Commit 2000-03'
+git tag 0.1
+git commit -m 'Commit 2000-04
+
+Lorem ipsum...
+
+[FooBar] Commit 2000-04'
+# ------------------------------------------------------------
+verify <<EOF
+git-change-log: WARNING: skipping change log entries in untagged commits
+* Thu Mar 02 2000 John Author <john.author@example.net> - 0.1
+- [FooBar] Commit 2000-03
+EOF
+# ============================================================
+
+# Case: Has tagged change log entry, --untagged-only used
+git init .
+git commit -m 'Commit 2000-01'
+git commit -m 'Commit 2000-02'
+git commit -m '[FooBar] Commit 2000-03'
+git tag 0.1
+# ------------------------------------------------------------
+verify --untagged-only <<EOF
+EOF
+# ============================================================
+
+# Case: Has tagged and untagged change log entries, --untagged-only used
+git init .
+git commit -m 'Commit 2000-01'
+git commit -m 'Commit 2000-02'
+git commit -m '[FooBar] Commit 2000-03'
+git tag 0.1
+git commit -m '[FooBar] Commit 2000-04'
+# ------------------------------------------------------------
+verify -u <<EOF
+- [FooBar] Commit 2000-04
+EOF
+# ============================================================
+
+# Case: Some entries in subject, some in body
+git init .
+git commit -m 'Commit 2000-01'
+git commit -m 'Commit 2000-02'
+git commit -m '[FooBar] Commit 2000-03'
+git tag 0.1
+git commit -m 'Commit 2000-04
+
+Lorem ipsum...
+
+[FooBar] Commit 2000-04'
+git tag 0.1.1
+# ------------------------------------------------------------
+verify <<EOF
+* Sun Apr 02 2000 John Author <john.author@example.net> - 0.1.1
+- [FooBar] Commit 2000-04
+
+* Thu Mar 02 2000 John Author <john.author@example.net> - 0.1
+- [FooBar] Commit 2000-03
+EOF
+# ============================================================
+
+# Case: Has all change log entries tagged, some plain commit on top
+git init .
+git commit -m 'Commit 2000-01'
+git commit -m 'Commit 2000-02'
+git commit -m '[FooBar] Commit 2000-03'
+git tag 0.1
+git commit -m '[FooBar] Commit 2000-04'
+git tag 0.1.1
+git commit -m 'Commit 2000-05'
+# ------------------------------------------------------------
+verify <<EOF
+* Sun Apr 02 2000 John Author <john.author@example.net> - 0.1.1
+- [FooBar] Commit 2000-04
+
+* Thu Mar 02 2000 John Author <john.author@example.net> - 0.1
+- [FooBar] Commit 2000-03
+EOF
+# ============================================================
+
+# Case: Has all change log entries tagged, one tag with no entry
+git init .
+git commit -m 'Commit 2000-01'
+git commit -m 'Commit 2000-02'
+git commit -m '[FooBar] Commit 2000-03'
+git tag 0.1
+git commit -m '[FooBar] Commit 2000-04'
+git tag 0.1.1
+git commit -m 'Commit 2000-05'
+git tag 0.1.2
+# ------------------------------------------------------------
+verify <<EOF
+* Tue May 02 2000 John Author <john.author@example.net> - 0.1.2
+git-change-log: WARNING: No change log entries for tag '0.1.2'
+
+* Sun Apr 02 2000 John Author <john.author@example.net> - 0.1.1
+- [FooBar] Commit 2000-04
+
+* Thu Mar 02 2000 John Author <john.author@example.net> - 0.1
+- [FooBar] Commit 2000-03
+EOF
+# ============================================================
+
+# Case: Annotated tag
+git init .
+git commit -m 'Commit 2000-01'
+git commit -m 'Commit 2000-02'
+git commit -m '[FooBar] Commit 2000-03'
+git tag 0.1
+git commit -m '[FooBar] Commit 2000-04'
+git tag 0.1.1
+git commit -m 'Commit 2000-05'
+git tag -a 0.1.2 -m '[FooBar] Tag 2000-05'
+# ------------------------------------------------------------
+verify <<EOF
+* Tue May 02 2000 John Author <john.author@example.net> - 0.1.2
+- [FooBar] Tag 2000-05
+
+* Sun Apr 02 2000 John Author <john.author@example.net> - 0.1.1
+- [FooBar] Commit 2000-04
+
+* Thu Mar 02 2000 John Author <john.author@example.net> - 0.1
+- [FooBar] Commit 2000-03
+EOF
+# ============================================================
+
+# Case: Annotated tag - entry in body
+git init .
+git commit -m 'Commit 2000-01'
+git commit -m 'Commit 2000-02'
+git commit -m '[FooBar] Commit 2000-03'
+git tag 0.1
+git commit -m '[FooBar] Commit 2000-04'
+git tag 0.1.1
+git commit -m 'Commit 2000-05'
+git tag -a 0.1.2 -m 'Tag 2000-05
+
+Lorem ipsum...
+
+[FooBar] Tag 2000-05
+
+...dolor sit amet...
+'
+# ------------------------------------------------------------
+verify <<EOF
+* Tue May 02 2000 John Author <john.author@example.net> - 0.1.2
+- [FooBar] Tag 2000-05
+
+* Sun Apr 02 2000 John Author <john.author@example.net> - 0.1.1
+- [FooBar] Commit 2000-04
+
+* Thu Mar 02 2000 John Author <john.author@example.net> - 0.1
+- [FooBar] Commit 2000-03
+EOF
+# ============================================================
+
+# Case: Annotated tag with no entry
+git init .
+git commit -m 'Commit 2000-01'
+git commit -m 'Commit 2000-02'
+git commit -m '[FooBar] Commit 2000-03'
+git tag 0.1
+git commit -m '[FooBar] Commit 2000-04'
+git tag 0.1.1
+git commit -m 'Commit 2000-05'
+git tag -a 0.1.2 -m '[FooBar] Tag 2000-05'
+git commit -m 'Commit 2000-06'
+git tag -a 0.2 -m 'Tag 2000-06'
+# ------------------------------------------------------------
+verify <<EOF
+* Fri Jun 02 2000 John Author <john.author@example.net> - 0.2
+git-change-log: WARNING: No change log entries for tag '0.2'
+
+* Tue May 02 2000 John Author <john.author@example.net> - 0.1.2
+- [FooBar] Tag 2000-05
+
+* Sun Apr 02 2000 John Author <john.author@example.net> - 0.1.1
+- [FooBar] Commit 2000-04
+
+* Thu Mar 02 2000 John Author <john.author@example.net> - 0.1
+- [FooBar] Commit 2000-03
+EOF
+# ============================================================
+
+# Case: Annotated tag with no entry and --auto-add-annotations used
+git init .
+git commit -m 'Commit 2000-01'
+git commit -m 'Commit 2000-02'
+git commit -m '[FooBar] Commit 2000-03'
+git tag 0.1
+git commit -m '[FooBar] Commit 2000-04'
+git tag 0.1.1
+git commit -m 'Commit 2000-05'
+git tag -a 0.1.2 -m '[FooBar] Tag 2000-05'
+git commit -m 'Commit 2000-06'
+git tag -a 0.2 -m 'Tag 2000-06'
+# ------------------------------------------------------------
+verify --auto-add-annotations <<EOF
+* Fri Jun 02 2000 John Author <john.author@example.net> - 0.2
+- Tag 2000-06
+
+* Tue May 02 2000 John Author <john.author@example.net> - 0.1.2
+- [FooBar] Tag 2000-05
+
+* Sun Apr 02 2000 John Author <john.author@example.net> - 0.1.1
+- [FooBar] Commit 2000-04
+
+* Thu Mar 02 2000 John Author <john.author@example.net> - 0.1
+- [FooBar] Commit 2000-03
+EOF
+# ============================================================
+
+# Case: --favor-tagger used
+git init .
+git commit -m 'Commit 2000-01'
+git commit -m 'Commit 2000-02'
+git commit -m '[FooBar] Commit 2000-03'
+git tag 0.1
+git commit -m '[FooBar] Commit 2000-04'
+git tag 0.1.1
+git commit -m 'Commit 2000-05'
+git tag -a 0.1.2 -m '[FooBar] Tag 2000-05'
+# ------------------------------------------------------------
+verify --favor-tagger <<EOF
+* Wed May 03 2000 Jack Tagger <jack.tagger@example.net> - 0.1.2
+- [FooBar] Tag 2000-05
+
+* Sun Apr 02 2000 John Author <john.author@example.net> - 0.1.1
+- [FooBar] Commit 2000-04
+
+* Thu Mar 02 2000 John Author <john.author@example.net> - 0.1
+- [FooBar] Commit 2000-03
+EOF
+# ============================================================
+
+# Case: --dense used
+git init .
+git commit -m 'Commit 2000-01'
+git commit -m 'Commit 2000-02'
+git commit -m '[FooBar] Commit 2000-03'
+git tag 0.1
+git commit -m '[FooBar] Commit 2000-04'
+git tag 0.1.1
+git commit -m 'Commit 2000-05'
+git tag -a 0.1.2 -m '[FooBar] Tag 2000-05'
+git commit -m 'Commit 2000-06'
+git tag -a 0.2 -m '[FooBar] Tag 2000-06'
+# ------------------------------------------------------------
+verify --dense '/[0-9]\+\.[0-9]\+$' <<EOF
+* Sat Jun 03 2000 Jack Tagger <jack.tagger@example.net> - 0.2
+- [FooBar] Tag 2000-06
+- [FooBar] Tag 2000-05
+- [FooBar] Commit 2000-04
+
+* Thu Mar 02 2000 John Author <john.author@example.net> - 0.1
+- [FooBar] Commit 2000-03
+EOF
+# ============================================================
+
+# Case: --dense used, one annotated tag without entry
+git init .
+git commit -m 'Commit 2000-01'
+git commit -m 'Commit 2000-02'
+git commit -m '[FooBar] Commit 2000-03'
+git tag 0.1
+git commit -m '[FooBar] Commit 2000-04'
+git tag 0.1.1
+git commit -m 'Commit 2000-05'
+git tag -a 0.1.2 -m '[FooBar] Tag 2000-05'
+git commit -m 'Commit 2000-06'
+git tag -a 0.2 -m 'Tag 2000-06'
+# ------------------------------------------------------------
+verify --dense '/[0-9]\+\.[0-9]\+$' <<EOF
+* Sat Jun 03 2000 Jack Tagger <jack.tagger@example.net> - 0.2
+- [FooBar] Tag 2000-05
+- [FooBar] Commit 2000-04
+
+* Thu Mar 02 2000 John Author <john.author@example.net> - 0.1
+- [FooBar] Commit 2000-03
+EOF
+# ============================================================
+
+# Case: --dense and --auto-add-annotations used, one annotated tag without entry
+# Rationale: it is not desired to mix two styles in one change log section,
+# therefore 'Tag 2000-06' will not be mentioned.
+git init .
+git commit -m 'Commit 2000-01'
+git commit -m 'Commit 2000-02'
+git commit -m '[FooBar] Commit 2000-03'
+git tag 0.1
+git commit -m '[FooBar] Commit 2000-04'
+git tag 0.1.1
+git commit -m 'Commit 2000-05'
+git tag -a 0.1.2 -m '[FooBar] Tag 2000-05'
+git commit -m 'Commit 2000-06'
+git tag -a 0.2 -m 'Tag 2000-06'
+# ------------------------------------------------------------
+verify -a -d '/[0-9]\+\.[0-9]\+$' <<EOF
+* Sat Jun 03 2000 Jack Tagger <jack.tagger@example.net> - 0.2
+- [FooBar] Tag 2000-05
+- [FooBar] Commit 2000-04
+
+* Thu Mar 02 2000 John Author <john.author@example.net> - 0.1
+- [FooBar] Commit 2000-03
+EOF
+# ============================================================
+
+# Case: -1 used
+git init .
+git commit -m 'Commit 2000-01'
+git commit -m 'Commit 2000-02'
+git commit -m '[FooBar] Commit 2000-03'
+git tag 0.1
+git commit -m '[FooBar] Commit 2000-04'
+git tag 0.1.1
+git commit -m 'Commit 2000-05'
+git tag -a 0.1.2 -m '[FooBar] Tag 2000-05'
+git commit -m 'Commit 2000-06'
+git tag -a 0.2 -m '[FooBar] Tag 2000-06'
+# ------------------------------------------------------------
+verify -1 <<EOF
+* Fri Jun 02 2000 John Author <john.author@example.net> - 0.2
+- [FooBar] Tag 2000-06
+EOF
+# ============================================================
+
+# Case: -1 used and REVISION passed
+git init .
+git commit -m 'Commit 2000-01'
+git commit -m 'Commit 2000-02'
+git commit -m '[FooBar] Commit 2000-03'
+git tag 0.1
+git commit -m '[FooBar] Commit 2000-04'
+git tag 0.1.1
+git commit -m 'Commit 2000-05'
+git tag -a 0.1.2 -m '[FooBar] Tag 2000-05'
+git commit -m 'Commit 2000-06'
+git tag -a 0.2 -m '[FooBar] Tag 2000-06'
+# ------------------------------------------------------------
+verify 0.1.1 -1 <<EOF
+* Sun Apr 02 2000 John Author <john.author@example.net> - 0.1.1
+- [FooBar] Commit 2000-04
+EOF
+# ============================================================
+
+# Case: -1 and --dense used
+git init .
+git commit -m 'Commit 2000-01'
+git commit -m 'Commit 2000-02'
+git commit -m '[FooBar] Commit 2000-03'
+git tag 0.1
+git commit -m '[FooBar] Commit 2000-04'
+git tag 0.1.1
+git commit -m 'Commit 2000-05'
+git tag -a 0.1.2 -m '[FooBar] Tag 2000-05'
+git commit -m 'Commit 2000-06'
+git tag -a 0.2 -m '[FooBar] Tag 2000-06'
+# ------------------------------------------------------------
+verify --dense '/[0-9]\+\.[0-9]\+$' -1 <<EOF
+* Sat Jun 03 2000 Jack Tagger <jack.tagger@example.net> - 0.2
+- [FooBar] Tag 2000-06
+- [FooBar] Tag 2000-05
+- [FooBar] Commit 2000-04
+EOF
+# ============================================================
+
+# Case: Has more tags on one commit, the most recent one will be used
+git init .
+git commit -m 'Commit 2000-01'
+git commit -m 'Commit 2000-02'
+git commit -m '[FooBar] Commit 2000-03'
+git tag 0.1
+git commit -m '[FooBar] Commit 2000-04'
+git tag 0.1.1
+git tag -a 0.2.2 -m '[FooBar] Tag 2000-05'
+git tag -a 0.2.10 -m '[FooBar] Tag 2000-06'
+git tag -a 0.10.2 -m '[FooBar] Tag 2000-07'
+git tag -a 0.10.10 -m '[FooBar] Tag 2000-08'
+# ------------------------------------------------------------
+verify <<EOF
+* Sun Apr 02 2000 John Author <john.author@example.net> - 0.10.10
+- [FooBar] Tag 2000-08
+- [FooBar] Tag 2000-07
+- [FooBar] Tag 2000-06
+- [FooBar] Tag 2000-05
+- [FooBar] Commit 2000-04
+
+* Thu Mar 02 2000 John Author <john.author@example.net> - 0.1
+- [FooBar] Commit 2000-03
+EOF
+# ============================================================
+
+# Case: Has more tags on one commit, --favor-tagger used
+git init .
+git commit -m 'Commit 2000-01'
+git commit -m 'Commit 2000-02'
+git commit -m '[FooBar] Commit 2000-03'
+git tag 0.1
+git commit -m '[FooBar] Commit 2000-04'
+git tag 0.1.1
+git tag -a 0.1.2 -m '[FooBar] Tag 2000-05'
+git tag -a 0.1.10 -m '[FooBar] Tag 2000-06'
+# ------------------------------------------------------------
+verify --favor-tagger <<EOF
+* Sat Jun 03 2000 Jack Tagger <jack.tagger@example.net> - 0.1.10
+- [FooBar] Tag 2000-06
+- [FooBar] Tag 2000-05
+- [FooBar] Commit 2000-04
+
+* Thu Mar 02 2000 John Author <john.author@example.net> - 0.1
+- [FooBar] Commit 2000-03
+EOF
+# ============================================================
+
+# Case: --tags used
+git init .
+git commit -m 'Commit 2000-01'
+git commit -m 'Commit 2000-02'
+git commit -m '[FooBar] Commit 2000-03'
+git tag our/0.1
+git commit -m '[FooBar] Commit 2000-04'
+git tag our/0.1.1
+git commit -m 'Commit 2000-05'
+git tag -a 0.1.2 -m '[FooBar] Tag 2000-05'
+git commit -m 'Commit 2000-06'
+git tag -a 0.2 -m '[FooBar] Tag 2000-06'
+git tag -a our/0.2 -m '[FooBar] Tag 2000-06'
+# ------------------------------------------------------------
+verify --tags 'refs/tags/our' <<EOF
+* Fri Jun 02 2000 John Author <john.author@example.net> - 0.2
+- [FooBar] Tag 2000-06
+
+* Sun Apr 02 2000 John Author <john.author@example.net> - 0.1.1
+- [FooBar] Commit 2000-04
+
+* Thu Mar 02 2000 John Author <john.author@example.net> - 0.1
+- [FooBar] Commit 2000-03
+EOF
+# ============================================================
+
+# Case: --tags and --tags-with-prefix used
+git init .
+git commit -m 'Commit 2000-01'
+git commit -m 'Commit 2000-02'
+git commit -m '[FooBar] Commit 2000-03'
+git tag our/0.1
+git commit -m '[FooBar] Commit 2000-04'
+git tag our/0.1.1
+git commit -m 'Commit 2000-05'
+git tag -a 0.1.2 -m '[FooBar] Tag 2000-05'
+git commit -m 'Commit 2000-06'
+git tag -a 0.2 -m '[FooBar] Tag 2000-06'
+git tag -a our/0.2 -m '[FooBar] Tag 2000-06'
+# ------------------------------------------------------------
+verify --tags 'refs/tags/our' --tags-with-prefix <<EOF
+* Fri Jun 02 2000 John Author <john.author@example.net> - our/0.2
+- [FooBar] Tag 2000-06
+
+* Sun Apr 02 2000 John Author <john.author@example.net> - our/0.1.1
+- [FooBar] Commit 2000-04
+
+* Thu Mar 02 2000 John Author <john.author@example.net> - our/0.1
+- [FooBar] Commit 2000-03
+EOF
+# ============================================================
+
+# Case: --tags and --dense used
+git init .
+git commit -m 'Commit 2000-01'
+git commit -m 'Commit 2000-02'
+git commit -m '[FooBar] Commit 2000-03'
+git tag our/0.1
+git commit -m '[FooBar] Commit 2000-04'
+git tag our/0.1.1
+git commit -m 'Commit 2000-05'
+git tag -a 0.1.2 -m '[FooBar] Tag 2000-05'
+git commit -m 'Commit 2000-06'
+git tag -a 0.2 -m '[FooBar] Tag 2000-06'
+git tag -a our/0.2 -m '[FooBar] Tag 2000-06'
+# ------------------------------------------------------------
+verify --tags 'refs/tags/our' --dense '/[0-9]\+\.[0-9]\+$' <<EOF
+* Sat Jun 03 2000 Jack Tagger <jack.tagger@example.net> - 0.2
+- [FooBar] Tag 2000-06
+- [FooBar] Commit 2000-04
+
+* Thu Mar 02 2000 John Author <john.author@example.net> - 0.1
+- [FooBar] Commit 2000-03
+EOF
+# ============================================================
+
+# Case: --sort-entries used
+git init .
+git commit -m 'Commit 2000-01'
+git commit -m '[FooBar] Commit 2000-02'
+git commit -m '[FooBar] Commit 2000-03'
+git tag 0.1
+git commit -m '[FooBar] Commit 2000-04'
+git commit -m 'Commit 2000-05'
+git commit -m '[FooBar] Commit 2000-06'
+git tag 0.2
+# ------------------------------------------------------------
+verify --sort-entries <<EOF
+* Fri Jun 02 2000 John Author <john.author@example.net> - 0.2
+- [FooBar] Commit 2000-04
+- [FooBar] Commit 2000-06
+
+* Thu Mar 02 2000 John Author <john.author@example.net> - 0.1
+- [FooBar] Commit 2000-02
+- [FooBar] Commit 2000-03
+EOF
+# ============================================================
+
+# Case: --no-squeeze-spaces NOT used
+git init .
+git commit -m 'Commit 2000-01'
+git commit -m '[FooBar] 2000-02'
+git tag -a 0.1 -m '[FooBar]  2000-02'
+# ------------------------------------------------------------
+verify <<EOF
+* Wed Feb 02 2000 John Author <john.author@example.net> - 0.1
+- [FooBar] 2000-02
+EOF
+# ============================================================
+
+# Case: --no-squeeze-spaces used
+git init .
+git commit -m 'Commit 2000-01'
+git commit -m '[FooBar] 2000-02'
+git tag -a 0.1 -m '[FooBar]  2000-02'
+# ------------------------------------------------------------
+verify --no-squeeze-spaces <<EOF
+* Wed Feb 02 2000 John Author <john.author@example.net> - 0.1
+- [FooBar]  2000-02
+- [FooBar] 2000-02
+EOF
+# ============================================================
+
+# Case: Advanced merging
+git init .
+git commit -m 'Commit 2000-01'
+git commit -m '[FooBar] Commit 2000-02'
+git tag 0.1
+git commit -m '[FooBar] Commit 2000-03'
+git checkout -b 0.1-fix 0.1
+git commit -m '[FooBar] Commit 2000-04'
+git commit -m '[FooBar] Commit 2000-05'
+git tag 0.1.0.1
+git commit -m '[FooBar] Commit 2000-06'
+git tag 0.1.0.2
+git checkout master
+git commit -m '[FooBar] Commit 2000-07'
+git tag 0.1.1
+git checkout 0.1-fix
+git commit -m '[FooBar] Commit 2000-08'
+git tag 0.1.0.3
+git checkout master
+git commit -m '[FooBar] Commit 2000-09'
+git tag 0.1.2
+git merge 0.1-fix -m 'Merge 2000-10'
+git tag 0.1.3
+# ------------------------------------------------------------
+verify <<EOF
+* Mon Oct 02 2000 John Author <john.author@example.net> - 0.1.3
+- [FooBar] Commit 2000-08
+- [FooBar] Commit 2000-06
+- [FooBar] Commit 2000-05
+- [FooBar] Commit 2000-04
+
+* Sat Sep 02 2000 John Author <john.author@example.net> - 0.1.2
+- [FooBar] Commit 2000-09
+
+* Wed Aug 02 2000 John Author <john.author@example.net> - 0.1.0.3
+- [FooBar] Commit 2000-08
+
+* Sun Jul 02 2000 John Author <john.author@example.net> - 0.1.1
+- [FooBar] Commit 2000-07
+- [FooBar] Commit 2000-03
+
+* Fri Jun 02 2000 John Author <john.author@example.net> - 0.1.0.2
+- [FooBar] Commit 2000-06
+
+* Tue May 02 2000 John Author <john.author@example.net> - 0.1.0.1
+- [FooBar] Commit 2000-05
+- [FooBar] Commit 2000-04
+
+* Wed Feb 02 2000 John Author <john.author@example.net> - 0.1
+- [FooBar] Commit 2000-02
+EOF
+# ============================================================
+
+# Case: Example printed with --help
+git init .
+# example_1_begin
+git commit -m 'Foo: Fix #2000-01'
+git commit -m '[Foo] Fix #2000-02'
+git commit -m '[Foo] Fix #2000-02 more'
+git commit -m 'Foo: Fix #2000-03'
+git tag 0.0.1
+
+git commit -m '[Foo] Fix #2000-04'
+git tag 0.1
+
+# use annotated tags since now
+git commit -m 'Foo: Fix #2000-05'
+
+# compared to '[Foo] Fix #2000-02 more' this will not leak into change log
+git commit -m 'Foo: Fix #2000-05 more'
+
+# both commit log and change log can use its own proper language
+git tag 0.1.1 -a -m 'Foo: Fixed #2000-05'
+
+git commit -m 'Foo: Fix #2000-06'
+git tag 0.2 -a -m 'Foo: Fixed #2000-06'
+# example_1_end
+# ------------------------------------------------------------
+# example_1_out_begin
+verify --auto-add-annotations --dense '/[0-9]\+\.[0-9]\+$' <<EOF
+* Sat Jun 03 2000 Jack Tagger <jack.tagger@example.net> - 0.2
+- Foo: Fixed #2000-06
+- Foo: Fixed #2000-05
+
+* Sun Apr 02 2000 John Author <john.author@example.net> - 0.1
+- [Foo] Fix #2000-04
+- [Foo] Fix #2000-02 more
+- [Foo] Fix #2000-02
+EOF
+# example_1_out_end
+# ============================================================
+
+if [[ $some_failed ]]; then
+    echo "*** Some tests failed"
+    exit 1
+else
+    echo "*** All tests passed"
+    exit 0
+fi
