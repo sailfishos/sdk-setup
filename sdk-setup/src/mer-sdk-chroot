@@ -18,9 +18,6 @@ usage()
       If command is not present,
          used to enter the SDK and begin working. The SDK bash shell is a
          login shell. See below for .profile handling
-         Must be preceded by a 'mount' to setup the SDK.
-         May be used in multiple terminals and simply enters the
-         chroot
 
       If command is present,
          used to execute an arbitrary command from within the SDK chroot
@@ -126,6 +123,34 @@ if [[ ! -f ${sdkroot}/etc/MerSDK ]] ; then
     exit 1
 fi
 
+if ! [[ $(basename $(dirname $sdkroot)) == "sdks" ]]; then
+    echo "Non-standard SDK installation layout - cannot determine location for "
+    echo "build targets. Expected layout is:"
+    echo ""
+    echo "    <path/to/SDKs...>/"
+    echo "    ├── sdks/"
+    echo "    │   ├── <sdk_1>/"
+    echo "    │   ├── <sdk_2>/"
+    echo "    │   └── .../"
+    echo "    └── targets/"
+    echo "        ├── <target_1>/"
+    echo "        ├── <target_2>/"
+    echo "        └── .../"
+    exit 1
+fi
+
+targetsdir=$(readlink -f ${sdkroot}/../../targets)
+if [[ ! -d ${targetsdir} ]] ; then
+    echo "Build targets location '$targetsdir' does not exist - about to create it."
+    read -p "Continue, abort? [c/a] (c)" reply
+    if ! [[ $reply =~ ^[cC]?$ ]]; then
+        echo "User aborted"
+        exit 1
+    fi
+
+    mkdir "$targetsdir" || exit
+fi
+
 sdkparent="$(df -P "$sdkroot/" | tail -1 | awk '{print $NF}')"
 if [ -z  "$sdkparent" ] ; then
     echo "Unable to determine mount mouint of filesystem containing \"$sdkroot\""
@@ -171,6 +196,10 @@ prepare_mountpoints() {
     mount_bind /var/lib/dbus
     mount_bind /var/run/dbus
 
+    echo "Mounting $targetsdir as /srv/mer/targets"
+    mkdir -p ${sdkroot}/srv/mer/targets
+    mount --rbind ${targetsdir} ${sdkroot}/srv/mer/targets/
+
     if [[ $bind_mount_root == "yes" ]] ; then
 	echo "Mounting / as /parentroot"
 	mkdir -p ${sdkroot}/parentroot
@@ -193,9 +222,10 @@ prepare_user() {
     getent group $group >> ${sdkroot}/etc/group
     HOMEDIR=$(getent passwd $user | cut -f6 -d:)
 
+    install --owner $user --group $(id -gn $user) -d ${sdkroot}${HOMEDIR}
+
     if [[ $bind_mount_home == "yes" ]] ; then
 	echo "Mounting home directory: ${HOMEDIR}"
-	mkdir -p ${sdkroot}${HOMEDIR}
 	mount --bind ${HOMEDIR} ${sdkroot}${HOMEDIR}
 	# Now the sdk uses a private namespace, there's no need to
 	# make it unbindable
@@ -276,7 +306,14 @@ run_user_hook enter_sdk
 case "$#" in
     0 )
 	echo "Entering chroot as $user"
-	setarch i386 chroot ${sdkroot} /bin/su -p -s /bin/bash -l $user -- -c "if [ -d \"$cwd\" ]; then cd \"$cwd\"; fi;  SSH_AUTH_SOCK='${MY_SSH_AUTH_SOCK}' SSH_AGENT_PID=${SSH_AGENT_PID:-} exec bash --init-file /mer-bash-setup -i"
+	setarch i386 chroot ${sdkroot} /bin/su -p -s /bin/bash -l $user -- -c "$(cat <<END
+            [[ -d "$cwd" ]] && cd "$cwd"
+            export SSH_AUTH_SOCK='${MY_SSH_AUTH_SOCK}'
+            export SSH_AGENT_PID=${SSH_AGENT_PID:-}
+
+            exec bash --init-file /mer-bash-setup -i
+END
+)"
 	;;
     * )
 	if [[ $1 == 'exec' ]]; then
@@ -293,7 +330,13 @@ EOF
 	    usage
 	    retval=1
 	else
-	    setarch i386 chroot "${sdkroot}" /bin/su -s /bin/bash -l $user -- -c "export MERSDK=1;if [ -d \"$cwd\" ]; then cd \"$cwd\"; fi; $*"
+	    setarch i386 chroot "${sdkroot}" /bin/su -s /bin/bash -l $user -- -c "$(cat <<END
+                [[ -d "$cwd" ]] && cd "$cwd"
+                export MERSDK=1
+
+                $*
+END
+)"
 	    retval=$?
 	fi
 	;;

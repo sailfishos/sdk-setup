@@ -101,7 +101,8 @@ cp src/sdk-version %{buildroot}%{_bindir}/
 mkdir -p %{buildroot}/%{_sysconfdir}
 cp src/mer-sdk-chroot %{buildroot}/
 cp src/mer-bash-setup %{buildroot}/
-echo "This file tells ssu this is a chroot SDK installation" > %{buildroot}/%{_sysconfdir}/mer-sdk-chroot
+echo "This file serves for detection that this is a chroot SDK installation" > %{buildroot}/%{_sysconfdir}/mer-sdk-chroot
+mkdir -p %{buildroot}/srv/mer/targets
 
 # sdk-vm
 mkdir -p %{buildroot}/%{_unitdir}
@@ -113,7 +114,7 @@ install -D -m 755 src/resize-rootfs %{buildroot}%{_bindir}/resize-rootfs
 # This should really be %%{_unitdir}/default.target but systemd owns that :/
 mkdir -p %{buildroot}/%{_sysconfdir}/systemd/system/
 ln -sf %{_unitdir}/multi-user.target  %{buildroot}/%{_sysconfdir}/systemd/system/default.target
-echo "This file tells ssu this is a virtualbox SDK installation" > %{buildroot}/%{_sysconfdir}/mer-sdk-vbox
+echo "This file serves for detection that this is a VirtualBox SDK installation" > %{buildroot}/%{_sysconfdir}/mer-sdk-vbox
 
 mkdir -p %{buildroot}/%{_sysconfdir}/mersdk
 
@@ -198,6 +199,7 @@ fi
 /mer-bash-setup
 %{_bindir}/sdk-version
 %{_sysconfdir}/mer-sdk-chroot
+%dir /srv/mer/targets
 
 %files -n sdk-vm
 %defattr(-,root,root,-)

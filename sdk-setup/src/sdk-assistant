@@ -189,22 +189,17 @@ if [[ $OPT_CREATE ]]; then
             ;;
     esac
 
-    if [[ -z $(zypper pt -i | grep $TOOLCHAIN) ]]; then
-        cat <<EOF
-FAIL: Toolchain pattern $TOOLCHAIN is not installed.
-Please install it by issuing the following command:
-
-sudo zypper in -t pattern $TOOLCHAIN
-
-EOF
-        exit 1
-    fi
-
     cat <<EOF
 Creating the target [$OPT_TARGET] for arch [$OPT_ARCH]
 Using rootstrap [$OPT_ROOTSTRAP]
 EOF
 
+    if sdk-manage --toolchain --list | grep -q -F "$TOOLCHAIN,i"; then
+        TOOLCHAIN_INSTALLED=1
+        echo "Required toolchain [$TOOLCHAIN] already installed"
+    else
+        echo "Installing required toolchain [$TOOLCHAIN]"
+    fi
 fi
 
 if [[ $OPT_REMOVE ]]; then
@@ -232,12 +227,16 @@ if [[ -z $OPT_YES ]]; then
 fi
 
 if [[ $OPT_CREATE ]]; then
-    _ sdk-manage --use-chroot-as $USER --target --install $OPT_TARGET $TOOLCHAIN $OPT_ROOTSTRAP
+    if ! [[ $TOOLCHAIN_INSTALLED ]]; then
+        _ sdk-manage --toolchain --install $TOOLCHAIN || exit
+    fi
+
+    _ sdk-manage --target --install $OPT_TARGET $TOOLCHAIN $OPT_ROOTSTRAP
     exit $?
 fi
 
 if [[ $OPT_REMOVE ]]; then
-    _ sdk-manage --use-chroot-as $USER --target --remove $OPT_TARGET
+    _ sdk-manage --target --remove $OPT_TARGET
     exit $?
 fi
 
