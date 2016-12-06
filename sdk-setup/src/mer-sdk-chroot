@@ -306,7 +306,7 @@ run_user_hook enter_sdk
 case "$#" in
     0 )
 	echo "Entering chroot as $user"
-	setarch i386 chroot ${sdkroot} /bin/su -p -s /bin/bash -l $user -- -c "$(cat <<END
+	setarch i386 chroot ${sdkroot} /bin/su -s /bin/bash -l $user -- -c "$(cat <<END
             [[ -d "$cwd" ]] && cd "$cwd"
             export SSH_AUTH_SOCK='${MY_SSH_AUTH_SOCK}'
             export SSH_AGENT_PID=${SSH_AGENT_PID:-}
