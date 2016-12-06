@@ -1361,6 +1361,46 @@ verify <<EOF
 EOF
 # ============================================================
 
+# Case: Advanced merging with --dense
+git init .
+git commit -m 'Commit 2000-01'
+git commit -m '[FooBar] Commit 2000-02'
+git tag 0.1
+git commit -m '[FooBar] Commit 2000-03'
+git checkout -b 0.1-fix 0.1
+git commit -m '[FooBar] Commit 2000-04'
+git commit -m '[FooBar] Commit 2000-05'
+git tag 0.1.0.1
+git commit -m '[FooBar] Commit 2000-06'
+git tag 0.1.0.2
+git checkout master
+git commit -m '[FooBar] Commit 2000-07'
+git tag 0.1.1
+git checkout 0.1-fix
+git commit -m '[FooBar] Commit 2000-08'
+git tag 0.1.0.3
+git checkout master
+git commit -m '[FooBar] Commit 2000-09'
+git tag 0.1.2
+git merge 0.1-fix -m 'Merge 2000-10'
+git tag 0.1.3
+git tag 0.2
+# ------------------------------------------------------------
+verify --dense '/[0-9]\+\.[0-9]\+$' <<EOF
+* Mon Oct 02 2000 John Author <john.author@example.net> - 0.2
+- [FooBar] Commit 2000-08
+- [FooBar] Commit 2000-06
+- [FooBar] Commit 2000-05
+- [FooBar] Commit 2000-04
+- [FooBar] Commit 2000-09
+- [FooBar] Commit 2000-07
+- [FooBar] Commit 2000-03
+
+* Wed Feb 02 2000 John Author <john.author@example.net> - 0.1
+- [FooBar] Commit 2000-02
+EOF
+# ============================================================
+
 # Case: Example printed with --help
 git init .
 # example_1_begin
