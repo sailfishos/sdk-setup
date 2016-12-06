@@ -59,8 +59,8 @@ synopsis()
 {
     cat <<EOF
 usage: $SELF [-a|--auto-add-annotations] [-d|--dense <regexp>]
-       [--[no-]favor-tagger] [--no-squeeze-spaces] [--sort-entries]
-       [-t|--tags <pattern>] [--tags-with-prefix]
+       [--[no-]favor-tagger] [--no-squeeze-spaces] [--rev-list-args=[<args>]]
+       [--sort-entries] [-t|--tags <pattern>] [--tags-with-prefix]
        [-<number>] [--] [REVISION]
    or: $SELF {-u|--untagged-only} [--] [REVISION]
 EOF
@@ -104,10 +104,17 @@ Options:
                                    info in case of annotated tags
     --no-squeeze-spaces          : do not replace sequences of blank characters
                                    with single space character
+    --rev-list-args=[<args>]     : additional arguments to 'git-rev-list',
+                                   invoked to list revisions between consecutive
+                                   tags.  Passing multiple times appends <args>.
+                                   With no <args> it clears everything including
+                                   the default argument '--topo-order'.  Can be
+                                   used to exclude upstream commits.
     --sort-entries               : sort entries alphabetically according to
                                    current locale - use thoughtfully! Normally
                                    entries appear in order of their appearance
-                                   in 'git-log --topo-order' output.
+                                   in output of 'git-rev-list' invoked with
+                                   arguments from '--rev-list-args'.
     -t | --tags <pattern>        : override the default 'refs/tags/*' pattern
                                    used to enumerate tags. Compared to '--dense'
                                    this (1) discards annotations from unmatched
@@ -425,7 +432,7 @@ list_objects()
         local commit_tags="$(! [[ -s $TAG_INFO ]] || look $commit $TAG_INFO \
             |awk -F "$SEPARATOR" '($'$TI_TYPE' == "tag") { print $'$TI_REFNAME' }')"
         write $commit $commit_tags
-    done < <(git rev-list --topo-order $range)
+    done < <(git rev-list ${OPT_REV_LIST_ARGS:-} $range)
 }
 
 # Write change log headline for the given tag
@@ -496,6 +503,7 @@ OPT_FAVOR_TAGGER=
 OPT_NO_FAVOR_TAGGER=
 OPT_HEAD=
 OPT_NO_SQUEEZE_SPACES=
+OPT_REV_LIST_ARGS='--topo-order'
 OPT_SELF_TEST=
 OPT_SORT_ENTRIES=
 OPT_TAGS='refs/tags/*'
@@ -531,6 +539,12 @@ while [[ ${1:-} ]]; do
             ;;
         --no-squeeze-spaces )
             OPT_NO_SQUEEZE_SPACES=1
+            ;;
+        --rev-list-args= )
+            OPT_REV_LIST_ARGS=
+            ;;
+        --rev-list-args=* )
+            OPT_REV_LIST_ARGS="${OPT_REV_LIST_ARGS:+$OPT_REV_LIST_ARGS }${1#*=}"
             ;;
         --self-test )
             OPT_SELF_TEST=1
@@ -1398,6 +1412,136 @@ verify --dense '/[0-9]\+\.[0-9]\+$' <<EOF
 
 * Wed Feb 02 2000 John Author <john.author@example.net> - 0.1
 - [FooBar] Commit 2000-02
+EOF
+# ============================================================
+
+# Case: Overriding the default --rev-list-args
+git init .
+git commit -m 'Commit 2000-01'
+git commit -m '[FooBar] Commit 2000-02'
+git tag 0.1
+git commit -m '[FooBar] Commit 2000-03'
+git checkout -b 0.1-fix 0.1
+git commit -m '[FooBar] Commit 2000-04'
+git commit -m '[FooBar] Commit 2000-05'
+git tag 0.1.0.1
+git commit -m '[FooBar] Commit 2000-06'
+git tag 0.1.0.2
+git checkout master
+git commit -m '[FooBar] Commit 2000-07'
+git tag 0.1.1
+git checkout 0.1-fix
+git commit -m '[FooBar] Commit 2000-08'
+git tag 0.1.0.3
+git checkout master
+git commit -m '[FooBar] Commit 2000-09'
+git tag 0.1.2
+git merge 0.1-fix -m 'Merge 2000-10'
+git tag 0.1.3
+git tag 0.2
+# ------------------------------------------------------------
+verify --dense '/[0-9]\+\.[0-9]\+$' --rev-list-args={,'--date-order --reverse'} <<EOF
+* Mon Oct 02 2000 John Author <john.author@example.net> - 0.2
+- [FooBar] Commit 2000-03
+- [FooBar] Commit 2000-04
+- [FooBar] Commit 2000-05
+- [FooBar] Commit 2000-06
+- [FooBar] Commit 2000-07
+- [FooBar] Commit 2000-08
+- [FooBar] Commit 2000-09
+
+* Wed Feb 02 2000 John Author <john.author@example.net> - 0.1
+- [FooBar] Commit 2000-02
+EOF
+# ============================================================
+
+# Case: Ignoring upstream commits with --rev-list-args
+git init .
+git checkout -b upstream/master
+git commit -m 'Upstream commit 2000-01'
+git commit -m '[FooBar] Upstream commit 2000-02'
+git tag 0.1
+git checkout -b master
+git commit -m '[FooBar] Commit 2000-03'
+git tag our/0.1+git1
+git checkout upstream/master
+git commit -m '[FooBar] Upstream commit 2000-04'
+git commit -m '[FooBar] Upstream commit 2000-05'
+git tag 0.1.1
+git checkout master
+git commit -m '[FooBar] Commit 2000-06'
+git tag our/0.1+git2
+git checkout upstream/master
+git commit -m '[FooBar] Upstream commit 2000-07'
+git tag 0.1.2
+git checkout master
+git merge upstream/master -m '[FooBar] Merge branch "upstream/master" 2000-08'
+git tag our/0.1+git3
+git commit -m '[FooBar] Commit 2000-09'
+git tag our/0.1+git4
+git checkout upstream/master
+git commit -m '[FooBar] Upstream commit 2000-10'
+git tag 0.1.3
+# ------------------------------------------------------------
+verify --tags 'refs/tags/our/*' --rev-list-args='^upstream/master' master <<EOF
+* Sat Sep 02 2000 John Author <john.author@example.net> - 0.1+git4
+- [FooBar] Commit 2000-09
+
+* Wed Aug 02 2000 John Author <john.author@example.net> - 0.1+git3
+- [FooBar] Merge branch "upstream/master" 2000-08
+
+* Fri Jun 02 2000 John Author <john.author@example.net> - 0.1+git2
+- [FooBar] Commit 2000-06
+
+* Thu Mar 02 2000 John Author <john.author@example.net> - 0.1+git1
+- [FooBar] Commit 2000-03
+EOF
+# ============================================================
+
+# Case: NOT ignoring upstream commits with --rev-list-args
+git init .
+git checkout -b upstream/master
+git commit -m 'Upstream commit 2000-01'
+git commit -m '[FooBar] Upstream commit 2000-02'
+git tag 0.1
+git checkout -b master
+git commit -m '[FooBar] Commit 2000-03'
+git tag our/0.1+git1
+git checkout upstream/master
+git commit -m '[FooBar] Upstream commit 2000-04'
+git commit -m '[FooBar] Upstream commit 2000-05'
+git tag 0.1.1
+git checkout master
+git commit -m '[FooBar] Commit 2000-06'
+git tag our/0.1+git2
+git checkout upstream/master
+git commit -m '[FooBar] Upstream commit 2000-07'
+git tag 0.1.2
+git checkout master
+git merge upstream/master -m '[FooBar] Merge branch "upstream/master" 2000-08'
+git tag our/0.1+git3
+git commit -m '[FooBar] Commit 2000-09'
+git tag our/0.1+git4
+git checkout upstream/master
+git commit -m '[FooBar] Upstream commit 2000-10'
+git tag 0.1.3
+# ------------------------------------------------------------
+verify --tags 'refs/tags/our/*' master <<EOF
+* Sat Sep 02 2000 John Author <john.author@example.net> - 0.1+git4
+- [FooBar] Commit 2000-09
+
+* Wed Aug 02 2000 John Author <john.author@example.net> - 0.1+git3
+- [FooBar] Merge branch "upstream/master" 2000-08
+- [FooBar] Upstream commit 2000-07
+- [FooBar] Upstream commit 2000-05
+- [FooBar] Upstream commit 2000-04
+
+* Fri Jun 02 2000 John Author <john.author@example.net> - 0.1+git2
+- [FooBar] Commit 2000-06
+
+* Thu Mar 02 2000 John Author <john.author@example.net> - 0.1+git1
+- [FooBar] Commit 2000-03
+- [FooBar] Upstream commit 2000-02
 EOF
 # ============================================================
 
