@@ -61,8 +61,8 @@ synopsis()
 usage: $SELF [-a|--auto-add-annotations] [-d|--dense <regexp>]
        [--[no-]favor-tagger] [--no-squeeze-spaces] [--rev-list-args=[<args>]]
        [-s|--since[-date|-rev] {<date>|<rev>|<file>}]
-       [--sort-entries] [-t|--tags <pattern>] [--tags-with-path]
-       [-<number>] [--] [REVISION]
+       [--sort-entries] [--strip-tag-prefix <prefix>] [-t|--tags <pattern>]
+       [--tags-with-path] [-<number>] [--] [REVISION]
    or: $SELF {-u|--untagged-only} [--] [REVISION]
 EOF
 }
@@ -125,6 +125,9 @@ Options:
                                    entries appear in order of their appearance
                                    in output of 'git-rev-list'. See also
                                    '--rev-list-args'
+    --strip-tag-prefix <prefix>  : when turning a tag name into revision name,
+                                   remove <prefix> from tag base name.  Passing
+                                   empty <prefix> clears the implicit 'v' prefix
     -t | --tags <pattern>        : override the default 'refs/tags/*' pattern
                                    used to enumerate tags. Compared to '--dense'
                                    this (1) discards annotations from unmatched
@@ -451,10 +454,19 @@ pretty_revision()
 {
     local tag=$1
 
+    local short=
     if [[ $OPT_TAGS_WITH_PATH ]]; then
-        git rev-parse --symbolic --abbrev-ref $tag
+        short=$(git rev-parse --symbolic --abbrev-ref $tag)
     else
-        echo ${tag##*/}
+        short=${tag##*/}
+    fi
+
+    if [[ $OPT_STRIP_TAG_PREFIX ]]; then
+        local name=${short##*/}
+        local path=${short%$name}
+        echo "${path}${name#$OPT_STRIP_TAG_PREFIX}"
+    else
+        echo "$short"
     fi
 }
 
@@ -525,6 +537,7 @@ OPT_SELF_TEST=
 OPT_SINCE=
 OPT_SINCE_TYPE=
 OPT_SORT_ENTRIES=
+OPT_STRIP_TAG_PREFIX='v'
 OPT_TAGS='refs/tags/*'
 OPT_TAGS_WITH_PATH=
 OPT_UNTAGGED_ONLY=
@@ -580,6 +593,11 @@ while [[ ${1:-} ]]; do
             ;;
         --sort-entries )
             OPT_SORT_ENTRIES=1
+            ;;
+        --strip-tag-prefix )
+            [[ $# -gt 1 ]] || bad_usage "Argument expected: '$1'"
+            shift
+            OPT_STRIP_TAG_PREFIX=$1
             ;;
         -t | --tags )
             [[ $2 ]] || bad_usage "Argument expected: '$1'"
@@ -1382,14 +1400,14 @@ git init .
 git commit -m 'Commit 2000-01'
 git commit -m 'Commit 2000-02'
 git commit -m '[FooBar] Commit 2000-03'
-git tag our/0.1
+git tag our/v0.1
 git commit -m '[FooBar] Commit 2000-04'
-git tag our/0.1.1
+git tag our/v0.1.1
 git commit -m 'Commit 2000-05'
 git tag -a 0.1.2 -m '[FooBar] Tag 2000-05'
 git commit -m 'Commit 2000-06'
 git tag -a 0.2 -m '[FooBar] Tag 2000-06'
-git tag -a our/0.2 -m '[FooBar] Tag 2000-06'
+git tag -a our/v0.2 -m '[FooBar] Tag 2000-06'
 # ------------------------------------------------------------
 verify --tags refs/tags/our <<EOF
 * Fri Jun 02 2000 John Author <john.author@example.net> - 0.2
@@ -1408,14 +1426,14 @@ git init .
 git commit -m 'Commit 2000-01'
 git commit -m 'Commit 2000-02'
 git commit -m '[FooBar] Commit 2000-03'
-git tag our/0.1
+git tag our/v0.1
 git commit -m '[FooBar] Commit 2000-04'
-git tag our/0.1.1
+git tag our/v0.1.1
 git commit -m 'Commit 2000-05'
 git tag -a 0.1.2 -m '[FooBar] Tag 2000-05'
 git commit -m 'Commit 2000-06'
 git tag -a 0.2 -m '[FooBar] Tag 2000-06'
-git tag -a our/0.2 -m '[FooBar] Tag 2000-06'
+git tag -a our/v0.2 -m '[FooBar] Tag 2000-06'
 # ------------------------------------------------------------
 verify --tags refs/tags/our --tags-with-path <<EOF
 * Fri Jun 02 2000 John Author <john.author@example.net> - our/0.2
@@ -1425,6 +1443,58 @@ verify --tags refs/tags/our --tags-with-path <<EOF
 - [FooBar] Commit 2000-04
 
 * Thu Mar 02 2000 John Author <john.author@example.net> - our/0.1
+- [FooBar] Commit 2000-03
+EOF
+# ============================================================
+
+# Case: --tags and --tags-with-path and --strip-tag-prefix '' used
+git init .
+git commit -m 'Commit 2000-01'
+git commit -m 'Commit 2000-02'
+git commit -m '[FooBar] Commit 2000-03'
+git tag our/v0.1
+git commit -m '[FooBar] Commit 2000-04'
+git tag our/v0.1.1
+git commit -m 'Commit 2000-05'
+git tag -a 0.1.2 -m '[FooBar] Tag 2000-05'
+git commit -m 'Commit 2000-06'
+git tag -a 0.2 -m '[FooBar] Tag 2000-06'
+git tag -a our/v0.2 -m '[FooBar] Tag 2000-06'
+# ------------------------------------------------------------
+verify --tags refs/tags/our --tags-with-path --strip-tag-prefix '' <<EOF
+* Fri Jun 02 2000 John Author <john.author@example.net> - our/v0.2
+- [FooBar] Tag 2000-06
+
+* Sun Apr 02 2000 John Author <john.author@example.net> - our/v0.1.1
+- [FooBar] Commit 2000-04
+
+* Thu Mar 02 2000 John Author <john.author@example.net> - our/v0.1
+- [FooBar] Commit 2000-03
+EOF
+# ============================================================
+
+# Case: --tags and --strip-tag-prefix used
+git init .
+git commit -m 'Commit 2000-01'
+git commit -m 'Commit 2000-02'
+git commit -m '[FooBar] Commit 2000-03'
+git tag our/foo-0.1
+git commit -m '[FooBar] Commit 2000-04'
+git tag our/foo-0.1.1
+git commit -m 'Commit 2000-05'
+git tag -a 0.1.2 -m '[FooBar] Tag 2000-05'
+git commit -m 'Commit 2000-06'
+git tag -a 0.2 -m '[FooBar] Tag 2000-06'
+git tag -a our/foo-0.2 -m '[FooBar] Tag 2000-06'
+# ------------------------------------------------------------
+verify --tags refs/tags/our --strip-tag-prefix 'foo-' <<EOF
+* Fri Jun 02 2000 John Author <john.author@example.net> - 0.2
+- [FooBar] Tag 2000-06
+
+* Sun Apr 02 2000 John Author <john.author@example.net> - 0.1.1
+- [FooBar] Commit 2000-04
+
+* Thu Mar 02 2000 John Author <john.author@example.net> - 0.1
 - [FooBar] Commit 2000-03
 EOF
 # ============================================================
