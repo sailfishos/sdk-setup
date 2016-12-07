@@ -61,7 +61,7 @@ synopsis()
 usage: $SELF [-a|--auto-add-annotations] [-d|--dense <regexp>]
        [--[no-]favor-tagger] [--no-squeeze-spaces] [--rev-list-args=[<args>]]
        [-s|--since[-date|-rev] {<date>|<rev>|<file>}]
-       [--sort-entries] [-t|--tags <pattern>] [--tags-with-prefix]
+       [--sort-entries] [-t|--tags <pattern>] [--tags-with-path]
        [-<number>] [--] [REVISION]
    or: $SELF {-u|--untagged-only} [--] [REVISION]
 EOF
@@ -127,9 +127,9 @@ Options:
                                    tags, (2) does not imply '--favor-tagger' and
                                    (3) accepts patterns as understood by
                                    git-for-each-ref(1).
-    --tags-with-prefix           : do not fully strip the path prefix from tag
-                                   names.  The resulting tag names will be as
-                                   from 'git rev-parse --symbolic --abbrev-ref'.
+    --tags-with-path             : when turning a tag name into revision name,
+                                   preserve the path prefix like 'git rev-parse
+                                   --symbolic --abbrev-ref' would do for the tag
     -u | --untagged-only         : print just the most recent entries not
                                    reachable from any tag
     -<number>                    : limit output to <number> most recent tags
@@ -446,7 +446,7 @@ pretty_revision()
 {
     local tag="$1"
 
-    if [[ $OPT_TAGS_WITH_PREFIX ]]; then
+    if [[ $OPT_TAGS_WITH_PATH ]]; then
         git rev-parse --symbolic --abbrev-ref $tag
     else
         echo ${tag##*/}
@@ -521,7 +521,7 @@ OPT_SINCE=
 OPT_SINCE_TYPE=
 OPT_SORT_ENTRIES=
 OPT_TAGS='refs/tags/*'
-OPT_TAGS_WITH_PREFIX=
+OPT_TAGS_WITH_PATH=
 OPT_UNTAGGED_ONLY=
 OPT_LIMIT=
 while [[ ${1:-} ]]; do
@@ -581,8 +581,8 @@ while [[ ${1:-} ]]; do
             shift
             OPT_TAGS="$1"
             ;;
-        --tags-with-prefix )
-            OPT_TAGS_WITH_PREFIX=1
+        --tags-with-path )
+            OPT_TAGS_WITH_PATH=1
             ;;
         -u | --untagged-only )
             OPT_UNTAGGED_ONLY=1
@@ -1398,7 +1398,7 @@ verify --tags 'refs/tags/our' <<EOF
 EOF
 # ============================================================
 
-# Case: --tags and --tags-with-prefix used
+# Case: --tags and --tags-with-path used
 git init .
 git commit -m 'Commit 2000-01'
 git commit -m 'Commit 2000-02'
@@ -1412,7 +1412,7 @@ git commit -m 'Commit 2000-06'
 git tag -a 0.2 -m '[FooBar] Tag 2000-06'
 git tag -a our/0.2 -m '[FooBar] Tag 2000-06'
 # ------------------------------------------------------------
-verify --tags 'refs/tags/our' --tags-with-prefix <<EOF
+verify --tags 'refs/tags/our' --tags-with-path <<EOF
 * Fri Jun 02 2000 John Author <john.author@example.net> - our/0.2
 - [FooBar] Tag 2000-06
 
