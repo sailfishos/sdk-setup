@@ -33,7 +33,7 @@
 
 # not only to get equal results everywhere, but also as a significant
 # performance improvement (about 30% shorter execution time)
-OLD_LC_ALL="$LC_ALL"
+OLD_LC_ALL=$LC_ALL
 export LC_ALL=C
 
 set -o nounset
@@ -44,7 +44,7 @@ set -o pipefail
 : ${GIT_CHANGE_LOG_NO_COMPAT_WARNINGS:=}
 
 NL=$'\n'
-SELF="$(basename $0)"
+SELF=$(basename $0)
 SHA1_WIDTH=40
 
 SEPARATOR=';'
@@ -94,24 +94,28 @@ pattern will be considered for inclusion in change log:
 
 Options:
     -h | --help                  : show this help
-    -a | --auto-add-annotations  : use the subject (first line) of tag
-                                   annotation when no line would be included
-                                   for a tag otherwise.
-    -d | --dense <regexp>        : group change log entries just by tags
-                                   matching the given <regexp>. This is matched
-                                   agains the full refname, i.e., including the
-                                   'refs/...' prefix.  Implies '--favor-tagger'.
-    --[no-]favor-tagger          : use tag-author info instead of commit-author
-                                   info in case of annotated tags
+    -a | --auto-add-annotations  : use the subjects (first lines) of tag
+                                   annotations when no entry would be included
+                                   for a revision otherwise
+    -d | --dense <regexp>        : print headlines just for revisions denoted by
+                                   tags matching the given <regexp>. This is
+                                   matched agains the full refname, including
+                                   the 'refs/...' prefix.  Can be used e.g. to
+                                   omit headlines for patch-level revisions.
+                                   Implies '--favor-tagger'. See also '--tags'
+    --[no-]favor-tagger          : use tag-author instead of commit-author
+                                   name/date/email in case of revisions denoted
+                                   by annotated tags
     --no-squeeze-spaces          : do not replace sequences of blank characters
                                    with single space character
-    --rev-list-args=[<args>]     : additional arguments to 'git-rev-list',
-                                   invoked to list revisions between consecutive
-                                   tags.  Passing multiple times appends <args>.
-                                   With no <args> it clears everything including
-                                   the default argument '--topo-order'.  Can be
-                                   used to exclude upstream commits.
-    -s | --since[-date] <date>   : only print changes after the given <date>,
+    --rev-list-args=[<args>]     : additional arguments to 'git-rev-list'
+                                   invoked to list commits between tags denoting
+                                   consecutive revisions.  Passing multiple
+                                   times appends <args>.  With no <args> it
+                                   clears everything including the implicit
+                                   argument '--topo-order'.  Can be used to
+                                   exclude upstream commits
+    -s | --since[-date] <date>   : only print revisions after the given <date>,
        | --since[-rev] <rev>       <rev> or the latest revision found in the
        | --since <file>            given change log <file>.  <rev> is compared
                                    literally, i.e., it does not neccessarily
@@ -119,20 +123,21 @@ Options:
     --sort-entries               : sort entries alphabetically according to
                                    current locale - use thoughtfully! Normally
                                    entries appear in order of their appearance
-                                   in output of 'git-rev-list' invoked with
-                                   arguments from '--rev-list-args'.
+                                   in output of 'git-rev-list'. See also
+                                   '--rev-list-args'
     -t | --tags <pattern>        : override the default 'refs/tags/*' pattern
                                    used to enumerate tags. Compared to '--dense'
                                    this (1) discards annotations from unmatched
                                    tags, (2) does not imply '--favor-tagger' and
                                    (3) accepts patterns as understood by
-                                   git-for-each-ref(1).
+                                   git-for-each-ref(1)
     --tags-with-path             : when turning a tag name into revision name,
                                    preserve the path prefix like 'git rev-parse
                                    --symbolic --abbrev-ref' would do for the tag
     -u | --untagged-only         : print just the most recent entries not
-                                   reachable from any tag
-    -<number>                    : limit output to <number> most recent tags
+                                   reachable from any tag denoting a revision
+                                   for which a headline would be printed
+    -<number>                    : limit output to <number> revisions
 
 Examples:
     Consider a Git history illustrating the situation where, at some point, a
@@ -201,10 +206,10 @@ configure()
 {
     feature()
     {
-        local feature="$1"
-        local result="${2:-}"
+        local feature=$1
+        local result=${2:-}
 
-        eval $feature="$result"
+        eval $feature=$result
 
         if [[ $OPT_SELF_TEST ]]; then
             local ny=(no yes)
@@ -347,9 +352,9 @@ extract_entries()
 {
     for_each_ref_desc()
     {
-        local format="$1"
+        local format=$1
         shift
-        local refs="$*"
+        local refs=$*
 
         if [[ $HAS_GIT_VERSION_SORT ]]; then
             git for-each-ref --format="$format" --sort=-v:refname $refs
@@ -394,21 +399,21 @@ extract_entries()
             local contents=
             local allcontents=
             if [[ $allobjects ]]; then
-                allcontents="$(git show $NO_PATCH_OPT $allobjects)"
+                allcontents=$(git show $NO_PATCH_OPT $allobjects)
                 allobjects=
             fi
             if [[ ${#annotatedtags[*]} -gt 1 ]]; then
-                contents="$(for_each_ref_desc "%(contents)" ${annotatedtags[*]})"
-                allcontents="$allcontents$NL$contents"
+                contents=$(for_each_ref_desc "%(contents)" ${annotatedtags[*]})
+                allcontents=$allcontents$NL$contents
             fi
             if [[ $commit ]]; then
-                contents="$(git show $NO_PATCH_OPT $commit)"
-                allcontents="$allcontents$NL$contents"
+                contents=$(git show $NO_PATCH_OPT $commit)
+                allcontents=$allcontents$NL$contents
             fi
 
             # search all objects for lines with special markup
-            local entries="$(sed -n '/^[[:space:]]*\[.*\]/s/^[[:space:]]*//p' <<<"$allcontents")"
-            allentries="${allentries:+$allentries$NL}$entries"
+            local entries=$(sed -n '/^[[:space:]]*\[.*\]/s/^[[:space:]]*//p' <<<"$allcontents")
+            allentries=${allentries:+$allentries$NL}$entries
 
             if [[ ! $commit ]]; then
                 break
@@ -417,7 +422,7 @@ extract_entries()
     done
 
     if [[ ! $allentries && $allannotatedtags && $OPT_AUTO_ADD_ANNOTATIONS ]]; then
-        allentries="$(for_each_ref_desc "%(contents:subject)" $allannotatedtags)"
+        allentries=$(for_each_ref_desc "%(contents:subject)" $allannotatedtags)
     fi
 
     if [[ ! $allentries ]]; then
@@ -431,12 +436,12 @@ extract_entries()
 # annotated tags pointing to them, in topologic order, most recent first
 list_objects()
 {
-    local range="$1"
+    local range=$1
 
     local commit=
     while read commit; do
-        local commit_tags="$(! [[ -s $TAG_INFO ]] || look $commit $TAG_INFO \
-            |awk -F "$SEPARATOR" '($'$TI_TYPE' == "tag") { print $'$TI_REFNAME' }')"
+        local commit_tags=$(! [[ -s $TAG_INFO ]] || look $commit $TAG_INFO \
+            |awk -F "$SEPARATOR" '($'$TI_TYPE' == "tag") { print $'$TI_REFNAME' }')
         write $commit $commit_tags
     done < <(git rev-list ${OPT_REV_LIST_ARGS:-} $range)
 }
@@ -444,7 +449,7 @@ list_objects()
 # Turns tag name info revision string for use in the change log headline
 pretty_revision()
 {
-    local tag="$1"
+    local tag=$1
 
     if [[ $OPT_TAGS_WITH_PATH ]]; then
         git rev-parse --symbolic --abbrev-ref $tag
@@ -456,14 +461,14 @@ pretty_revision()
 # Write change log headline for the given tag, using pretty_revision
 write_headline()
 {
-    local tag="$1"
-    local pretty_revision="$2"
+    local tag=$1
+    local pretty_revision=$2
 
-    local tag_info="$(look $(git rev-parse $tag^{}) $TAG_INFO)"
+    local tag_info=$(look $(git rev-parse $tag^{}) $TAG_INFO)
     local commit tag_ objecttype date name email
     read commit tag_ objecttype date name email <<<"$tag_info"
 
-    date="$(date --date=$date '+%a %b %d %Y')"
+    date=$(date --date=$date '+%a %b %d %Y')
 
     printf "* %s %s %s - %s\n" "$date" "$name" "$email" $pretty_revision
 }
@@ -540,7 +545,7 @@ while [[ ${1:-} ]]; do
         -d | --dense )
             [[ $2 ]] || bad_usage "Argument expected: '$1'"
             shift
-            OPT_DENSE="$1"
+            OPT_DENSE=$1
             [[ $OPT_NO_FAVOR_TAGGER ]] || OPT_FAVOR_TAGGER=1
             ;;
         --favor-tagger )
@@ -565,13 +570,13 @@ while [[ ${1:-} ]]; do
             ;;
         --since-date | --since-rev )
             [[ $2 ]] || bad_usage "Argument expected: '$1'"
-            OPT_SINCE_TYPE="${1#--since-}"
+            OPT_SINCE_TYPE=${1#--since-}
             shift
-            OPT_SINCE="$1"
+            OPT_SINCE=$1
             ;;
         -s | --since )
             shift
-            OPT_SINCE="$1"
+            OPT_SINCE=$1
             ;;
         --sort-entries )
             OPT_SORT_ENTRIES=1
@@ -579,7 +584,7 @@ while [[ ${1:-} ]]; do
         -t | --tags )
             [[ $2 ]] || bad_usage "Argument expected: '$1'"
             shift
-            OPT_TAGS="$1"
+            OPT_TAGS=$1
             ;;
         --tags-with-path )
             OPT_TAGS_WITH_PATH=1
@@ -588,14 +593,14 @@ while [[ ${1:-} ]]; do
             OPT_UNTAGGED_ONLY=1
             ;;
         -[1-9]* )
-            OPT_LIMIT="${1:1}"
+            OPT_LIMIT=${1:1}
             [[ $OPT_LIMIT =~ ^[1-9][0-9]*$ ]] || bad_usage "Natural number expected: '$OPT_LIMIT'"
             ;;
         -- )
             break
             ;;
         -[^-]?* )
-            arg="$1"
+            arg=$1
             shift
             set -- "${arg}" -"${arg:1:1}" -"${arg:2}" "${@}"
             ;;
@@ -606,7 +611,7 @@ while [[ ${1:-} ]]; do
             if [[ $OPT_HEAD ]]; then
                 bad_usage "No more than one revision can be specified"
             fi
-            OPT_HEAD="$1"
+            OPT_HEAD=$1
             ;;
     esac
 
@@ -664,10 +669,10 @@ if [[ $OPT_SINCE_TYPE == 'rev' ]]; then
     fi
 fi
 
-untagged_entries="$(
+untagged_entries=$(
     read last_tag date < <(list_tags_with_date) || true
     list_objects ${last_tag:+$last_tag..}"$OPT_HEAD" |extract_entries || true
-)"
+)
 
 if [[ $OPT_UNTAGGED_ONLY ]]; then
     echo "$untagged_entries"
@@ -689,7 +694,7 @@ else
         write_headline $tag $pretty_revision
 
         if ! list_objects "$range" |extract_entries; then
-            tag_abbrev="$(git rev-parse --symbolic --abbrev-ref $tag)"
+            tag_abbrev=$(git rev-parse --symbolic --abbrev-ref $tag)
             warn "No change log entries for tag '$tag_abbrev'"
         fi
 
@@ -707,11 +712,11 @@ fi ###  S E L F - T E S T  EXECUTION BEGINS HERE #############################
 some_failed=
 verify()
 {
-    comm="${*#$(dirname $SELF)/}"
+    comm=${*#$(dirname $SELF)/}
     loc="at line ${BASH_LINENO[0]}"
-    expected="$(cat)"
+    expected=$(cat)
 
-    if ! out="$(GIT_CHANGE_LOG_NO_COMPAT_WARNINGS=1 $SELF "$@" 2>&1)"; then
+    if ! out=$(GIT_CHANGE_LOG_NO_COMPAT_WARNINGS=1 $SELF "$@" 2>&1); then
         cat <<EOF
 *** FAIL Command exited with non zero:
   Command: \`$comm\` $loc
@@ -749,7 +754,7 @@ EOF
 
 git()
 (
-    BASE_DATE="$(sed -n 's/^.*\(2000-[0-9][0-9]\).*$/\1/p' <<<$*)"
+    BASE_DATE=$(sed -n 's/^.*\(2000-[0-9][0-9]\).*$/\1/p' <<<$*)
     export TZ=UTC
     [[ $BASE_DATE ]] && export GIT_AUTHOR_DATE="$BASE_DATE-01 00:00"
     export GIT_AUTHOR_NAME='John Author'
@@ -783,7 +788,7 @@ REPO=$(readlink -f $(mktemp -d $SELF.test.XXX))
 trap "rm -rf '$REPO/.git' && rm -r '$REPO'" EXIT
 
 cd $REPO
-SELF=$(PATH="$OLDPWD:$PATH" which $SELF)
+SELF=$(PATH=$OLDPWD:$PATH which $SELF)
 
 # Do not test on empty repository - it will fail with error message possibly
 # specific to particular Git version
@@ -1386,7 +1391,7 @@ git commit -m 'Commit 2000-06'
 git tag -a 0.2 -m '[FooBar] Tag 2000-06'
 git tag -a our/0.2 -m '[FooBar] Tag 2000-06'
 # ------------------------------------------------------------
-verify --tags 'refs/tags/our' <<EOF
+verify --tags refs/tags/our <<EOF
 * Fri Jun 02 2000 John Author <john.author@example.net> - 0.2
 - [FooBar] Tag 2000-06
 
@@ -1412,7 +1417,7 @@ git commit -m 'Commit 2000-06'
 git tag -a 0.2 -m '[FooBar] Tag 2000-06'
 git tag -a our/0.2 -m '[FooBar] Tag 2000-06'
 # ------------------------------------------------------------
-verify --tags 'refs/tags/our' --tags-with-path <<EOF
+verify --tags refs/tags/our --tags-with-path <<EOF
 * Fri Jun 02 2000 John Author <john.author@example.net> - our/0.2
 - [FooBar] Tag 2000-06
 
@@ -1438,7 +1443,7 @@ git commit -m 'Commit 2000-06'
 git tag -a 0.2 -m '[FooBar] Tag 2000-06'
 git tag -a our/0.2 -m '[FooBar] Tag 2000-06'
 # ------------------------------------------------------------
-verify --tags 'refs/tags/our' --dense '/[0-9]\+\.[0-9]\+$' <<EOF
+verify --tags refs/tags/our --dense '/[0-9]\+\.[0-9]\+$' <<EOF
 * Sat Jun 03 2000 Jack Tagger <jack.tagger@example.net> - 0.2
 - [FooBar] Tag 2000-06
 - [FooBar] Commit 2000-04
