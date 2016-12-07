@@ -137,6 +137,7 @@ ln -sf obs-rpm-build+pp  %{buildroot}/usr/share/scratchbox2/modes/sdk-build+pp
 ln -sf obs-rpm-install  %{buildroot}/usr/share/scratchbox2/modes/sdk-install
 
 # sdk-utils
+cp src/git-change-log %{buildroot}%{_bindir}/
 cp src/mb %{buildroot}%{_bindir}/
 cp src/mb2 %{buildroot}%{_bindir}/
 cp src/qb %{buildroot}%{_bindir}/
@@ -233,6 +234,7 @@ fi
 
 %files -n sdk-utils
 %defattr(-,root,root,-)
+%{_bindir}/git-change-log
 %{_bindir}/mb
 %{_bindir}/mb2
 %{_bindir}/qb
