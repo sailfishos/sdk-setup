@@ -58,9 +58,9 @@ write() { (IFS=$SEPARATOR; echo "$*"); }
 synopsis()
 {
     cat <<EOF
-usage: $SELF [-a|--auto-add-annotations] [-d|--dense <regexp>]
-       [--[no-]favor-tagger] [--no-squeeze-spaces] [--rev-list-args=[<args>]]
-       [-s|--since[-date|-rev] {<date>|<rev>|<file>}]
+usage: $SELF [-a|--auto-add-annotations] [-A|--only-add-annotations]
+       [-d|--dense <regexp>] [--[no-]favor-tagger] [--no-squeeze-spaces]
+       [--rev-list-args=[<args>]] [-s|--since[-date|-rev] {<date>|<rev>|<file>}]
        [--sort-entries] [--strip-tag-prefix <prefix>] [-t|--tags <pattern>]
        [--tags-with-path] [-<number>] [--] [REVISION]
    or: $SELF {-u|--untagged-only} [--] [REVISION]
@@ -87,8 +87,8 @@ Lists changes in reverse chronological order, starting at REVISION which
 defaults to current HEAD. REVISION can be any revision as understood by
 git-rev-parse(1).
 
-Unless '--auto-add-annotations' is used, just the lines matching the following
-pattern will be considered for inclusion in change log:
+Unless '--auto-add-annotations' or '--only-add-annotations' is used, just the
+lines matching the following pattern will be used as change log entries:
 
     [BLANKS] '[' SHORT-DESCRIPTION ']' BLANKS LONG-DESCRIPTION
 
@@ -97,6 +97,9 @@ Options:
     -a | --auto-add-annotations  : use the subjects (first lines) of tag
                                    annotations when no entry would be included
                                    for a revision otherwise
+    -A | --only-add-annotations  : always use the subjects (first lines) of tag
+                                   annotations as change log entries, completely
+                                   ignore commit messages
     -d | --dense <regexp>        : print headlines just for revisions denoted by
                                    tags matching the given <regexp>. This is
                                    matched agains the full refname, including
@@ -396,7 +399,10 @@ extract_entries()
         annotatedtags=(${annotatedtags//$SEPARATOR/ })
 
         allannotatedtags="$allannotatedtags${annotatedtags:+ ${annotatedtags[*]}}"
-        if [[ $commit && ${#annotatedtags[*]} -le 1 ]]; then
+
+        if [[ $commit && $OPT_ONLY_ADD_ANNOTATIONS ]]; then
+            : # noop
+        elif [[ $commit && ${#annotatedtags[*]} -le 1 ]]; then
             allobjects="$allobjects${annotatedtags:+ ${annotatedtags[*]}} $commit"
         else
             local contents=
@@ -527,6 +533,7 @@ list_tags_dates_ranges()
 }
 
 OPT_AUTO_ADD_ANNOTATIONS=
+OPT_ONLY_ADD_ANNOTATIONS=
 OPT_DENSE=
 OPT_FAVOR_TAGGER=
 OPT_NO_FAVOR_TAGGER=
@@ -554,6 +561,10 @@ while [[ ${1:-} ]]; do
             ;;
         -a | --auto-add-annotations )
             OPT_AUTO_ADD_ANNOTATIONS=1
+            ;;
+        -A | --only-add-annotations )
+            OPT_AUTO_ADD_ANNOTATIONS=1
+            OPT_ONLY_ADD_ANNOTATIONS=1
             ;;
         -d | --dense )
             [[ $2 ]] || bad_usage "Argument expected: '$1'"
@@ -1065,6 +1076,52 @@ verify --auto-add-annotations <<EOF
 
 * Thu Mar 02 2000 John Author <john.author@example.net> - 0.1
 - [FooBar] Commit 2000-03
+EOF
+# ============================================================
+
+# Case: --only-add-annotations used
+git init .
+git commit -m 'Commit 2000-01'
+git commit -m 'Commit 2000-02'
+git commit -m '[FooBar] Commit 2000-03'
+git tag 0.1
+git commit -m '[FooBar] Commit 2000-04'
+git tag 0.1.1
+git commit -m 'Commit 2000-05'
+git tag -a 0.1.2 -m 'Tag 2000-06
+
+[FooBar] Lorem ipsum...
+'
+git commit -m 'Commit 2000-07'
+git tag -a 0.1.3 -m 'Tag 2000-08'
+git tag -a 0.2 -m 'Tag 2000-09
+
+[FooBar] Lorem ipsum...
+'
+git commit -m 'Commit 2000-10'
+git tag -a 0.2.1 -m 'Tag 2000-11'
+git tag -a 0.3 -m 'Tag 2000-12
+
+[FooBar] Lorem ipsum...
+'
+# ------------------------------------------------------------
+verify --only-add-annotations <<EOF
+* Mon Oct 02 2000 John Author <john.author@example.net> - 0.3
+- Tag 2000-12
+- Tag 2000-11
+
+* Sun Jul 02 2000 John Author <john.author@example.net> - 0.2
+- Tag 2000-09
+- Tag 2000-08
+
+* Tue May 02 2000 John Author <john.author@example.net> - 0.1.2
+- Tag 2000-06
+
+* Sun Apr 02 2000 John Author <john.author@example.net> - 0.1.1
+git-change-log: WARNING: No change log entries for tag '0.1.1'
+
+* Thu Mar 02 2000 John Author <john.author@example.net> - 0.1
+git-change-log: WARNING: No change log entries for tag '0.1'
 EOF
 # ============================================================
 
