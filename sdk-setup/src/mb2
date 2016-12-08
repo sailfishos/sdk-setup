@@ -120,11 +120,11 @@ EOF
 }
 
 notice() {
-    echo "NOTICE: $*"
+    echo "NOTICE: $*" >&2
 }
 
 fatal() {
-    echo "Fatal: $*"
+    echo "Fatal: $*" >&2
     exit 1
 }
 
