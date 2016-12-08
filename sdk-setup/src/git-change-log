@@ -269,7 +269,7 @@ stderr.close()
 
     # compatibility with old Git
     feature HAS_GIT_VERSION_SORT \
-        $(! git for-each-ref --sort=version:refname foo &>/dev/null || echo 1)
+        $(! git for-each-ref --sort=version:refname refs/heads/ &>/dev/null || echo 1)
 
     feature HAS_GIT_SHOW_NO_PATCH \
         $(! git show --no-patch &>/dev/null || echo 1)
@@ -280,10 +280,10 @@ stderr.close()
     fi
 
     feature HAS_GIT_MERGED_OPT \
-        $(! git for-each-ref --merged master master &>/dev/null || echo 1)
+        $(! git for-each-ref --merged master refs/heads/ &>/dev/null || echo 1)
 
     feature HAS_GIT_SHORT_LOCAL \
-        $(! git for-each-ref --format="%(authordate:short-local)" refs/heads/master &>/dev/null \
+        $(! git for-each-ref --format="%(authordate:short-local)" refs/heads/ &>/dev/null \
             || echo 1)
 }
 
