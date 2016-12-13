@@ -568,13 +568,19 @@ manage_targets() {
 	--sync ) shift
 	    target="${1:-}"
 	    assert_target_name_valid "$target"
-	    [[ $INSIDE_VBOX ]] || fail "This operation is only valid for SDK in VirtualBox"
+	    if [[ ! $INSIDE_VBOX ]]; then
+	        echo >&2 "This operation is only valid for SDK in VirtualBox"
+	        exit 1
+	    fi
 	    synchronise_target "$@"
 	    updateQtCreatorTargets --name $target --target-xml $target_xml
 	    ;;
 	--import ) shift
 	    assert_target_name_valid "${1:-}"
-	    [[ $INSIDE_VBOX ]] || fail "This operation is only valid for SDK in VirtualBox"
+	    if [[ ! $INSIDE_VBOX ]]; then
+	        echo >&2 "This operation is only valid for SDK in VirtualBox"
+	        exit 1
+	    fi
 	    import_target "$@"
 	    ;;
 	--register ) shift
