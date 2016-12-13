@@ -355,6 +355,12 @@ install_target() {
     target=$1
     toolchain=$2
     url=$3 #FIXME: check url validity
+
+    if [[ $(get_targets) =~ $(echo "\<$target\>") ]]; then
+        echo >&2 "Target already exists: $target"
+        exit 1
+    fi
+
     if ! [[ $skip_toolchain_check ]]; then
 	echo >&2 "Making sure the right toolchain exists"
 	if ! ensure_installed $toolchain; then
