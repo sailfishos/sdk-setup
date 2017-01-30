@@ -104,6 +104,8 @@ cp src/mer-sdk-chroot %{buildroot}/
 cp src/mer-bash-setup %{buildroot}/
 echo "This file serves for detection that this is a chroot SDK installation" > %{buildroot}/%{_sysconfdir}/mer-sdk-chroot
 mkdir -p %{buildroot}/srv/mer/targets
+mkdir -p %{buildroot}%{_sysconfdir}/zypp/systemCheck.d
+cp etc/sdk-chroot.check %{buildroot}%{_sysconfdir}/zypp/systemCheck.d/
 
 # sdk-vm
 mkdir -p %{buildroot}/%{_unitdir}
@@ -116,6 +118,8 @@ install -D -m 755 src/resize-rootfs %{buildroot}%{_bindir}/resize-rootfs
 mkdir -p %{buildroot}/%{_sysconfdir}/systemd/system/
 ln -sf %{_unitdir}/multi-user.target  %{buildroot}/%{_sysconfdir}/systemd/system/default.target
 echo "This file serves for detection that this is a VirtualBox SDK installation" > %{buildroot}/%{_sysconfdir}/mer-sdk-vbox
+mkdir -p %{buildroot}%{_sysconfdir}/zypp/systemCheck.d
+cp etc/sdk-vm.check %{buildroot}%{_sysconfdir}/zypp/systemCheck.d/
 
 mkdir -p %{buildroot}/%{_sysconfdir}/mersdk
 
@@ -203,6 +207,7 @@ fi
 %{_bindir}/sdk-version
 %{_sysconfdir}/mer-sdk-chroot
 %dir /srv/mer/targets
+%{_sysconfdir}/zypp/systemCheck.d/sdk-chroot.check
 
 %files -n sdk-vm
 %defattr(-,root,root,-)
@@ -227,6 +232,7 @@ fi
 %dir /home/deploy
 %{_sysconfdir}/mer-sdk-vbox
 %attr(-,mersdk,mersdk) %{_sysconfdir}/mersdk/
+%{_sysconfdir}/zypp/systemCheck.d/sdk-vm.check
 
 %files -n sdk-sb2-config
 %defattr(-,root,root,-)
