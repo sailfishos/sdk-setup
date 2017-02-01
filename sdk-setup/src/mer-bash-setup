@@ -12,3 +12,11 @@ fi
 
 [[ -e ~/.mersdk.profile ]] && . ~/.mersdk.profile
 
+if [[ $(locale |cut -d= -f2 |tr -d "'\"" |sort -u |sed '/^$/d') != POSIX ]]; then
+   echo "$0: Warning: Forcing POSIX locale settings" >&2
+   for var in $(locale |cut -d= -f1); do
+       if eval [[ \$$var ]]; then
+          export $var=
+       fi
+   done
+fi
