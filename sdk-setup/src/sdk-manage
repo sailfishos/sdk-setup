@@ -355,6 +355,12 @@ install_target() {
     target=$1
     toolchain=$2
     url=$3 #FIXME: check url validity
+
+    if [[ $(get_targets) =~ $(echo "\<$target\>") ]]; then
+        echo >&2 "Target already exists: $target"
+        exit 1
+    fi
+
     if ! [[ $skip_toolchain_check ]]; then
 	echo >&2 "Making sure the right toolchain exists"
 	if ! ensure_installed $toolchain; then
@@ -568,13 +574,19 @@ manage_targets() {
 	--sync ) shift
 	    target="${1:-}"
 	    assert_target_name_valid "$target"
-	    [[ $INSIDE_VBOX ]] || fail "This operation is only valid for SDK in VirtualBox"
+	    if [[ ! $INSIDE_VBOX ]]; then
+	        echo >&2 "This operation is only valid for SDK in VirtualBox"
+	        exit 1
+	    fi
 	    synchronise_target "$@"
 	    updateQtCreatorTargets --name $target --target-xml $target_xml
 	    ;;
 	--import ) shift
 	    assert_target_name_valid "${1:-}"
-	    [[ $INSIDE_VBOX ]] || fail "This operation is only valid for SDK in VirtualBox"
+	    if [[ ! $INSIDE_VBOX ]]; then
+	        echo >&2 "This operation is only valid for SDK in VirtualBox"
+	        exit 1
+	    fi
 	    import_target "$@"
 	    ;;
 	--register ) shift

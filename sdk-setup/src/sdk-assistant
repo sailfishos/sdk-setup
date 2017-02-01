@@ -169,6 +169,10 @@ if [[ $OPT_CREATE ]]; then
         fail "create: target name and rootstrap URL or filename required"
     fi
 
+    if [[ $(sdk-manage --target --list) =~ $(echo "\<$OPT_TARGET\>") ]]; then
+        fail "$OPT_TARGET: target already exists"
+    fi
+
     if [[ ! ($OPT_ROOTSTRAP =~ ^https?://) && ! -f ${OPT_ROOTSTRAP/#file:\/\/} ]]; then
         fail "$OPT_ROOTSTRAP: no such file"
     fi
