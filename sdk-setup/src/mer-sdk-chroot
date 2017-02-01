@@ -75,6 +75,11 @@ if cmp -s /proc/$PPID/mountinfo /proc/self/mountinfo; then
     exit 1
 fi
 
+# Make sure that mountpoints in the new namespace are really unshared from the
+# parental namespace. See unshare(1).
+# This prevents mounts in the sdk from appearing in the parent fs.
+mount --make-rslave /
+
 # Use the SUDO value if present
 user=$SUDO_USER || true;
 
@@ -151,12 +156,6 @@ if [[ ! -d ${targetsdir} ]] ; then
     mkdir "$targetsdir" || exit
 fi
 
-sdkparent="$(df -P "$sdkroot/" | tail -1 | awk '{print $NF}')"
-if [ -z  "$sdkparent" ] ; then
-    echo "Unable to determine mount mouint of filesystem containing \"$sdkroot\""
-    exit 1
-fi
-
 if [[ -z $user ]] ; then
     echo "$0 expects to be run as root using sudo"
     echo "User could not be obtained from \$SUDO_USER, if running as root,"
@@ -182,10 +181,6 @@ mount_bind() {
     mount --bind $1 ${sdkroot}$1
 }
 prepare_mountpoints() {
-    # Make parent mountpoint not shared with parent namespace
-    # This prevents mounts in the sdk from appearing in the parent fs
-    mount --make-slave "$sdkparent/"
-
     echo "Mounting system directories..."
     mount_bind /proc
     mount_bind /proc/sys/fs/binfmt_misc
