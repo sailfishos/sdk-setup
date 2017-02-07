@@ -3,7 +3,6 @@ requires:filesystem
 requires:glibc
 requires:jolla-ca
 requires:rpm
-requires:sdk-setup
 requires:shadow-utils
 requires:sudo
 requires:systemd
