@@ -12,3 +12,10 @@ fi
 
 [[ -e ~/.mersdk.profile ]] && . ~/.mersdk.profile
 
+for mer_check_locale in LC_COLLATE LC_NUMERIC; do
+    if [[ $(locale |sed -n "s/^$mer_check_locale=\"\(.*\)\"$/\1/p") != POSIX ]]; then
+        echo "${BASH_SOURCE[0]}: Warning: It is not recommended to change $mer_check_locale from\
+ the default value \"POSIX\". Check your ~/.mersdk.profile."
+    fi
+done
+unset mer_check_locale
