@@ -43,6 +43,16 @@ Conflicts:  sdk-chroot
 %description -n sdk-vm
 Contains the supporting configs for VMs
 
+%package -n sdk-tooling-chroot
+Summary:    Mer SDK files for build tools distribution
+Group:      System/Base
+BuildArch:  noarch
+Requires(pre): rpm
+Requires(pre): /bin/rm
+
+%description -n sdk-tooling-chroot
+Contains the mer-tooling-chroot script
+
 %package -n sdk-sb2-config
 Summary:    Mer SDK mode names for sb2
 Group:      System/Base
@@ -63,6 +73,7 @@ Requires:   rsync
 Requires:   sudo
 Requires:   scratchbox2 >= 2.3.90+git2
 Requires:   sdk-register
+Requires:   ssu >= 0.43.2
 
 %description -n sdk-utils
 Contains some utility scripts to support Mer SDK development
@@ -105,6 +116,7 @@ cp src/mer-sdk-chroot %{buildroot}/
 cp src/mer-bash-setup %{buildroot}/
 echo "This file serves for detection that this is a chroot SDK installation" > %{buildroot}/%{_sysconfdir}/mer-sdk-chroot
 mkdir -p %{buildroot}/srv/mer/targets
+mkdir -p %{buildroot}/srv/mer/toolings
 mkdir -p %{buildroot}%{_sysconfdir}/zypp/systemCheck.d
 cp etc/sdk-chroot.check %{buildroot}%{_sysconfdir}/zypp/systemCheck.d/
 
@@ -135,6 +147,9 @@ chmod 1777 %{buildroot}/home/deploy
 # Until login.prefs.systemd is ready
 cp etc/mersdk.env.systemd  %{buildroot}/%{_sysconfdir}/
 
+# sdk-tooling-chroot
+cp src/mer-tooling-chroot %{buildroot}/
+
 # sdk-sb2-config
 mkdir -p %{buildroot}/usr/share/scratchbox2/modes/
 ln -sf obs-rpm-build  %{buildroot}/usr/share/scratchbox2/modes/sdk-build
@@ -146,7 +161,7 @@ cp src/git-change-log %{buildroot}%{_bindir}/
 cp src/mb %{buildroot}%{_bindir}/
 cp src/mb2 %{buildroot}%{_bindir}/
 cp src/qb %{buildroot}%{_bindir}/
-cp src/sdk-foreach %{buildroot}%{_bindir}/
+cp src/sdk-foreach-su %{buildroot}%{_bindir}/
 cp src/sdk-manage %{buildroot}%{_bindir}/
 cp src/sdk-assistant %{buildroot}%{_bindir}/
 cp src/updateQtCreatorTargets %{buildroot}%{_bindir}/updateQtCreatorTargets
@@ -208,6 +223,7 @@ fi
 %{_bindir}/sdk-version
 %{_sysconfdir}/mer-sdk-chroot
 %dir /srv/mer/targets
+%dir /srv/mer/toolings
 %{_sysconfdir}/zypp/systemCheck.d/sdk-chroot.check
 
 %files -n sdk-vm
@@ -235,6 +251,10 @@ fi
 %attr(-,mersdk,mersdk) %{_sysconfdir}/mersdk/
 %{_sysconfdir}/zypp/systemCheck.d/sdk-vm.check
 
+%files -n sdk-tooling-chroot
+%defattr(-,root,root,-)
+/mer-tooling-chroot
+
 %files -n sdk-sb2-config
 %defattr(-,root,root,-)
 %{_datadir}/scratchbox2/modes/*
@@ -245,7 +265,7 @@ fi
 %{_bindir}/mb
 %{_bindir}/mb2
 %{_bindir}/qb
-%{_bindir}/sdk-foreach
+%{_bindir}/sdk-foreach-su
 %{_bindir}/sdk-manage
 %{_bindir}/sdk-assistant
 %{_bindir}/updateQtCreatorTargets

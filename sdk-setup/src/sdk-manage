@@ -11,13 +11,18 @@ umask 022
 usage() {
     cat >&2 <<EOF
     usage (keep the arguments order):
-           $0 --toolchain --list
-           $0 --toolchain --install <arch>
-           $0 --toolchain --remove <arch>
+           $0 --tooling --list
+           $0 --tooling --upgradable <name>
+           $0 --tooling --install <name> <url>
+           $0 --tooling --remove <name>
+           $0 --tooling --refresh {--all | <name>...}
+           $0 --tooling --update <name>
+           $0 --tooling --register --user <user> --password <password> {--all | <name>...}
 
-           $0 --target --list
+           $0 --target --list [-l|--long] [--tooling <name>]
            $0 --target --upgradable <name>
-           $0 --target --install <name> <toolchain> <url>
+           $0 --target --install <name> <url> [--tooling <name>
+                                 [--tooling-url <url>]] [--toolchain <name>]
            $0 --target --remove  <name>
            $0 --target --refresh {--all | <name>...}
            $0 --target --update <name>
@@ -80,6 +85,31 @@ unpack() {
         eval $1=\${array[i++]}
         shift
     done
+}
+
+# Suppress command's stderr unless it exits with non-zero
+silent() {
+    local stderr=
+    { stderr=$("$@" 3>&1 1>&2 2>&3 3>&-); } 2>&1
+    local rc=$?
+    [[ $rc -eq 0 ]] || printf >&2 "%s\n" "$stderr"
+    return $rc
+}
+
+assert_name_valid() {
+    local name=$1
+    if ! [[ $name ]]; then
+        echo >&2 "Name cannot be an empty string"
+        return 1
+    fi
+    if ! [[ $name =~ ^[[:alnum:]_.-]*$ ]]; then
+        echo >&2 "Name cannot consist of non-alphanumeric characters other than '_-.': '$name'"
+        return 1
+    fi
+    if ! [[ $name =~ ^[[:alnum:]] ]]; then
+        echo >&2 "Name must start with an alphanumeric character: '$name'"
+        return 1
+    fi
 }
 
 # Downloads file at ${url} into ${tmp_dir} using ${local_file_hint} as file name, unless ${url}
@@ -157,13 +187,201 @@ download() {
     succeeded=1
 }
 
+# Extends standard ssu CLI with '--root <dir>' option and 'arch' command
+ssu() (
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --root)
+                shift
+                export SSU_SANDBOX_DIR=$1
+                export LD_PRELOAD=/usr/lib/ssu/libsandboxhook.so
+                ;;
+            arch)
+                sed -n 's/^arch=//; T; p' ${SSU_SANDBOX_DIR:-}/etc/ssu/ssu.ini
+                return
+                ;;
+            *)
+                break
+                ;;
+        esac
+        shift
+    done
+
+    silent command ssu "$@"
+)
+
+disk_full() [[ $(stat --file-system --format '%a*%s/1024' "$1") -lt 10000 ]]
+
 ################################################################'
-# toolchain
+# Polymorphic utilities for common operations on targets, toolings and the SDK itself.
+#
+# Notice the use of the terms 'object' and 'type'.
+
+get_all_of_type() {
+    local type=$1
+    get_all_of_type_$type
+}
+
+get_all_or_selected_of_type() {
+    local type=$1
+    shift
+
+    local objects= object= get_all=
+    if [[ ${1:-} == "--all" ]]; then
+        objects=($(get_all_of_type "$type")) || return
+        get_all=1
+        shift
+    else
+        objects=("$@")
+        for object in "${objects[@]}"; do
+            assert_object_exists "$type:$object" || return
+        done
+    fi
+
+    # Fail here if --all was not used and no objects were given
+    [[ ${#objects[*]} -ne 0 || $get_all ]] || { usage; return 1; }
+
+    echo -n "${objects[@]}"
+}
+
+print_object() {
+    local type=${1%:*} object=${1#*:}
+
+    case $type in
+        sdk) echo -n "SDK";;
+        *) echo -n "$type '$object'";;
+    esac
+}
+
+assert_object_exists() {
+    local type=${1%:*} object=${1#*:}
+
+    assert_${type}_exists "$object"
+}
+
+enter() {
+    local type=${1%:*} object=${1#*:} cmd=("${@:2}")
+
+    if [[ $type == sdk ]]; then
+        sudo "${cmd[@]}"
+    else
+        enter_$type "$object" "${cmd[@]}"
+    fi
+}
+
+object_zypper() {
+    local object=$1 args=("${@:2}")
+
+    enter "$object" zypper --quiet --non-interactive "${args[@]}"
+}
+
+register_object() {
+    local type=$1
+    shift
+
+    local credentials= username= password= reg_shift=
+    credentials=$(get_register_credentials "$@") || return
+    unpack "$credentials" username password reg_shift
+    shift $reg_shift
+
+    local objects=
+    if [[ $type == sdk ]]; then
+        objects=('')
+    else
+        objects=($(get_all_or_selected_of_type "$type" "$@")) || return
+    fi
+
+    local object= domain=
+    for object in "${objects[@]}"; do
+        object=$type:$object
+        domain=$(enter "$object" sdk-register -d) || return
+        if [[ $domain != jolla ]]; then
+            echo >&2 "Registration not needed for $(print_object "$object") (domain: ${domain:-empty})"
+            continue
+        fi
+
+        echo >&2 -n "$(print_object "$object"): "
+        enter "$object" sdk-register -u "$username" -p "$password" || return
+    done
+}
+
+refresh_objects() {
+    local type=$1
+    shift
+
+    local objects=
+    if [[ $type == sdk ]]; then
+        objects=('')
+    else
+        objects=($(get_all_or_selected_of_type "$type" "$@")) || return
+    fi
+
+    local object=
+    for object in "${objects[@]}"; do
+        object_zypper "$type:$object" refresh -f
+    done
+}
+
+object_upgradable() {
+    local type=$1 object=${2:-}
+
+    if [[ $type != sdk ]]; then
+        assert_object_exists "$type:$object" || return
+    fi
+
+    object_zypper "$type:$object" --no-refresh list-updates
+}
+
+upgrade_object() {
+    local type=$1 object=${2:-}
+
+    if [[ $type != sdk ]]; then
+        assert_object_exists "$type:$object" || return
+    fi
+
+    object_zypper "$type:$object" dup
+}
+
+################################################################'
+# tooling management
+
+tooling_exists() [[ -e $MER_TOOLINGS/$1 ]]
+
+# specialization of assert_object_exists()
+assert_tooling_exists() {
+    local tooling=$1
+
+    assert_name_valid "$tooling" || return
+    if ! tooling_exists "$tooling"; then
+        echo >&2 "Unknown tooling: $tooling"
+        return 1
+    fi
+}
+
+# specialization of enter()
+enter_tooling() {
+    local tooling=$1 cmd=("${@:2}")
+
+    assert_tooling_exists "$tooling" || return
+    sudo "$MER_TOOLINGS/$tooling/mer-tooling-chroot" "${cmd[@]}"
+}
+
+# specialization of get_all_of_type()
+get_all_of_type_tooling() {
+    local tooling
+    while read tooling; do
+        if ! assert_name_valid "$tooling" 2>/dev/null; then
+            echo >&2 "Ignoring tooling with invalid name '$tooling'"
+            continue
+        fi
+        echo "$tooling"
+    done < <(ls --literal "$MER_TOOLINGS")
+}
 
 # Our toolchains are available through patterns-sailfish-sb2-* meta-packages
-
 get_toolchains() {
-    zypper --quiet --no-refresh --non-interactive search "patterns-sailfish-sb2-*" | \
+    local tooling=$1
+    object_zypper "tooling:$tooling" --no-refresh search "patterns-sailfish-sb2-*" | \
 	grep patterns-sailfish-sb2 |grep -v sb2-common | while IFS='| ' read installed pkg dummy; do
 	echo "${pkg},${installed}"
     done
@@ -171,54 +389,124 @@ get_toolchains() {
 }
 
 ensure_installed() {
-    get_toolchains |grep -q -F --line-regexp "$1,i"
+    local tooling=$1 toolchain=$2
+    # Do not require building zypper caches as this is not always possible
+    enter_tooling "$tooling" rpm -qa --queryformat='%{name}\n' |grep -q -F --line-regexp "$toolchain"
 }
 
 ensure_installable() {
-    get_toolchains |grep -q -F --line-regexp "$1,"
+    local tooling=$1 toolchain=$2
+    get_toolchains "$tooling" |grep -q -F --line-regexp "$toolchain,"
 }
 
 install_toolchain() {
-    local pkg=$1
-    if ! ensure_installable "$pkg"; then
+    local tooling=$1 pkg=$2
+    if ! ensure_installable "$tooling" "$pkg"; then
         echo >&2 "Toolchain '$pkg' doesn't exist or is already installed - can not install."
-        return 2
+        return 1
     fi
 
-    sudo zypper --quiet --non-interactive install -t pattern "$pkg"
+    object_zypper "tooling:$tooling" --no-refresh install -t pattern "$pkg"
 }
 
-remove_toolchain() {
-    local pkg=$1
-    if ! ensure_installed "$pkg"; then
-        echo >&2 "Toolchain '$pkg' is not installed - can not remove."
-        return 2
+install_tooling() {
+    local name=$1 url=$2
+
+    assert_name_valid "$name" || return
+
+    if tooling_exists "$name"; then
+        echo >&2 "Name already in use: $name"
+        return 1
     fi
 
-    sudo zypper --quiet --no-refresh --non-interactive remove -t pattern "$pkg"
+    sudo mkdir -p "$MER_TOOLINGS" || return
+
+    local download_result= local_file= downloaded=
+
+    local succeeded=
+    install_tooling_cleanup() (
+        trap 'echo cleaning up...' INT TERM HUP
+        if [[ $download_result ]]; then
+            local local_file= downloaded=
+            if unpack "$download_result" local_file downloaded && [[ $downloaded ]]; then
+                rm -f "$local_file"
+            fi
+        fi
+        if [[ ! $succeeded ]]; then
+            sudo rm -rf "$MER_TOOLINGS/$name"
+        fi
+    )
+    trap 'install_tooling_cleanup; trap - RETURN' RETURN
+    trap 'return 1' INT TERM HUP
+
+    download_result=$(download "$url" "$MER_TOOLINGS" "$name.tar.bz2") || return
+    unpack "$download_result" local_file downloaded
+
+    sudo rm -rf "$MER_TOOLINGS/$name" || return
+    sudo mkdir -p "$MER_TOOLINGS/$name" || return
+
+    echo >&2 "Unpacking tooling ..."
+    if ! sudo tar -C "$MER_TOOLINGS/$name" -xf "$local_file"; then
+        if disk_full "$MER_TOOLINGS"; then
+            echo >&2 "Not enough disk space to unpack tooling image"
+        else
+            echo >&2 "Could not unpack tooling image"
+        fi
+        return 1
+    fi
+
+    echo >&2 "Tooling '$name' now setup"
+    succeeded=1
 }
 
-manage_toolchains() {
+remove_tooling() {
+    local name=$1
+
+    assert_name_valid "$name" || return
+
+    local targets=$(get_targets_using_tooling "$name")
+    if [[ $targets ]]; then
+        targets=$(echo $targets |sed 's/ /, /')
+        echo >&2 "Cannot remove tooling '$name': Tooling used by following targets: '$targets'"
+        return 1
+    fi
+
+    sudo rm -rf "$MER_TOOLINGS/$name"
+}
+
+manage_toolings() {
     if ! [[ ${1:-} ]]; then
         usage
         return 1
     fi
 
     case $1 in
-	--list )
-	    get_toolchains
-	    ;;
-	--install ) shift
-	    install_toolchain "$@"
-	    ;;
-	--remove ) shift
-	    remove_toolchain "$@"
-	    ;;
-	* )
+        --list )
+            get_all_of_type_tooling
+            ;;
+        --upgradable ) shift
+            object_upgradable tooling "$@"
+            ;;
+        --install ) shift
+            install_tooling "$@"
+            ;;
+        --remove ) shift
+            remove_tooling "$@"
+            ;;
+        --refresh ) shift
+            refresh_objects tooling "$@"
+            ;;
+        --update ) shift
+            upgrade_object tooling "$@"
+            ;;
+        --register ) shift
+            register_object tooling "$@"
+            ;;
+        * )
             echo >&2 "unrecognized option '$1'"
             usage
             return 1
-	    ;;
+            ;;
     esac
 }
 
@@ -227,9 +515,10 @@ manage_toolchains() {
 
 # Our devel packages are available through zypper as -devel packages
 
-assert_target_and_setup() {
+# specialization of assert_object_exists()
+assert_target_exists() {
     local target=$1
-    assert_target_name_valid "$target" || return
+    assert_name_valid "$target" || return
     if ! [[ -f $SBOX2DIR/$target/sb2.config ]]; then
         echo >&2 "Target '$target' is not a valid Scratchbox2 target"
         return 1
@@ -241,16 +530,17 @@ assert_target_and_setup() {
     fi
 }
 
-t_zypper() {
+# specialization of enter()
+enter_target() {
     local target=$1
     shift
-    sb2 -t "$target" -m sdk-install -R zypper --quiet "$@"
+    sb2 -t "$target" -m sdk-install -R "$@"
 }
 
 get_develpkgs() {
     local target=$1 search=$2
     # do not include sourcepackages to the list (-t package -t pattern)
-    t_zypper "$target" --non-interactive --no-refresh search -t package -t pattern -- ${search:+"$search"} 2>&1 | \
+    object_zypper "target:$target" --no-refresh search -t package -t pattern -- ${search:+"$search"} 2>&1 | \
 	sed '0,/---------/d' | while IFS='| ' read installed pkg dummy; do
 	echo "${pkg},${installed}"
     done
@@ -266,21 +556,21 @@ manage_develpkgs() {
     case $1 in
 	--list ) shift
             local target=${1:-} search=${2:-}
-            assert_target_and_setup "$target" || return
+            assert_target_exists "$target" || return
             get_develpkgs "$target" "$search"
 	    ;;
 	--install ) shift
             local target=${1:-}
-            assert_target_and_setup "$target" || return
+            assert_target_exists "$target" || return
             shift
-            t_zypper "$target" --non-interactive --no-refresh install "$@" || return
+            object_zypper "target:$target" --no-refresh install "$@" || return
             [[ $INSIDE_VBOX ]] && synchronise_target "$target"
 	    ;;
 	--remove ) shift
             local target=${1:-}
-            assert_target_and_setup "$target" || return
+            assert_target_exists "$target" || return
             shift
-            t_zypper "$target" --non-interactive --no-refresh remove "$@" || return
+            object_zypper "target:$target" --no-refresh remove "$@" || return
             [[ $INSIDE_VBOX ]] && synchronise_target "$target"
 	    ;;
 	* )
@@ -294,18 +584,9 @@ manage_develpkgs() {
 ################################################################
 # Targets
 
-t_register() {
-    local target=$1 username=$2 password=$3
-
-    local domain=
-    domain=$(sb2 -t "$target" sdk-register -d) || return
-    if [[ $domain != jolla ]]; then
-        echo >&2 "Registration not needed for target '$target' (domain: ${domain:-empty})"
-        return 0
-    fi
-
-    echo >&2 -n "$target: "
-    sb2 -t "$target" -m sdk-install -R sdk-register -u "$username" -p "$password"
+target_exists() {
+    local target=$1
+    sb2-config -f |grep -q -F --line-regexp "$target"
 }
 
 check_target_visible() (
@@ -315,20 +596,73 @@ check_target_visible() (
     test -d "$SBOX_TARGET_ROOT"
 )
 
-get_targets() {
+# Specialization of get_all_of_type()
+get_all_of_type_target() {
     echo $(sb2-config -f)
 }
 
-assert_target_name_valid() {
-    if [[ ! ${1:-} ]]; then
-      echo >&2 "Target name missing."
-      return 1
-    fi
-
-    if ! [[ $1 =~ ^[-[:alnum:]_.]*$ ]]; then
-        echo >&2 "Target name '$1' is not a valid Scratchbox2 target name."
+get_tooling_used_by_target() (
+    local target=$1
+    set +u
+    . $SBOX2DIR/$target/sb2.config
+    if [[ $SBOX_TOOLS_ROOT == "$MER_TOOLINGS"/* ]]; then
+        echo "${SBOX_TOOLS_ROOT#$MER_TOOLINGS/}"
+    else
         return 1
     fi
+)
+
+get_targets_using_tooling() {
+    local tooling=$1
+    local target=
+    for target in $(get_all_of_type_target); do
+        [[ $(get_tooling_used_by_target "$target") == $tooling ]] && echo "$target"
+    done
+}
+
+list_targets() {
+    local long= tooling=
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -l|--long)
+                long=1
+                ;;
+            --tooling)
+                tooling=${2:-}
+                if [[ ! $tooling ]]; then
+                    echo >&2 "$1: Argument expected"
+                    usage
+                    return 1
+                fi
+                shift
+                ;;
+            *)
+                echo >&2 "unrecognized option '$1'"
+                usage
+                return 1
+                ;;
+        esac
+        shift
+    done
+
+    local targets=
+    if [[ $tooling ]]; then
+        targets=$(get_targets_using_tooling "$tooling") || return
+    else
+        targets=$(get_all_of_type_target) || return
+    fi
+
+    if [[ ! $long ]]; then
+        cat <<<"$targets"
+        return
+    fi
+
+    local target=
+    for target in $targets; do
+        tooling=$(get_tooling_used_by_target "$target") # may fail
+        echo "$target" "${tooling:--}"
+    done |column -t
+    return ${PIPESTATUS[0]}
 }
 
 synchronise_target() {
@@ -414,26 +748,81 @@ amend_target_hosts() {
 
 # Download and install a rootfs
 install_target() {
-    local skip_toolchain_check=0
-    if [[ $1 == "--jfdi" ]]; then
-	# Sometimes you want to install without checking the toolchain - jfdi
-        skip_toolchain_check=1
+    local skip_toolchain_check= tooling= tooling_url= toolchain= positional_args=()
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --jfdi)
+	        # Sometimes you want to install without checking the toolchain - jfdi
+                skip_toolchain_check=1
+                ;;
+            --tooling)
+                tooling=${2:-}
+                if [[ ! $tooling ]]; then
+                    echo >&2 "$1: Argument expected"
+                    usage
+                    return 1
+                fi
+                shift
+                ;;
+            --tooling-url)
+                tooling_url=${2:-}
+                if [[ ! $tooling_url ]]; then
+                    echo >&2 "$1: Argument expected"
+                    usage
+                    return 1
+                fi
+                shift
+                ;;
+            --toolchain)
+                toolchain=${2:-}
+                if [[ ! $toolchain ]]; then
+                    echo >&2 "$1: Argument expected"
+                    usage
+                    return 1
+                fi
+                shift
+                ;;
+            -*)
+                echo >&2 "unrecognized option '$1'"
+                usage
+                return 1
+                ;;
+            *)
+                if [[ ${#positional_args[*]} -eq 2 ]]; then
+                    echo >&2 "unexpected positional argument '$1'"
+                    usage
+                    return 1
+                fi
+                positional_args=(${positional_args[@]:+"${positional_args[@]}"} "$1")
+                ;;
+        esac
         shift
-    fi
+    done
 
-    local target=$1 toolchain=$2 url=$3
-
-    if [[ $(get_targets) =~ $(echo "\<$target\>") ]]; then
-        echo >&2 "Target already exists '$target'"
+    if [[ $tooling_url && ! $tooling ]]; then
+        echo >&2 "'--tooling' required when '--tooling-url' is used"
+        usage
         return 1
     fi
 
-    if ! [[ $skip_toolchain_check ]]; then
-	echo >&2 "Making sure the right toolchain exists"
-        if ! ensure_installed "$toolchain"; then
-            echo >&2 "Installing required toolchain '$toolchain'"
-            install_toolchain "$toolchain" || return
-        fi
+    if [[ $tooling && ! $tooling_url ]]; then
+        assert_tooling_exists "$tooling" || return
+    fi
+
+    if [[ ${#positional_args[*]} -ne 2 ]]; then
+        echo >&2 "<name> and <URL> expected"
+        usage
+        return 1
+    fi
+
+    local target=${positional_args[0]}
+    local url=${positional_args[1]}
+
+    assert_name_valid "$target" || return
+
+    if target_exists "$target"; then
+        echo >&2 "Target already exists '$target'"
+        return 1
     fi
 
     # make sure the target dir exists
@@ -442,7 +831,7 @@ install_target() {
         sudo install -d -o $(id -u) -g $(id -g) "$MER_TARGETS" || return
     fi
 
-    local download_result= local_file= downloaded=
+    local download_result= local_file= downloaded= tooling_installed=
 
     local succeeded=
     install_target_cleanup() (
@@ -459,10 +848,22 @@ install_target() {
             if [[ $INSIDE_VBOX ]]; then
                 rm -rf "$HOST_TARGETS/$target"
             fi
+            if [[ $tooling_installed ]]; then
+                remove_tooling "$tooling"
+            fi
         fi
     )
     trap 'install_target_cleanup; trap - RETURN' RETURN
     trap 'return 1' INT TERM HUP
+
+    if [[ $tooling_url ]]; then
+        if tooling_exists "$tooling"; then
+            echo >&2 "Tooling '$tooling' already installed, skipping"
+        else
+            install_tooling "$tooling" "$tooling_url" || return
+            tooling_installed=1
+        fi
+    fi
 
     download_result=$(download "$url" "$MER_TARGETS" "$target.tar.bz2") || return
     unpack "$download_result" local_file downloaded
@@ -480,12 +881,52 @@ install_target() {
     echo >&2
     echo >&2 "Unpacking target ..."
     if ! sudo tar -C "$MER_TARGETS/$target" -xf "$local_file"; then
-        if [[ $( df --sync "$MER_TARGETS" | tr -s ' ' | tail -n 1 | cut -d ' ' -f 4 ) -lt 10000 ]]; then
+        if disk_full "$MER_TARGETS"; then
 	    echo >&2 "Not enough disk space to unpack target image"
 	else
 	    echo >&2 "Could not unpack target image"
 	fi
         return 1
+    fi
+
+    local target_release= tooling_release=
+    target_release=$(ssu --root "$MER_TARGETS/$target" status |grep ^Release) || return
+
+    if [[ $tooling ]]; then
+        tooling_release=$(ssu --root "$MER_TOOLINGS/$tooling" status |grep ^Release) || return
+        if [[ $tooling_release != $target_release ]]; then
+            echo >&2 "WARNING: Tooling release '$tooling_release' does not match target release '$target_release'"
+        fi
+    else
+        local available_tooling=
+        for available_tooling in $(get_all_of_type_tooling); do
+            tooling_release=$(ssu --root "$MER_TOOLINGS/$available_tooling" status |grep ^Release) || return
+            if [[ $tooling_release == $target_release ]]; then
+                tooling=$available_tooling
+                break
+            fi
+        done
+
+        if [[ ! $tooling ]]; then
+            echo >&2 "No suitable tooling found for this target"
+            return 1
+        fi
+
+        echo >&2 "Using '$tooling' tooling for this target"
+    fi
+
+    local target_arch=
+    target_arch=$(ssu --root "$MER_TARGETS/$target" arch) || return
+    if ! [[ $toolchain ]]; then
+        toolchain="patterns-sailfish-sb2-$target_arch"
+    fi
+
+    if ! [[ $skip_toolchain_check ]]; then
+        echo >&2 "Making sure the right toolchain exists in '$tooling' tooling"
+        if ! ensure_installed "$tooling" "$toolchain"; then
+            echo >&2 "Installing required toolchain in '$tooling' tooling: $toolchain"
+            install_toolchain "$tooling" "$toolchain" || return
+        fi
     fi
 
     sudo chown -R $(id -u):$(id -g) "$MER_TARGETS/$target" || return
@@ -497,20 +938,17 @@ install_target() {
 
     echo >&2 "Setting up SB2"
 
-    local transparency= compiler= toolsdir=
-    case $toolchain in
-	*-arm*)
-            local architecture=${toolchain##*-}
+    local transparency= compiler=
+    case $target_arch in
+        arm*)
             transparency="/usr/bin/qemu-arm-dynamic"
-	    compiler="/opt/cross/bin/$architecture-meego-linux-gnueabi-gcc"
-            toolsdir="/"
+            compiler="/opt/cross/bin/${target_arch}-meego-linux-gnueabi-gcc"
 	    ;;
-	*-mipsel)
+        mipsel)
             transparency="/usr/bin/qemu-mipsel-dynamic"
 	    compiler="/opt/cross/bin/mipsel-meego-linux-gnu-gcc"
-            toolsdir="/"
 	    ;;
-	*-i486*)
+        i486*)
 	    compiler="/opt/cross/bin/i486-meego-linux-gnu-gcc"
 	    ;;
     esac
@@ -523,7 +961,7 @@ install_target() {
     (
         cd "$MER_TARGETS/$target" && sb2-init \
             -L "--sysroot=/" -C "--sysroot=/" ${transparency:+-c "$transparency"} \
-            -m sdk-build -n -N ${toolsdir:+-t "$toolsdir"} "$target" "$compiler"
+            -m sdk-build -n -N -t "$MER_TOOLINGS/$tooling" "$target" "$MER_TOOLINGS/$tooling/$compiler"
     ) || return
 
     # make sure the created target gets a unique id
@@ -532,7 +970,7 @@ install_target() {
     # fix target's /etc/hosts
     amend_target_hosts "$target" || return
 
-    assert_target_and_setup "$target" || return
+    assert_target_exists "$target" || return
 
     if [[ $INSIDE_VBOX ]]; then
 	echo >&2 "Notifying Qt Creator of new target"
@@ -545,6 +983,7 @@ install_target() {
 
 remove_target() {
     local target=$1
+    assert_name_valid "$target" || return
     if [[ -d $SBOX2DIR/$target ]]; then
         rm -r "$SBOX2DIR/$target"
         sudo rm -rf "$MER_TARGETS/$target"
@@ -570,43 +1009,27 @@ manage_targets() {
     fi
 
     case $1 in
-	--list )
-	    get_targets
+	--list ) shift
+            list_targets "$@"
 	    ;;
 	--upgradable ) shift
-            local target=${1:-}
-            assert_target_and_setup "$target" || return
-            t_zypper "$target" --non-interactive --no-refresh --quiet list-updates
+            object_upgradable target "$@"
 	    ;;
 	--install ) shift
-            assert_target_name_valid "${1:-}" || return
             install_target "$@"
 	    ;;
 	--remove ) shift
-            assert_target_name_valid "${1:-}" || return
 	    remove_target "$@"
 	    ;;
 	--refresh ) shift
-            local targets=
-            if [[ ${1:-} == "--all" ]]; then
-                targets=($(get_targets)) || return
-	    else
-                targets=("$@")
-	    fi
-            local target=
-            for target in "${targets[@]}"; do
-                assert_target_and_setup || return
-                t_zypper "$target" --non-interactive refresh || return
-	    done
+            refresh_objects target "$@"
 	    ;;
 	--update ) shift
-            local target=${1:-}
-            assert_target_and_setup || return
-            t_zypper "$target" --non-interactive dup
+            upgrade_object target "$@"
 	    ;;
 	--sync ) shift
             local target=${1:-}
-            assert_target_name_valid "$target" || return
+            assert_name_valid "$target" || return
 	    if [[ ! $INSIDE_VBOX ]]; then
 	        echo >&2 "This operation is only valid for SDK in VirtualBox"
                 return 1
@@ -615,7 +1038,7 @@ manage_targets() {
             updateQtCreatorTargets --name "$target" --target-xml "$TARGETS_XML"
 	    ;;
 	--import ) shift
-            assert_target_name_valid "${1:-}" || return
+            assert_name_valid "${1:-}" || return
 	    if [[ ! $INSIDE_VBOX ]]; then
 	        echo >&2 "This operation is only valid for SDK in VirtualBox"
                 return 1
@@ -623,29 +1046,7 @@ manage_targets() {
 	    import_target "$@"
 	    ;;
 	--register ) shift
-            local credentials= username= password= reg_shift=
-            credentials=$(get_register_credentials "$@") || return
-            unpack "$credentials" username password reg_shift
-	    shift $reg_shift
-
-            local targets= target= alltargets=
-            if [[ ${1:-} == "--all" ]]; then
-                targets=($(get_targets)) || return
-		alltargets=1
-		shift
-	    else
-                targets=("$@")
-                for target in "${targets[@]}"; do
-                    assert_target_and_setup "$target" || return
-                done
-	    fi
-
-	    # Fail here if --all was not used and no targets were given
-            [[ $targets || $alltargets ]] || { usage; return 1; }
-
-            for target in "${targets[@]}"; do
-                t_register "$target" "$username" "$password" || return
-	    done
+            register_object target "$@"
 	    ;;
 	* )
             echo >&2 "unrecognized option '$1'"
@@ -660,30 +1061,6 @@ manage_targets() {
 
 get_sdk_version() {
     echo "Version not available"
-}
-
-upgrade_sdk() {
-    sudo zypper --quiet --non-interactive refresh -f || return
-    sudo zypper --quiet --non-interactive dup
-}
-
-refresh_sdk() {
-    sudo zypper --quiet --non-interactive refresh -f
-}
-
-register_sdk() {
-    local credentials= username= password=
-    credentials=$(get_register_credentials "$@") || return
-    unpack "$credentials" username password
-
-    local domain=$(sdk-register -d)
-    if [[ $domain != jolla ]]; then
-	echo >&2 "MerSDK: Register not needed (domain: ${domain:-empty})"
-        return
-    fi
-
-    echo >&2 -n "MerSDK: "
-    sudo sdk-register -u "$username" -p "$password"
 }
 
 sdk_status() {
@@ -728,17 +1105,16 @@ manage_sdk() {
 	    sdk_status
 	    ;;
 	--upgradable ) shift
-	    zypper --non-interactive --no-refresh --quiet list-updates
+            object_upgradable sdk "$@"
 	    ;;
 	--upgrade ) shift
-	    upgrade_sdk "$@"
+            upgrade_object sdk "$@"
 	    ;;
 	--refresh )
-	    refresh_sdk
+            refresh_objects sdk "$@"
 	    ;;
 	--register ) shift
-	    # expects --user and --password
-	    register_sdk "$@"
+            register_object sdk "$@"
 	    ;;
 	* )
             echo >&2 "unrecognized option '$1'"
@@ -795,6 +1171,7 @@ if [[ $INSIDE_CHROOT$INSIDE_VBOX != 1 ]]; then
 fi
 
 MER_TARGETS=/srv/mer/targets
+MER_TOOLINGS=/srv/mer/toolings
 HOST_TARGETS=/host_targets
 SBOX2DIR=${HOME}/.scratchbox2
 TARGETS_XML=${HOST_TARGETS}/targets.xml
@@ -825,8 +1202,8 @@ if ! [[ ${1:-} ]]; then
 fi
 
 case $1 in
-    --toolchain ) shift
-	manage_toolchains "$@"
+    --tooling ) shift
+        manage_toolings "$@"
 	;;
     --target ) shift
 	manage_targets "$@"
@@ -839,11 +1216,13 @@ case $1 in
 	;;
     --refresh-all ) shift
         manage_targets --refresh --all || exit
+        manage_toolings --refresh --all || exit
 	manage_sdk --refresh
 	;;
     --register-all ) shift
 	# expects to get --user and --password too
         manage_sdk --register "$@" || exit
+        manage_toolings --register "$@" --all || exit
 	manage_targets --register "$@" --all
 	;;
     --version)

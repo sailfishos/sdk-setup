@@ -130,23 +130,27 @@ fi
 
 if ! [[ $(basename $(dirname $sdkroot)) == "sdks" ]]; then
     echo "Non-standard SDK installation layout - cannot determine location for "
-    echo "build targets. Expected layout is:"
+    echo "SDK targets and toolings. Expected layout is:"
     echo ""
     echo "    <path/to/SDKs...>/"
     echo "    ├── sdks/"
     echo "    │   ├── <sdk_1>/"
     echo "    │   ├── <sdk_2>/"
     echo "    │   └── .../"
-    echo "    └── targets/"
-    echo "        ├── <target_1>/"
-    echo "        ├── <target_2>/"
+    echo "    ├── targets/"
+    echo "    │   ├── <targets_1>/"
+    echo "    │   ├── <targets_2>/"
+    echo "    │   └── .../"
+    echo "    └── toolings/"
+    echo "        ├── <tooling_1>/"
+    echo "        ├── <tooling_2>/"
     echo "        └── .../"
     exit 1
 fi
 
 targetsdir=$(readlink -f ${sdkroot}/../../targets)
 if [[ ! -d ${targetsdir} ]] ; then
-    echo "Build targets location '$targetsdir' does not exist - about to create it."
+    echo "SDK targets location '$targetsdir' does not exist - about to create it."
     read -p "Continue, abort? [c/a] (c)" reply
     if ! [[ $reply =~ ^[cC]?$ ]]; then
         echo "User aborted"
@@ -154,6 +158,18 @@ if [[ ! -d ${targetsdir} ]] ; then
     fi
 
     mkdir "$targetsdir" || exit
+fi
+
+toolingsdir=$(readlink -f ${sdkroot}/../../toolings)
+if [[ ! -d ${toolingsdir} ]] ; then
+    echo "SDK toolings location '$toolingsdir' does not exist - about to create it."
+    read -p "Continue, abort? [c/a] (c)" reply
+    if ! [[ $reply =~ ^[cC]?$ ]]; then
+        echo "User aborted"
+        exit 1
+    fi
+
+    mkdir "$toolingsdir" || exit
 fi
 
 if [[ -z $user ]] ; then
@@ -194,6 +210,10 @@ prepare_mountpoints() {
     echo "Mounting $targetsdir as /srv/mer/targets"
     mkdir -p ${sdkroot}/srv/mer/targets
     mount --rbind ${targetsdir} ${sdkroot}/srv/mer/targets/
+
+    echo "Mounting $toolingsdir as /srv/mer/toolings"
+    mkdir -p ${sdkroot}/srv/mer/toolings
+    mount --rbind ${toolingsdir} ${sdkroot}/srv/mer/toolings/
 
     if [[ $bind_mount_root == "yes" ]] ; then
 	echo "Mounting / as /parentroot"
