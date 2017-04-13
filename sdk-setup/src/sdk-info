@@ -33,7 +33,7 @@ fi
 /usr/bin/ply-image
 
 cat << EOF
-  Welcome to the Mer build machine.
+  Welcome to the Sailfish OS Build Engine.
 
   Use "<host key> + F2" to get a console login prompt.
   On Linux the <host key> is usually <right-ctrl>.
