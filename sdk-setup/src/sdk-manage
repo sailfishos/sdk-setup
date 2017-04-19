@@ -3,9 +3,13 @@
 # This is a helper script for the Mer SDK to manage sb2 target and
 # toolchain installation
 
-usage()
-{
-    cat <<EOF
+set -o nounset
+
+# Make sure normal users can use any dirs we make
+umask 022
+
+usage() {
+    cat >&2 <<EOF
     usage (keep the arguments order):
            $0 --toolchain --list
            $0 --toolchain --install <arch>
@@ -15,11 +19,11 @@ usage()
            $0 --target --upgradable <name>
            $0 --target --install <name> <toolchain> <url>
            $0 --target --remove  <name>
-           $0 --target --refresh [--all | <name> [<name>...]]
+           $0 --target --refresh {--all | <name>...}
            $0 --target --update <name>
            $0 --target --sync <name>
            $0 --target --import <name>
-           $0 --target --register --user <uname> --password <pass> --all | <tname> [<tname>...]
+           $0 --target --register --user <user> --password <password> {--all | <name>...}
 
            $0 --devel --list <target> [<search string>]
            $0 --devel --install <target> <devel package list>
@@ -30,11 +34,11 @@ usage()
            $0 --sdk --upgradable
            $0 --sdk --upgrade
            $0 --sdk --status
-           $0 --sdk --register --user <name> --password <pass>
+           $0 --sdk --register --user <user> --password <password>
 
            $0 --refresh-all
 
-           $0 --register-all --user <username> --password <password>
+           $0 --register-all --user <user> --password <password>
 
            $0 --version
 
@@ -44,13 +48,11 @@ usage()
 
 
 EOF
-    [[ ${1:-} == "--exit" ]] && { exit 1; }
-    return 0
 }
 
 if [[ $EUID -eq 0 ]]; then
     echo >&2 "WARNING: Invoking $0 as root is deprecated."
-    if [[ -n $SUDO_USER ]]; then
+    if [[ -n ${SUDO_USER:-} ]]; then
         exec sudo -i -u $SUDO_USER $0 "$@"
         echo >&2 "sudo as '$SUDO_USER' failed"
         exit 1
@@ -60,12 +62,25 @@ if [[ $EUID -eq 0 ]]; then
     fi
 fi
 
-# From now on, exit if variables not set
-set -u
+################################################################'
+# Common utilities
 
-# Make sure normal users can use any dirs we make
-umask 022
+print_array() {
+    local array=("$@")
+    declare -p array |sed 's/^[^=]*=//'
+}
 
+# Unpack result of `print_array` to variables passed as second and following args
+unpack() {
+    (eval local -a array=$1) 2>/dev/null || return
+    eval local -a array=$1
+    shift
+    local i=0
+    while [[ $# -gt 0 ]]; do
+        eval $1=\${array[i++]}
+        shift
+    done
+}
 
 ################################################################'
 # toolchain
@@ -73,7 +88,7 @@ umask 022
 # Our toolchains are available through patterns-sailfish-sb2-* meta-packages
 
 get_toolchains() {
-    zypper --quiet --no-refresh --non-interactive search patterns-sailfish-sb2-* | \
+    zypper --quiet --no-refresh --non-interactive search "patterns-sailfish-sb2-*" | \
 	grep patterns-sailfish-sb2 |grep -v sb2-common | while IFS='| ' read installed pkg dummy; do
 	echo "${pkg},${installed}"
     done
@@ -81,56 +96,53 @@ get_toolchains() {
 }
 
 ensure_installed() {
-    get_toolchains | egrep -s "^$1,i$" >/dev/null
+    get_toolchains |grep -q -F --line-regexp "$1,i"
 }
 
 ensure_installable() {
-    get_toolchains | egrep -s "^$1,$" >/dev/null
+    get_toolchains |grep -q -F --line-regexp "$1,"
 }
 
 install_toolchain() {
-    pkg=$1
-    if ensure_installable $pkg; then
-	sudo zypper --quiet --non-interactive install -t pattern $pkg
-	return $?
-    else
-	echo >&2 "Toolchain $pkg doesn't exist or is already installed- can not install."
-	exit 2
+    local pkg=$1
+    if ! ensure_installable "$pkg"; then
+        echo >&2 "Toolchain '$pkg' doesn't exist or is already installed - can not install."
+        return 2
     fi
+
+    sudo zypper --quiet --non-interactive install -t pattern "$pkg"
 }
 
 remove_toolchain() {
-    pkg=$1
-    if ensure_installed $pkg; then
-	sudo zypper --quiet --no-refresh --non-interactive remove -t pattern $pkg
-	return $?
-    else
-	echo >&2 "Toolchain $pkg is not installed - can not remove."
-	exit 2
+    local pkg=$1
+    if ! ensure_installed "$pkg"; then
+        echo >&2 "Toolchain '$pkg' is not installed - can not remove."
+        return 2
     fi
+
+    sudo zypper --quiet --no-refresh --non-interactive remove -t pattern "$pkg"
 }
 
 manage_toolchains() {
-    if ! [[ $1 ]]; then
-	usage --exit
+    if ! [[ ${1:-} ]]; then
+        usage
+        return 1
     fi
 
-    case "$1" in
+    case $1 in
 	--list )
 	    get_toolchains
-	    return $?
 	    ;;
 	--install ) shift
 	    install_toolchain "$@"
-	    return $?
 	    ;;
 	--remove ) shift
 	    remove_toolchain "$@"
-	    return $?
 	    ;;
 	* )
-	    echo >&2 "$1 not recognised"
-	    usage --exit
+            echo >&2 "unrecognized option '$1'"
+            usage
+            return 1
 	    ;;
     esac
 }
@@ -141,28 +153,29 @@ manage_toolchains() {
 # Our devel packages are available through zypper as -devel packages
 
 assert_target_and_setup() {
-    assert_target_name_valid "$target"
-    if ! [[ -f $sbox2dir/$target/sb2.config ]]; then
-	echo >&2 "Target $target is not a valid Scratchbox2 target"
-	exit 1
+    local target=$1
+    assert_target_name_valid "$target" || return
+    if ! [[ -f $SBOX2DIR/$target/sb2.config ]]; then
+        echo >&2 "Target '$target' is not a valid Scratchbox2 target"
+        return 1
     fi
 
-    if [[ $(check_target_visible $target) == "no" ]]; then
-	echo >&2 "Target $target is not accessible"
-	exit 1
+    if ! check_target_visible "$target"; then
+        echo >&2 "Target '$target' is not accessible"
+        return 1
     fi
 }
 
 t_zypper() {
-    (
-	sb2 -t $target -m sdk-install -R zypper --quiet "$@"
-    )
+    local target=$1
+    shift
+    sb2 -t "$target" -m sdk-install -R zypper --quiet "$@"
 }
 
 get_develpkgs() {
-    search=${1:-}
+    local target=$1 search=$2
     # do not include sourcepackages to the list (-t package -t pattern)
-    t_zypper --non-interactive --no-refresh search -t package -t pattern -- "$search" 2>&1 | \
+    t_zypper "$target" --non-interactive --no-refresh search -t package -t pattern -- ${search:+"$search"} 2>&1 | \
 	sed '0,/---------/d' | while IFS='| ' read installed pkg dummy; do
 	echo "${pkg},${installed}"
     done
@@ -171,36 +184,34 @@ get_develpkgs() {
 
 manage_develpkgs() {
     if ! [[ {$1:-} ]]; then
-	usage --exit
+        usage
+        return 1
     fi
 
-    case "$1" in
+    case $1 in
 	--list ) shift
-	    target=${1:-}
-	    search=${2:-}
-	    assert_target_and_setup
-	    get_develpkgs $search
-	    return $?
+            local target=${1:-} search=${2:-}
+            assert_target_and_setup "$target" || return
+            get_develpkgs "$target" "$search"
 	    ;;
 	--install ) shift
-	    target=${1:-}
-	    assert_target_and_setup
-	    shift
-	    t_zypper --non-interactive --no-refresh install "$@"
-	    [[ $INSIDE_VBOX ]] && synchronise_target $target
-	    return $?
+            local target=${1:-}
+            assert_target_and_setup "$target" || return
+            shift
+            t_zypper "$target" --non-interactive --no-refresh install "$@" || return
+            [[ $INSIDE_VBOX ]] && synchronise_target "$target"
 	    ;;
 	--remove ) shift
-	    target=${1:-}
-	    assert_target_and_setup
-	    shift
-	    t_zypper --non-interactive --no-refresh remove "$@"
-	    [[ $INSIDE_VBOX ]] && synchronise_target $target
-	    return $?
+            local target=${1:-}
+            assert_target_and_setup "$target" || return
+            shift
+            t_zypper "$target" --non-interactive --no-refresh remove "$@" || return
+            [[ $INSIDE_VBOX ]] && synchronise_target "$target"
 	    ;;
 	* )
-	    echo >&2 "$1 not recognised"
-	    usage --exit
+            echo >&2 "unrecognized option '$1'"
+            usage
+            return 1
 	    ;;
     esac
 }
@@ -209,56 +220,48 @@ manage_develpkgs() {
 # Targets
 
 t_register() {
-    local domain
-    local tgt
-    [[ -z ${1:-} ]] && return 0
+    local target=$1 username=$2 password=$3
 
-    tgt=$1
-    domain=$(sb2 -t $tgt sdk-register -d)
-    if [[ z"$domain" == zjolla ]]; then
-	echo >&2 -n "$tgt: "
-	sb2 -t $tgt -m sdk-install -R sdk-register -u $reg_username -p $reg_password
-    else
-	echo >&2 "$tgt: Register not needed (domain: ${domain:-empty})"
+    local domain=
+    domain=$(sb2 -t "$target" sdk-register -d) || return
+    if [[ $domain != jolla ]]; then
+        echo >&2 "Registration not needed for target '$target' (domain: ${domain:-empty})"
+        return 0
     fi
+
+    echo >&2 -n "$target: "
+    sb2 -t "$target" -m sdk-install -R sdk-register -u "$username" -p "$password"
 }
 
-check_target_visible() {
+check_target_visible() (
+    local target=$1
     set +u
-    local tgt=$1
-    . $sbox2dir/$tgt/sb2.config
-    if [ ! -d "$SBOX_TARGET_ROOT" ]; then
-	echo "no"
-	return
-    fi
-    set -u
-    echo "yes"
-}
+    . $SBOX2DIR/$target/sb2.config
+    test -d "$SBOX_TARGET_ROOT"
+)
 
 get_targets() {
     echo $(sb2-config -f 2>&1)
 }
 
 assert_target_name_valid() {
-    if [[ $# -lt 1 ]] || [[ -z $1 ]]; then
+    if [[ ! ${1:-} ]]; then
       echo >&2 "Target name missing."
-      exit 1
+      return 1
     fi
 
-    pat='^[-[:alnum:]_.]*$'
-    if [[ $1 ]] && [[ $1 =~ $pat ]] ; then
-      return
+    if ! [[ $1 =~ ^[-[:alnum:]_.]*$ ]]; then
+        echo >&2 "Target name '$1' is not a valid Scratchbox2 target name."
+        return 1
     fi
-
-    echo >&2 "Target name '$1' is not a valid Scratchbox2 target name."
-    exit 1
 }
 
 synchronise_target() {
+    local target=$1
     # This is now a minimal set of files to sync
-    if ! [ -d $mer_targets/$1 ]; then
-	echo >&2 "No target called $1"
-	return
+    if ! [[ -d $MER_TARGETS/$target ]]; then
+        echo >&2 "No target called '$target'"
+        return 1
     fi
     echo >&2 "Synchronising target to host"
     # The filter=". -" means to read filters from stdin (the <<EOF)
@@ -266,7 +269,7 @@ synchronise_target() {
           --delete --ignore-errors \
 	  --prune-empty-dirs  --copy-links \
 	  --filter=". -" \
-	  $mer_targets/$1/. $host_targets/$1/. <<EOF
+          "$MER_TARGETS/$target/." "$HOST_TARGETS/$target/." <<EOF || return
 # Ensure all dirs are copied (--prune-empty-dirs will clean up)
 + */
 # We want this for QtCreator to determine the architecture
@@ -285,53 +288,53 @@ synchronise_target() {
 - *
 EOF
     # We need /usr/bin/stopCreatorSegfaulting for Creator's happiness
-    mkdir -p $host_targets/$1/usr/bin
-    touch $host_targets/$1/usr/bin/stopCreatorSegfaulting
+    mkdir -p "$HOST_TARGETS/$target/usr/bin" || return
+    touch "$HOST_TARGETS/$target/usr/bin/stopCreatorSegfaulting" || return
     # For Qt5, QtCreator needs to see this dir or it thinks Qt version is not properly installed
-    mkdir -p $host_targets/$1/usr/lib/qt5/bin/
+    mkdir -p "$HOST_TARGETS/$target/usr/lib/qt5/bin/" || return
 
     echo >&2 "Sync completed"
 }
 
 import_target() {
+    local target=$1
     # This could be minimised in the future if sf is not fixed
     # Ignore errors as we sometimes have dangling symlinks and
     # still want to keep clean
-    if ! [ -d $host_targets/$1 ]; then
-	echo >&2 "No host target called $1"
+    if ! [[ -d $HOST_TARGETS/$target ]]; then
+        echo >&2 "No host target called '$target'"
+        return 1
     fi
     rsync -a --no-devices --no-specials \
           --delete --ignore-errors \
-	  $host_targets/$1/ $mer_targets/$1
+          "$HOST_TARGETS/$target/" "$MER_TARGETS/$target"
 }
 
 # create a unique device-id for the target
-target_uuidgen()
-{
+target_uuidgen() {
     local mytarget=$1
 
-    if [[ -z "$mytarget" ]]; then
+    if [[ -z $mytarget ]]; then
 	echo >&2 "NOTICE: target_uuidgen: empty target name given"
 	return 0
     fi
 
-    echo >&2 "target_uuidgen: generating a unique id for $mytarget target"
-    sb2 -t $mytarget -m sdk-install -R rm -f /var/lib/dbus/machine-id
-    sb2 -t $mytarget -m sdk-install -R dbus-uuidgen --ensure
+    echo >&2 "target_uuidgen: generating a unique id for target '$mytarget'"
+    sb2 -t "$mytarget" -m sdk-install -R rm -f /var/lib/dbus/machine-id || return
+    sb2 -t "$mytarget" -m sdk-install -R dbus-uuidgen --ensure
 }
 
 # add the MerSDK hostname to target's /etc/hosts
-amend_target_hosts()
-{
+amend_target_hosts() {
     local mytarget=$1
     local myhostname=$(hostname)
 
-    if [[ -z "$mytarget" ]]; then
+    if [[ -z $mytarget ]]; then
 	echo >&2 "NOTICE: amend_target_hosts: empty target name given"
 	return 0
     fi
 
-    sb2 -t $mytarget -m sdk-install -R sed -i "s,\(127.0.0.1.*\),\1 $myhostname," /etc/hosts
+    sb2 -t "$mytarget" -m sdk-install -R sed -i "s,\(127.0.0.1.*\),\1 $myhostname," /etc/hosts
 }
 
 # handler for failed or canceled target installations
@@ -342,70 +345,70 @@ download_cleanup()
 
     [[ -f "$orig_downloaded_file" ]] && rm -f "$orig_downloaded_file"
     [[ $target_downloaded -eq 1 ]] && [[ -f "$local_file" ]] && rm -f "$local_file"
-    [[ -d "$mer_targets/$target" ]] && rm -rf "$mer_targets/$target"
+    [[ -d "$MER_TARGETS/$target" ]] && rm -rf "$MER_TARGETS/$target"
 }
 
 # Download and install a rootfs
 install_target() {
-    skip_toolchain_check=0
-    if [[ "$1" == "--jfdi" ]]; then
+    local skip_toolchain_check=0
+    if [[ $1 == "--jfdi" ]]; then
 	# Sometimes you want to install without checking the toolchain - jfdi
-	skip_toolchain_check=1; shift;
+        skip_toolchain_check=1
+        shift
     fi
-    target=$1
-    toolchain=$2
-    url=$3 #FIXME: check url validity
+
+    local target=$1 toolchain=$2 url=$3
+
+    #FIXME: check url validity
 
     if [[ $(get_targets) =~ $(echo "\<$target\>") ]]; then
-        echo >&2 "Target already exists: $target"
-        exit 1
+        echo >&2 "Target already exists '$target'"
+        return 1
     fi
 
     if ! [[ $skip_toolchain_check ]]; then
 	echo >&2 "Making sure the right toolchain exists"
-	if ! ensure_installed $toolchain; then
-	    echo >&2 "Installing required toolchain: $toolchain"
-	    install_toolchain $toolchain
-	fi
+        if ! ensure_installed "$toolchain"; then
+            echo >&2 "Installing required toolchain '$toolchain'"
+            install_toolchain "$toolchain" || return
+        fi
     fi
 
     # set cleanup handler for downloaded rootstraps
     trap download_cleanup EXIT
 
-    # avoid unbound variable in cleanup in case of a local file
-    orig_downloaded_file=
-
     # make sure the target dir exists
-    if [[ ! -d $mer_targets ]]; then
-        sudo mkdir -p $(dirname $mer_targets)
-        sudo install -d -o $(id -u) -g $(id -g) $mer_targets
+    if [[ ! -d $MER_TARGETS ]]; then
+        sudo mkdir -p "$(dirname "$MER_TARGETS")" || return
+        sudo install -d -o $(id -u) -g $(id -g) "$MER_TARGETS" || return
     fi
 
-    local_file=""
-    target_downloaded=0
+    local orig_downloaded_file=
+    local local_file=
+    local target_downloaded=0
 
     if [[ $url != file\:\/\/\/* ]] && [[ $url != http\:\/\/* ]] && [[ $url != https\:\/\/* ]]; then
-	local_file=$(readlink -f $url)
+        local_file=$(readlink -f "$url") || return
     elif [[ $url == file\:\/\/\/* ]]; then
-	local_file=${url//file\:\/\//}
+        local_file=${url//file\:\/\//}
     else
-	pushd $mer_targets >/dev/null
-	local_file=$mer_targets/$target.tar.bz2
-	orig_downloaded_file=$(echo $url | rev | cut -f 1 -d / | rev)
-	local md5file="$orig_downloaded_file.md5sum"
-	local download_failed=0
+        pushd "$MER_TARGETS" >/dev/null
+        local_file=$MER_TARGETS/$target.tar.bz2
+        orig_downloaded_file=${url##*/}
+        local md5file="$orig_downloaded_file.md5sum"
+        local download_failed=0
 
 	echo >&2 "Downloading '$orig_downloaded_file'"
 	curl "$url" -o "$orig_downloaded_file" 2>&1
 	curl_status=$?
 
-	if [ $curl_status -eq 0 ] ; then
+        if [[ $curl_status -eq 0 ]] ; then
             # check if md5sum file exists
 	    if curl --output /dev/null --silent --head --fail "$url.md5sum"; then
                 # md5sum exists, let's check it
 		curl --silent "$url.md5sum" > "$md5file"
 		if ! md5sum --status -c "$md5file"; then
-		    echo >&2 "ERROR: md5sum check failed for file $orig_downloaded_file!"
+                    echo >&2 "ERROR: md5sum check failed for file '$orig_downloaded_file'!"
 		    download_failed=1
 		else
 		    echo >&2 "INFO: md5sum matches - download ok"
@@ -416,12 +419,14 @@ install_target() {
 	    fi
 	fi
 
-	[[ -f $orig_downloaded_file ]] && mv -f $orig_downloaded_file $local_file
+        if [[ -f $orig_downloaded_file ]]; then
+            mv -f "$orig_downloaded_file" "$local_file" || return
+        fi
 
-	if [[ $download_failed -ne 0 ]] || [[ $curl_status -ne 0 ]] ||
-           [[ ! -f $local_file ]] || [[ $(stat -c %s "$local_file") -lt 10000 ]]; then
+        if [[ $download_failed -ne 0 || $curl_status -ne 0 ||
+            ! -f $local_file || $(stat -c %s "$local_file") -lt 10000 ]]; then
 	    echo >&2 "Download failed!"
-	    rm -f $local_file
+            rm -f "$local_file"
 	    popd >/dev/null
 	    return 3
 	fi
@@ -431,16 +436,17 @@ install_target() {
 
     # Virtualbox shared folders don't work too well at the moment
     # Unpack targets to a private area within the VM
-    sudo rm -rf $mer_targets/$target
-    sudo mkdir -p $mer_targets/$target
-    cd $mer_targets/$target
+    sudo rm -rf "$MER_TARGETS/$target" || return
+    sudo mkdir -p "$MER_TARGETS/$target" || return
 
-    # only create host_targets dirs if inside the VM
-    [[ $INSIDE_VBOX ]] && mkdir -p $host_targets/$target
+    # only create HOST_TARGETS dirs if inside the VM
+    if [[ $INSIDE_VBOX ]]; then
+        mkdir -p "$HOST_TARGETS/$target" || return
+    fi
 
     echo >&2
     echo >&2 "Unpacking target ..."
-    sudo tar xf "$local_file"
+    sudo tar -C "$MER_TARGETS/$target" -xf "$local_file"
     local tar_retcode=$?
 
     if [[ ! -z $local_file ]]; then
@@ -448,174 +454,184 @@ install_target() {
 	    rm -f "$local_file"
 	fi
     else
-	rm -f "$mer_targets/$target.tar.bz2"
+        rm -f "$MER_TARGETS/$target.tar.bz2"
     fi
 
-    if [ $tar_retcode -ne 0 ]; then
-	if [ "$( df --sync / | tr -s ' ' | tail -n 1 | cut -d ' ' -f 4 )" -lt 10000 ]; then
+    if [[ $tar_retcode -ne 0 ]]; then
+        if [[ $( df --sync "$MER_TARGETS" | tr -s ' ' | tail -n 1 | cut -d ' ' -f 4 ) -lt 10000 ]]; then
 	    echo >&2 "Not enough disk space to unpack target image"
 	else
 	    echo >&2 "Could not unpack target image"
 	fi
-	sudo rm -rf $mer_targets/$target
+        sudo rm -rf "$MER_TARGETS/$target"
 	return 4
     fi
 
     # reset the cleanup trap
     trap - EXIT
 
-    sudo chown -R $(id -u):$(id -g) $mer_targets/$target
+    sudo chown -R $(id -u):$(id -g) "$MER_TARGETS/$target" || return
 
     if [[ $INSIDE_VBOX ]]; then
-	synchronise_target $target
-	[ $? -ne 0 ] && echo >&2 "Rsync did not exactly run as intended, expect problems."
+        synchronise_target "$target"
+        [[ $? -ne 0 ]] && echo >&2 "Rsync did not exactly run as intended, expect problems."
     fi
 
     echo >&2 "Setting up SB2"
 
+    local transparency= compiler= toolsdir=
     case $toolchain in
 	*-arm*)
-	    architecture=$(echo $toolchain | tr '-' '\n' | tail -n 1)
-	    transparency="-c /usr/bin/qemu-arm-dynamic"
+            local architecture=${toolchain##*-}
+            transparency="/usr/bin/qemu-arm-dynamic"
 	    compiler="/opt/cross/bin/$architecture-meego-linux-gnueabi-gcc"
-	    toolsdir="-t /"
+            toolsdir="/"
 	    ;;
 	*-mipsel)
-	    transparency="-c /usr/bin/qemu-mipsel-dynamic"
+            transparency="/usr/bin/qemu-mipsel-dynamic"
 	    compiler="/opt/cross/bin/mipsel-meego-linux-gnu-gcc"
-	    toolsdir="-t /"
+            toolsdir="/"
 	    ;;
 	*-i486*)
-	    transparency=""
 	    compiler="/opt/cross/bin/i486-meego-linux-gnu-gcc"
-	    toolsdir=""
 	    ;;
     esac
 
     if [[ $INSIDE_CHROOT ]]; then
-	getent passwd $(id -u) |sudo tee -a etc/passwd >/dev/null
-	getent group $(id -u) |sudo tee -a etc/group >/dev/null
+        getent passwd $(id -u) |sudo tee -a "$MER_TARGETS/$target/etc/passwd" >/dev/null
+        getent group $(id -u) |sudo tee -a "$MER_TARGETS/$target/etc/group" >/dev/null
     fi
 
-    sb2-init -L "--sysroot=/" -C "--sysroot=/" $transparency -m sdk-build -n -N $toolsdir $target $compiler
+    (
+        cd "$MER_TARGETS/$target" && sb2-init \
+            -L "--sysroot=/" -C "--sysroot=/" ${transparency:+-c "$transparency"} \
+            -m sdk-build -n -N ${toolsdir:+-t "$toolsdir"} "$target" "$compiler"
+    ) || return
 
     # make sure the created target gets a unique id
-    target_uuidgen $target
+    target_uuidgen "$target" || return
 
     # fix target's /etc/hosts
-    amend_target_hosts $target
+    amend_target_hosts "$target" || return
 
-    assert_target_and_setup
+    assert_target_and_setup "$target" || return
 
     if [[ $INSIDE_VBOX ]]; then
 	echo >&2 "Notifying Qt Creator of new target"
-	updateQtCreatorTargets --name $target --target-xml $target_xml
+        updateQtCreatorTargets --name "$target" --target-xml "$TARGETS_XML" || return
     fi
 
-    echo >&2 "Target $target now setup"
+    echo >&2 "Target '$target' now setup"
 }
 
 remove_target() {
-    target=$1
-    if [ -d $sbox2dir/$target ]; then
-	rm -r $sbox2dir/$target
-	sudo rm -rf $mer_targets/$target
+    local target=$1
+    if [[ -d $SBOX2DIR/$target ]]; then
+        rm -r "$SBOX2DIR/$target"
+        sudo rm -rf "$MER_TARGETS/$target"
 	if [[ $INSIDE_VBOX ]]; then
-	    rm -rf $host_targets/$target
+            rm -rf "$HOST_TARGETS/$target"
 	    echo >&2 "Notifying Qt Creator of removed target"
 	fi
     else
-	echo >&2 "Note: target $target was not seen by sb2"
+        echo >&2 "Note: target '$target' was not seen by sb2"
     fi
 
     if [[ $INSIDE_VBOX ]]; then
         # Notify Qt Creator always when we're in the VM to keep the
         # target information in sync
-        updateQtCreatorTargets --delete --name $target --target-xml $target_xml
+        updateQtCreatorTargets --delete --name "$target" --target-xml "$TARGETS_XML" || return
     fi
 }
 
-
 manage_targets() {
     if ! [[ ${1:-} ]]; then
-	usage --exit
+        usage
+        return 1
     fi
 
-    case "${1:-}" in
+    case $1 in
 	--list )
 	    get_targets
 	    ;;
 	--upgradable ) shift
-	    target="${1:-}"
-	    assert_target_and_setup
-	    t_zypper --non-interactive --no-refresh --quiet list-updates
+            local target=${1:-}
+            assert_target_and_setup "$target" || return
+            t_zypper "$target" --non-interactive --no-refresh --quiet list-updates
 	    ;;
 	--install ) shift
-	    assert_target_name_valid "${1:-}"
-	    install_target "$@"
+            assert_target_name_valid "${1:-}" || return
+            install_target "$@"
 	    ;;
 	--remove ) shift
-	    assert_target_name_valid "${1:-}"
+            assert_target_name_valid "${1:-}" || return
 	    remove_target "$@"
 	    ;;
 	--refresh ) shift
-	    if [[ "${1:-}" == "--all" ]]; then
-		local targets=$(get_targets)
+            local targets=
+            if [[ ${1:-} == "--all" ]]; then
+                targets=($(get_targets)) || return
 	    else
-		local targets="$@"
+                targets=("$@")
 	    fi
-	    for target in $targets; do
-		assert_target_and_setup
-		t_zypper --non-interactive refresh
+            local target=
+            for target in "${targets[@]}"; do
+                assert_target_and_setup || return
+                t_zypper "$target" --non-interactive refresh || return
 	    done
 	    ;;
 	--update ) shift
-	    target="${1:-}"
-	    assert_target_and_setup
-	    t_zypper --non-interactive dup
+            local target=${1:-}
+            assert_target_and_setup || return
+            t_zypper "$target" --non-interactive dup
 	    ;;
 	--sync ) shift
-	    target="${1:-}"
-	    assert_target_name_valid "$target"
+            local target=${1:-}
+            assert_target_name_valid "$target" || return
 	    if [[ ! $INSIDE_VBOX ]]; then
 	        echo >&2 "This operation is only valid for SDK in VirtualBox"
-	        exit 1
+                return 1
 	    fi
-	    synchronise_target "$@"
-	    updateQtCreatorTargets --name $target --target-xml $target_xml
+            synchronise_target "$@" || return
+            updateQtCreatorTargets --name "$target" --target-xml "$TARGETS_XML"
 	    ;;
 	--import ) shift
-	    assert_target_name_valid "${1:-}"
+            assert_target_name_valid "${1:-}" || return
 	    if [[ ! $INSIDE_VBOX ]]; then
 	        echo >&2 "This operation is only valid for SDK in VirtualBox"
-	        exit 1
+                return 1
 	    fi
 	    import_target "$@"
 	    ;;
 	--register ) shift
-	    local alltargets
-	    get_register_credentials "$@"
+            local credentials= username= password= reg_shift=
+            credentials=$(get_register_credentials "$@") || return
+            unpack "$credentials" username password reg_shift
 	    shift $reg_shift
 
-	    if [[ "${1:-}" == "--all" ]]; then
-		local targets=$(get_targets)
+            local targets= target= alltargets=
+            if [[ ${1:-} == "--all" ]]; then
+                targets=($(get_targets)) || return
 		alltargets=1
 		shift
 	    else
-		local targets="$@"
+                targets=("$@")
+                for target in "${targets[@]}"; do
+                    assert_target_and_setup "$target" || return
+                done
 	    fi
 
 	    # Fail here if --all was not used and no targets were given
-	    [[ -z "$targets" ]] && [[ -z "$alltargets" ]] && usage --exit
+            [[ $targets || $alltargets ]] || { usage; return 1; }
 
-	    for target in $targets; do
-		assert_target_and_setup
-		t_register $target
+            for target in "${targets[@]}"; do
+                t_register "$target" "$username" "$password" || return
 	    done
 	    ;;
 	* )
-	    echo >&2 "$1 not recognised"
-	    usage --exit
+            echo >&2 "unrecognized option '$1'"
+            usage
+            return 1
 	    ;;
     esac
 }
@@ -628,7 +644,7 @@ get_sdk_version() {
 }
 
 upgrade_sdk() {
-    sudo zypper --quiet --non-interactive refresh -f
+    sudo zypper --quiet --non-interactive refresh -f || return
     sudo zypper --quiet --non-interactive dup
 }
 
@@ -637,51 +653,55 @@ refresh_sdk() {
 }
 
 register_sdk() {
-    local domain
-    get_register_credentials "$@"
-    domain=$(sdk-register -d)
-    if [[ z"$domain" == zjolla ]]; then
-	echo >&2 -n "MerSDK: "
-	sdk-register -u ${reg_username:-} -p ${reg_password:-}
-    else
+    local credentials= username= password=
+    credentials=$(get_register_credentials "$@") || return
+    unpack "$credentials" username password
+
+    local domain=$(sdk-register -d)
+    if [[ $domain != jolla ]]; then
 	echo >&2 "MerSDK: Register not needed (domain: ${domain:-empty})"
+        return
     fi
+
+    echo >&2 -n "MerSDK: "
+    sdk-register -u "$username" -p "$password"
 }
 
 sdk_status() {
-    ERR=0
-    sdk_vbox_status || ERR=1
-    exit $ERR
+    local err=0
+    sdk_vbox_status || err=1
+    return $err
 }
 
 sdk_vbox_status() {
     [[ $INSIDE_VBOX ]] || return 0
+    local err=0
 
-    systemctl --failed
-    ERR=$?
+    systemctl --failed || err=1
 
     if ! sudo VBoxControl -nologo sharedfolder list | grep -q ' home$'; then
 	echo "'home' shared folder is missing"
-	ERR=1
+        err=1
     fi
     if ! sudo VBoxControl -nologo sharedfolder list | grep -q ' config$'; then
 	echo "'config' shared folder is missing"
-	ERR=1
+        err=1
     fi
     if ! sudo VBoxControl -nologo sharedfolder list | grep -q ' targets$'; then
 	echo "'targets' shared folder is missing"
-	ERR=1
+        err=1
     fi
 
-    return $ERR
+    return $err
 }
 
 manage_sdk() {
     if ! [[ ${1:-} ]]; then
-	usage --exit
+        usage
+        return 1
     fi
 
-    case "$1" in
+    case $1 in
 	--version )
 	    get_sdk_version
 	    ;;
@@ -702,45 +722,46 @@ manage_sdk() {
 	    register_sdk "$@"
 	    ;;
 	* )
-	    echo >&2 "$1 not recognised"
-	    usage --exit
+            echo >&2 "unrecognized option '$1'"
+            usage
+            return 1
 	    ;;
     esac
 }
-
 
 ################################################################
 # utility
 
 get_register_credentials() {
-    set +u
-    reg_username=
-    reg_password=
-    reg_shift=0
-    while [[ "${1:-}" ]]; do
-	case "$1" in
+    local username= password= shift=0
+
+    while [[ ${1:-} ]]; do
+        case $1 in
 	    --user )
-		[ -z "$2" ] && usage --exit
-		reg_username="$2"
-		(( reg_shift=reg_shift+2 ))
-		shift 2
+                [[ -n ${2:-} ]] || { usage; return 1; }
+                username=$2
+                let shift+=2
+                shift 2
 		;;
 	    --password )
-		[ -z "$2" ] && usage --exit
-		reg_password="$2"
-		(( reg_shift=reg_shift+2 ))
-		shift 2
+                [[ -n ${2:-} ]] || { usage; return 1; }
+                password=$2
+                let shift+=2
+                shift 2
 		;;
 	    *)
 		break
 		;;
 	esac
     done
-    if [ -z "$reg_username" ] || [ -z "$reg_password" ]; then
-	usage --exit
+
+    if [[ -z $username || -z $password ]]; then
+        echo >&2 "Missing --user and/or --password option"
+        usage
+        return 1
     fi
 
-    set -u
+    print_array "$username" "$password" "$shift"
 }
 
 ################
@@ -754,19 +775,37 @@ if [[ $INSIDE_CHROOT$INSIDE_VBOX != 1 ]]; then
     exit 1
 fi
 
-mer_targets=/srv/mer/targets
-host_targets=/host_targets
-sbox2dir=${HOME}/.scratchbox2
-target_xml=${host_targets}/targets.xml
+MER_TARGETS=/srv/mer/targets
+HOST_TARGETS=/host_targets
+SBOX2DIR=${HOME}/.scratchbox2
+TARGETS_XML=${HOST_TARGETS}/targets.xml
 
 ################################################################
 # Main
 
-if ! [[ ${1:-} ]]; then
-    usage --exit
+if [[ ${SDK_MANAGE_DEBUG:-} ]]; then
+    sdk_manage_global_vars=
+    sdk_manage_global_vars=$(compgen -v)
+    check_leaked_local_vars() {
+        local current=$(compgen -v)
+        local ignored=(-e 'FUNCNAME' -e 'BASH_.*')
+        current=$(grep -v --line-regexp "${ignored[@]}" <<<"$current")
+        local leaked=$(join -v 2 <(echo "$sdk_manage_global_vars") <(echo "$current"))
+        if [[ $leaked ]]; then
+            echo >&2 "DEBUG: These variables should be declared local to the functions they originated from: $leaked"
+        else
+            echo >&2 "DEBUG: No local variable leaked"
+        fi
+    }
+    trap check_leaked_local_vars EXIT
 fi
 
-case "$1" in
+if ! [[ ${1:-} ]]; then
+    usage
+    exit 1
+fi
+
+case $1 in
     --toolchain ) shift
 	manage_toolchains "$@"
 	;;
@@ -780,20 +819,25 @@ case "$1" in
 	manage_sdk "$@"
 	;;
     --refresh-all ) shift
-	manage_targets --refresh --all
+        manage_targets --refresh --all || exit
 	manage_sdk --refresh
 	;;
     --register-all ) shift
 	# expects to get --user and --password too
-	manage_sdk --register "$@"
+        manage_sdk --register "$@" || exit
 	manage_targets --register "$@" --all
 	;;
     --version)
 	echo "$0, version VERSION_FROM_SPEC"
 	exit 0
 	;;
+    -h|--help)
+        usage 2>&1
+        exit 0
+        ;;
     * )
-	echo >&2 "$1 not recognised"
-	usage --exit
+        echo >&2 "unrecognized option '$1'"
+        usage
+        exit 1
 	;;
 esac
