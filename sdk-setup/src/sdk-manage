@@ -82,6 +82,81 @@ unpack() {
     done
 }
 
+# Downloads file at ${url} into ${tmp_dir} using ${local_file_hint} as file name, unless ${url}
+# points to a local file already, in which case the file is to be used directly.
+#
+# On success prints array with following items:
+#  - local file path
+#  - non-empty if the file was actually downloaded
+#
+# Returns non-zero on failure.
+download() {
+    local url=$1 tmp_dir=$2 local_file_hint=$3
+
+    local local_file= downloaded=
+
+    url=${url#file://}
+
+    if ! [[ $url =~ ^(http|ftp)s?:// ]]; then
+        local_file=$(readlink -f "$url") || return
+        print_array "$local_file" "$downloaded"
+        return
+    fi
+
+    local_file=$tmp_dir/$local_file_hint
+    local orig_downloaded_file=$tmp_dir/${url##*/}
+    local md5file="$orig_downloaded_file.md5sum"
+    local md5sum_failed=
+
+    local suceeded=
+    download_cleanup() (
+        trap 'echo cleaning up...' INT TERM HUP
+        rm -f "$md5file"
+        if [[ ! $succeeded ]]; then
+            rm -f "$orig_downloaded_file"
+            rm -f "$local_file"
+        fi
+    )
+    trap 'download_cleanup; trap - RETURN' RETURN
+    trap 'return 1' INT TERM HUP
+
+    echo >&2 "Downloading '${url##*/}'"
+    curl "$url" -o "$orig_downloaded_file"
+    curl_status=$?
+
+    if [[ $curl_status -eq 0 ]] ; then
+        # check if md5sum file exists
+        if curl --output /dev/null --silent --head --fail "$url.md5sum"; then
+            # md5sum exists, let's check it
+            curl --silent "$url.md5sum" > "$md5file"
+            if ! (cd "$tmp_dir" && md5sum --status -c "$md5file"); then
+                echo >&2 "ERROR: md5sum check failed for file '$orig_downloaded_file'!"
+                md5sum_failed=1
+            else
+                echo >&2 "INFO: md5sum matches - download ok"
+            fi
+        else
+            echo >&2 "WARNING: No md5sum file found - can not verify file integrity."
+        fi
+    fi
+
+    if [[ $curl_status -ne 0 || ! -f $orig_downloaded_file || $md5sum_failed ||
+        $(stat -c %s "$orig_downloaded_file") -lt 10000 ]]; then
+        echo >&2 "Download failed!"
+        return 1
+    fi
+
+    if ! [[ $orig_downloaded_file -ef $local_file ]]; then
+        mv -f "$orig_downloaded_file" "$local_file" || return
+    fi
+
+    downloaded=1
+
+    print_array "$local_file" "$downloaded"
+
+    succeeded=1
+}
+
 ################################################################'
 # toolchain
 
@@ -337,17 +412,6 @@ amend_target_hosts() {
     sb2 -t "$mytarget" -m sdk-install -R sed -i "s,\(127.0.0.1.*\),\1 $myhostname," /etc/hosts
 }
 
-# handler for failed or canceled target installations
-download_cleanup()
-{
-    # reset the handler
-    trap - EXIT
-
-    [[ -f "$orig_downloaded_file" ]] && rm -f "$orig_downloaded_file"
-    [[ $target_downloaded -eq 1 ]] && [[ -f "$local_file" ]] && rm -f "$local_file"
-    [[ -d "$MER_TARGETS/$target" ]] && rm -rf "$MER_TARGETS/$target"
-}
-
 # Download and install a rootfs
 install_target() {
     local skip_toolchain_check=0
@@ -358,8 +422,6 @@ install_target() {
     fi
 
     local target=$1 toolchain=$2 url=$3
-
-    #FIXME: check url validity
 
     if [[ $(get_targets) =~ $(echo "\<$target\>") ]]; then
         echo >&2 "Target already exists '$target'"
@@ -374,65 +436,36 @@ install_target() {
         fi
     fi
 
-    # set cleanup handler for downloaded rootstraps
-    trap download_cleanup EXIT
-
     # make sure the target dir exists
     if [[ ! -d $MER_TARGETS ]]; then
         sudo mkdir -p "$(dirname "$MER_TARGETS")" || return
         sudo install -d -o $(id -u) -g $(id -g) "$MER_TARGETS" || return
     fi
 
-    local orig_downloaded_file=
-    local local_file=
-    local target_downloaded=0
+    local download_result= local_file= downloaded=
 
-    if [[ $url != file\:\/\/\/* ]] && [[ $url != http\:\/\/* ]] && [[ $url != https\:\/\/* ]]; then
-        local_file=$(readlink -f "$url") || return
-    elif [[ $url == file\:\/\/\/* ]]; then
-        local_file=${url//file\:\/\//}
-    else
-        pushd "$MER_TARGETS" >/dev/null
-        local_file=$MER_TARGETS/$target.tar.bz2
-        orig_downloaded_file=${url##*/}
-        local md5file="$orig_downloaded_file.md5sum"
-        local download_failed=0
-
-	echo >&2 "Downloading '$orig_downloaded_file'"
-	curl "$url" -o "$orig_downloaded_file" 2>&1
-	curl_status=$?
-
-        if [[ $curl_status -eq 0 ]] ; then
-            # check if md5sum file exists
-	    if curl --output /dev/null --silent --head --fail "$url.md5sum"; then
-                # md5sum exists, let's check it
-		curl --silent "$url.md5sum" > "$md5file"
-		if ! md5sum --status -c "$md5file"; then
-                    echo >&2 "ERROR: md5sum check failed for file '$orig_downloaded_file'!"
-		    download_failed=1
-		else
-		    echo >&2 "INFO: md5sum matches - download ok"
-		fi
-		rm -f "$md5file"
-	    else
-		echo >&2 "WARNING: No md5sum file found - can not verify file integrity."
-	    fi
-	fi
-
-        if [[ -f $orig_downloaded_file ]]; then
-            mv -f "$orig_downloaded_file" "$local_file" || return
+    local succeeded=
+    install_target_cleanup() (
+        trap 'echo cleaning up...' INT TERM HUP
+        if [[ $download_result ]]; then
+            local local_file= downloaded=
+            if unpack "$download_result" local_file downloaded && [[ $downloaded ]]; then
+                rm -f "$local_file"
+            fi
         fi
+        if [[ ! $succeeded ]]; then
+            rm -rf "$SBOX2DIR/$target"
+            sudo rm -rf "$MER_TARGETS/$target"
+            if [[ $INSIDE_VBOX ]]; then
+                rm -rf "$HOST_TARGETS/$target"
+            fi
+        fi
+    )
+    trap 'install_target_cleanup; trap - RETURN' RETURN
+    trap 'return 1' INT TERM HUP
 
-        if [[ $download_failed -ne 0 || $curl_status -ne 0 ||
-            ! -f $local_file || $(stat -c %s "$local_file") -lt 10000 ]]; then
-	    echo >&2 "Download failed!"
-            rm -f "$local_file"
-	    popd >/dev/null
-	    return 3
-	fi
-	popd >/dev/null
-	target_downloaded=1
-    fi
+    download_result=$(download "$url" "$MER_TARGETS" "$target.tar.bz2") || return
+    unpack "$download_result" local_file downloaded
 
     # Virtualbox shared folders don't work too well at the moment
     # Unpack targets to a private area within the VM
@@ -446,29 +479,14 @@ install_target() {
 
     echo >&2
     echo >&2 "Unpacking target ..."
-    sudo tar -C "$MER_TARGETS/$target" -xf "$local_file"
-    local tar_retcode=$?
-
-    if [[ ! -z $local_file ]]; then
-	if [[ $target_downloaded -eq 1 ]]; then
-	    rm -f "$local_file"
-	fi
-    else
-        rm -f "$MER_TARGETS/$target.tar.bz2"
-    fi
-
-    if [[ $tar_retcode -ne 0 ]]; then
+    if ! sudo tar -C "$MER_TARGETS/$target" -xf "$local_file"; then
         if [[ $( df --sync "$MER_TARGETS" | tr -s ' ' | tail -n 1 | cut -d ' ' -f 4 ) -lt 10000 ]]; then
 	    echo >&2 "Not enough disk space to unpack target image"
 	else
 	    echo >&2 "Could not unpack target image"
 	fi
-        sudo rm -rf "$MER_TARGETS/$target"
-	return 4
+        return 1
     fi
-
-    # reset the cleanup trap
-    trap - EXIT
 
     sudo chown -R $(id -u):$(id -g) "$MER_TARGETS/$target" || return
 
@@ -522,6 +540,7 @@ install_target() {
     fi
 
     echo >&2 "Target '$target' now setup"
+    succeeded=1
 }
 
 remove_target() {
