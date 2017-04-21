@@ -683,7 +683,7 @@ register_sdk() {
     fi
 
     echo >&2 -n "MerSDK: "
-    sdk-register -u "$username" -p "$password"
+    sudo sdk-register -u "$username" -p "$password"
 }
 
 sdk_status() {
