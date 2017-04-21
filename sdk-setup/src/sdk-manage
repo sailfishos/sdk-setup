@@ -316,7 +316,7 @@ check_target_visible() (
 )
 
 get_targets() {
-    echo $(sb2-config -f 2>&1)
+    echo $(sb2-config -f)
 }
 
 assert_target_name_valid() {
