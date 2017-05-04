@@ -70,11 +70,11 @@ umask 022
 ################################################################'
 # toolchain
 
-# Our toolchains are available through zypper as Mer-SB2-* patterns
+# Our toolchains are available through patterns-sailfish-sb2-* meta-packages
 
 get_toolchains() {
-    zypper --quiet --no-refresh --non-interactive search -t pattern Mer-SB2-* | \
-	grep Mer-SB2 | while IFS='| ' read installed pkg dummy; do
+    zypper --quiet --no-refresh --non-interactive search patterns-sailfish-sb2-* | \
+	grep patterns-sailfish-sb2 | while IFS='| ' read installed pkg dummy; do
 	echo "${pkg},${installed}"
     done
     return ${PIPESTATUS[0]}

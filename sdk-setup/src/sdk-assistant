@@ -183,10 +183,10 @@ if [[ $OPT_CREATE ]]; then
 
     case $OPT_ARCH in
         arm )
-            TOOLCHAIN="Mer-SB2-armv7hl"
+            TOOLCHAIN="patterns-sailfish-sb2-armv7hl"
             ;;
         i486 )
-            TOOLCHAIN="Mer-SB2-i486"
+            TOOLCHAIN="patterns-sailfish-sb2-i486"
             ;;
         * )
             fail "internal error - arch is [$OPT_ARCH]"
