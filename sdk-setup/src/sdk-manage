@@ -447,7 +447,7 @@ install_tooling() {
     trap 'install_tooling_cleanup; trap - RETURN' RETURN
     trap 'return 1' INT TERM HUP
 
-    download_result=$(download "$url" "$MER_TOOLINGS" "$name.tar.bz2") || return
+    download_result=$(download "$url" "$TMPDIR_DOWNLOADS" "$name.tar.bz2") || return
     unpack "$download_result" local_file downloaded
 
     sudo rm -rf "$MER_TOOLINGS/$name" || return
@@ -873,7 +873,7 @@ install_target() {
         fi
     fi
 
-    download_result=$(download "$url" "$MER_TARGETS" "$target.tar.bz2") || return
+    download_result=$(download "$url" "$TMPDIR_DOWNLOADS" "$target.tar.bz2") || return
     unpack "$download_result" local_file downloaded
 
     # Virtualbox shared folders don't work too well at the moment
@@ -1183,6 +1183,8 @@ MER_TOOLINGS=/srv/mer/toolings
 HOST_TARGETS=/host_targets
 SBOX2DIR=${HOME}/.scratchbox2
 TARGETS_XML=${HOST_TARGETS}/targets.xml
+
+TMPDIR_DOWNLOADS=/var/tmp
 
 ################################################################
 # Main
