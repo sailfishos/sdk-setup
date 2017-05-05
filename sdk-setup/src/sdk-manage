@@ -20,7 +20,7 @@ EOF
 
 help() {
     cat >&2 <<EOF
-usage (keep the arguments order):
+usage:
     $SELF tooling list
     $SELF tooling upgradable <name>
     $SELF tooling install <name> <url>
@@ -91,7 +91,12 @@ unpack() {
     shift
     local i=0
     while [[ $# -gt 0 ]]; do
-        eval $1=\${array[i++]}
+        if [[ $(declare -p "$1") == "declare -a "* ]]; then
+            eval local -a array_item=${array[i++]}
+            eval $1=\(\${array_item[@]:+"\${array_item[@]}"}\)
+        else
+            eval $1=\${array[i++]}
+        fi
         shift
     done
 }
@@ -288,19 +293,24 @@ register_object() {
     local type=$1
     shift
 
-    local credentials= username= password= reg_shift=
+    local credentials= username= password= other=()
     credentials=$(get_register_credentials "$@") || return
-    unpack "$credentials" username password reg_shift
-    shift $reg_shift
+    unpack "$credentials" username password other
 
-    local force=
-    if [[ $1 == --force ]]; then
-        force=1
-        shift
-    fi
+    local force= i=
+    for ((i=0; i < ${#other[@]}; ++i)); do
+        if [[ ${other[i]} == --force ]]; then
+            force=1
+            unset other[i]
+            break
+        fi
+    done
+
+    set -- ${other[@]:+"${other[@]}"}
 
     local objects=
     if [[ $type == sdk ]]; then
+        [[ $# -eq 0 ]] || { usage; return 1; }
         objects=('')
     else
         objects=($(get_all_or_selected_of_type "$type" "$@")) || return
@@ -1143,24 +1153,23 @@ manage_sdk() {
 # utility
 
 get_register_credentials() {
-    local username= password= shift=0
+    local username= password= other=()
 
     while [[ ${1:-} ]]; do
         case $1 in
 	    --user )
                 [[ -n ${2:-} ]] || { usage; return 1; }
                 username=$2
-                let shift+=2
                 shift 2
 		;;
 	    --password )
                 [[ -n ${2:-} ]] || { usage; return 1; }
                 password=$2
-                let shift+=2
                 shift 2
 		;;
 	    *)
-		break
+		other=(${other[@]:+"${other[@]}"} "$1")
+                shift
 		;;
 	esac
     done
@@ -1171,7 +1180,7 @@ get_register_credentials() {
         return 1
     fi
 
-    print_array "$username" "$password" "$shift"
+    print_array "$username" "$password" "$(print_array ${other[@]:+"${other[@]}"})"
 }
 
 ################
