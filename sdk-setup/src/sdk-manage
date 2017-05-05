@@ -59,9 +59,7 @@ usage (keep the arguments order):
 
     $SELF --version
 
-    This is the Mer SDK VM manager
-    For information see https://wiki.merproject.org/wiki/Platform_SDK_on_VirtualBox
-    It is primarily intended for use by the SDK web interface.
+For more information see https://sailfishos.org/wiki/Platform_SDK
 
 EOF
 }
