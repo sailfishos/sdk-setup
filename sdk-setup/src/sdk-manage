@@ -4,55 +4,58 @@
 # toolchain installation
 
 set -o nounset
+shopt -s extglob
 
 # Make sure normal users can use any dirs we make
 umask 022
 
+SELF=$(basename "$0")
+____=${SELF//?/ }
+
 usage() {
     cat >&2 <<EOF
-    usage (keep the arguments order):
-           $0 --tooling --list
-           $0 --tooling --upgradable <name>
-           $0 --tooling --install <name> <url>
-           $0 --tooling --remove <name>
-           $0 --tooling --refresh {--all | <name>...}
-           $0 --tooling --update <name>
-           $0 --tooling --register --user <user> --password <password> [--force]
-                                   {--all | <name>...}
+usage (keep the arguments order):
+    $SELF tooling list
+    $SELF tooling upgradable <name>
+    $SELF tooling install <name> <url>
+    $SELF tooling remove <name>
+    $SELF tooling refresh {--all | <name>...}
+    $SELF tooling update <name>
+    $SELF tooling register --user <user> --password <password> [--force]
+    $____                  {--all | <name>...}
 
-           $0 --target --list [-l|--long] [--tooling <name>]
-           $0 --target --upgradable <name>
-           $0 --target --install <name> <url> [--tooling <name>
-                                 [--tooling-url <url>]] [--toolchain <name>]
-           $0 --target --remove  <name>
-           $0 --target --refresh {--all | <name>...}
-           $0 --target --update <name>
-           $0 --target --sync <name>
-           $0 --target --import <name>
-           $0 --target --register --user <user> --password <password> [--force]
-                                  {--all | <name>...}
+    $SELF target list [-l|--long] [--tooling <name>]
+    $SELF target upgradable <name>
+    $SELF target install <name> <url> [--tooling <name>
+    $____                [--tooling-url <url>]] [--toolchain <name>]
+    $SELF target remove  <name>
+    $SELF target refresh {--all | <name>...}
+    $SELF target update <name>
+    $SELF target sync <name>
+    $SELF target import <name>
+    $SELF target register --user <user> --password <password> [--force]
+    $____                 {--all | <name>...}
 
-           $0 --devel --list <target> [<search string>]
-           $0 --devel --install <target> <devel package list>
-           $0 --devel --remove <target> <devel package list>
+    $SELF devel list <target> [<search string>]
+    $SELF devel install <target> <devel package list>
+    $SELF devel remove <target> <devel package list>
 
-           $0 --sdk --version
-           $0 --sdk --refresh
-           $0 --sdk --upgradable
-           $0 --sdk --upgrade
-           $0 --sdk --status
-           $0 --sdk --register --user <user> --password <password> [--force]
+    $SELF sdk version
+    $SELF sdk refresh
+    $SELF sdk upgradable
+    $SELF sdk upgrade
+    $SELF sdk status
+    $SELF sdk register --user <user> --password <password> [--force]
 
-           $0 --refresh-all
+    $SELF refresh-all
 
-           $0 --register-all --user <user> --password <password> [--force]
+    $SELF register-all --user <user> --password <password> [--force]
 
-           $0 --version
+    $SELF --version
 
-       This is the Mer SDK VM manager
-       For information see https://wiki.merproject.org/wiki/Platform_SDK_on_VirtualBox
-       It is primarily intended for use by the SDK web interface.
-
+    This is the Mer SDK VM manager
+    For information see https://wiki.merproject.org/wiki/Platform_SDK_on_VirtualBox
+    It is primarily intended for use by the SDK web interface.
 
 EOF
 }
@@ -489,25 +492,25 @@ manage_toolings() {
     fi
 
     case $1 in
-        --list )
+        ?(--)list )
             get_all_of_type_tooling
             ;;
-        --upgradable ) shift
+        ?(--)upgradable ) shift
             object_upgradable tooling "$@"
             ;;
-        --install ) shift
+        ?(--)install ) shift
             install_tooling "$@"
             ;;
-        --remove ) shift
+        ?(--)remove ) shift
             remove_tooling "$@"
             ;;
-        --refresh ) shift
+        ?(--)refresh ) shift
             refresh_objects tooling "$@"
             ;;
-        --update ) shift
+        ?(--)update ) shift
             upgrade_object tooling "$@"
             ;;
-        --register ) shift
+        ?(--)register ) shift
             register_object tooling "$@"
             ;;
         * )
@@ -562,19 +565,19 @@ manage_develpkgs() {
     fi
 
     case $1 in
-	--list ) shift
+	?(--)list ) shift
             local target=${1:-} search=${2:-}
             assert_target_exists "$target" || return
             get_develpkgs "$target" "$search"
 	    ;;
-	--install ) shift
+	?(--)install ) shift
             local target=${1:-}
             assert_target_exists "$target" || return
             shift
             object_zypper "target:$target" --no-refresh install "$@" || return
             [[ $INSIDE_VBOX ]] && synchronise_target "$target"
 	    ;;
-	--remove ) shift
+	?(--)remove ) shift
             local target=${1:-}
             assert_target_exists "$target" || return
             shift
@@ -1017,25 +1020,25 @@ manage_targets() {
     fi
 
     case $1 in
-	--list ) shift
+	?(--)list ) shift
             list_targets "$@"
 	    ;;
-	--upgradable ) shift
+	?(--)upgradable ) shift
             object_upgradable target "$@"
 	    ;;
-	--install ) shift
+	?(--)install ) shift
             install_target "$@"
 	    ;;
-	--remove ) shift
+	?(--)remove ) shift
 	    remove_target "$@"
 	    ;;
-	--refresh ) shift
+	?(--)refresh ) shift
             refresh_objects target "$@"
 	    ;;
-	--update ) shift
+	?(--)update ) shift
             upgrade_object target "$@"
 	    ;;
-	--sync ) shift
+	?(--)sync ) shift
             local target=${1:-}
             assert_name_valid "$target" || return
 	    if [[ ! $INSIDE_VBOX ]]; then
@@ -1045,7 +1048,7 @@ manage_targets() {
             synchronise_target "$@" || return
             updateQtCreatorTargets --name "$target" --target-xml "$TARGETS_XML"
 	    ;;
-	--import ) shift
+	?(--)import ) shift
             assert_name_valid "${1:-}" || return
 	    if [[ ! $INSIDE_VBOX ]]; then
 	        echo >&2 "This operation is only valid for SDK in VirtualBox"
@@ -1053,7 +1056,7 @@ manage_targets() {
 	    fi
 	    import_target "$@"
 	    ;;
-	--register ) shift
+	?(--)register ) shift
             register_object target "$@"
 	    ;;
 	* )
@@ -1106,22 +1109,22 @@ manage_sdk() {
     fi
 
     case $1 in
-	--version )
+	?(--)version )
 	    get_sdk_version
 	    ;;
-	--status )
+	?(--)status )
 	    sdk_status
 	    ;;
-	--upgradable ) shift
+	?(--)upgradable ) shift
             object_upgradable sdk "$@"
 	    ;;
-	--upgrade ) shift
+	?(--)upgrade ) shift
             upgrade_object sdk "$@"
 	    ;;
-	--refresh )
+	?(--)refresh )
             refresh_objects sdk "$@"
 	    ;;
-	--register ) shift
+	?(--)register ) shift
             register_object sdk "$@"
 	    ;;
 	* )
@@ -1212,34 +1215,34 @@ if ! [[ ${1:-} ]]; then
 fi
 
 case $1 in
-    --tooling ) shift
+    ?(--)tooling ) shift
         manage_toolings "$@"
 	;;
-    --target ) shift
+    ?(--)target ) shift
 	manage_targets "$@"
 	;;
-    --devel ) shift
+    ?(--)devel ) shift
 	manage_develpkgs "$@"
 	;;
-    --sdk ) shift
+    ?(--)sdk ) shift
 	manage_sdk "$@"
 	;;
-    --refresh-all ) shift
-        manage_targets --refresh --all || exit
-        manage_toolings --refresh --all || exit
-	manage_sdk --refresh
+    ?(--)refresh-all ) shift
+        manage_targets refresh --all || exit
+        manage_toolings refresh --all || exit
+	manage_sdk refresh
 	;;
-    --register-all ) shift
+    ?(--)register-all ) shift
 	# expects to get --user and --password too
-        manage_sdk --register "$@" || exit
-        manage_toolings --register "$@" --all || exit
-	manage_targets --register "$@" --all
+        manage_sdk register "$@" || exit
+        manage_toolings register "$@" --all || exit
+	manage_targets register "$@" --all
 	;;
     --version)
 	echo "$0, version VERSION_FROM_SPEC"
 	exit 0
 	;;
-    -h|--help)
+    -h|?(--)help)
         usage 2>&1
         exit 0
         ;;
