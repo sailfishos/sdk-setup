@@ -14,6 +14,12 @@ ____=${SELF//?/ }
 
 usage() {
     cat >&2 <<EOF
+Try '$SELF --help' for more information.
+EOF
+}
+
+help() {
+    cat >&2 <<EOF
 usage (keep the arguments order):
     $SELF tooling list
     $SELF tooling upgradable <name>
@@ -1243,7 +1249,7 @@ case $1 in
 	exit 0
 	;;
     -h|?(--)help)
-        usage 2>&1
+        help
         exit 0
         ;;
     * )
