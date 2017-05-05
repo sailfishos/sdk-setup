@@ -86,6 +86,8 @@ Usage:
 
 Options:
     -h | --help             : show this help
+    -m <mode>               : use given scratchbox2 mapping mode with targets
+                              (default '$OPT_SB2_MODE')
     -y | --non-interactive  : do not ask questions; execute on each build
                               target and device without confirmation
     -l                      : execute also locally
@@ -104,7 +106,7 @@ list_targets() {
 execute_in_target() {
     local target=$1
     shift
-    sb2 -t "$target" "$@"
+    sb2 -t "$target" -m "$OPT_SB2_MODE" "$@"
 }
 
 list_devices() {
@@ -120,6 +122,7 @@ execute_on_device() {
 
 OPT_NONINTERACTIVE=
 OPT_LOCAL=
+OPT_SB2_MODE=sdk-install
 
 # handle commandline options
 while [[ ${1:-} ]]; do
@@ -133,6 +136,15 @@ while [[ ${1:-} ]]; do
             ;;
         -l )
             OPT_LOCAL=1
+            ;;
+        -m )
+            OPT_SB2_MODE=${2:-}
+            if ! [[ $OPT_SB2_MODE ]]; then
+                fatal "$1: Argument expected"
+                usage >&2
+                exit 1
+            fi
+            shift
             ;;
         -- )
             break
