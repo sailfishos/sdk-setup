@@ -31,14 +31,17 @@
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 
-SELF=$(basename $0)
+set -o nounset
+
+SELF=$(basename "$0")
 DEVICES_XML=/etc/mersdk/share/devices.xml
 
 if tty --silent <&1; then
+    COLOR_info=32
+    COLOR_question=32
+    COLOR_warn=31
     message() {
-        COLOR_info=32
-        COLOR_question=32
-        COLOR_warn=31
+        local color=
         eval color=\${COLOR_$1}
         shift
         printf '\033[%sm%s %s\033[00m\n' $color "$SELF:" "$*"
@@ -53,6 +56,7 @@ fi
 maybe_ask() {
     [[ $OPT_NONINTERACTIVE ]] && return 0
 
+    local answer=
     while true; do
         read -p "$(message question "$* (y/n) ")" answer
         case $answer in
@@ -69,14 +73,13 @@ maybe_ask() {
     done
 }
 
-fail() {
-    message warn "FAIL: $*"
-    exit 1
+fatal() {
+    message warn "FATAL: $*"
 }
 
 usage() {
     cat <<EOF
-sdk-foreach executes given command on each (selected) build target and device.
+sdk-foreach executes given command on every (selected) build target and device.
 
 Usage:
     $SELF [OPTION]... [--] COMMAND [ARG]...
@@ -88,9 +91,6 @@ Options:
     -l                      : execute also locally
 
 EOF
-
-    # exit if any argument is given
-    [[ -n "$1" ]] && exit 1
 }
 
 execute_locally() {
@@ -102,26 +102,31 @@ list_targets() {
 }
 
 execute_in_target() {
-    target="$1"
+    local target=$1
     shift
-    sb2 -t $target "$@"
+    sb2 -t "$target" "$@"
 }
 
 list_devices() {
+    [[ $INSIDE_VBOX ]] || return 0
     xmllint --xpath '//device/@name' "$DEVICES_XML" |sed 's/ name=/ /g' |tr '"' "'"
 }
 
 execute_on_device() {
-    device="$1"
+    local device=$1
     shift
     mb2 -d "$device" ssh "$@"
 }
 
+OPT_NONINTERACTIVE=
+OPT_LOCAL=
+
 # handle commandline options
 while [[ ${1:-} ]]; do
-    case "$1" in
+    case $1 in
         -h | --help )
-            usage quit
+            usage
+            exit
             ;;
         -y | --non-interactive )
             OPT_NONINTERACTIVE=1
@@ -133,12 +138,13 @@ while [[ ${1:-} ]]; do
             break
             ;;
         -??* )
-            arg="$1"
+            arg=$1
             shift
             set -- "${arg}" -"${arg:1:1}" -"${arg:2}" "${@}"
             ;;
         -* )
-            fail "unknown option $1"
+            fatal "unknown option '$1'"
+            exit 1
             ;;
         * )
             break
@@ -149,7 +155,17 @@ while [[ ${1:-} ]]; do
 done
 
 if [[ $EUID -eq 0 ]]; then
-    fail "$SELF must not be run as root."
+    fatal "$SELF must not be run as root."
+    exit 1
+fi
+
+INSIDE_CHROOT=$([[ -e /etc/mer-sdk-chroot ]] && echo 1)
+INSIDE_VBOX=$([[ -e /etc/mer-sdk-vbox ]] && echo 1)
+
+# exactly one must be true
+if [[ $INSIDE_CHROOT$INSIDE_VBOX != 1 ]]; then
+    echo >&2 "Internal error: Failed to determine type of SDK installation"
+    exit 1
 fi
 
 if [[ $OPT_LOCAL ]]; then
@@ -164,7 +180,7 @@ for target in $(list_targets); do
 done
 
 eval devices=($(list_devices))
-for device in "${devices[@]}"; do
+for device in ${devices[@]:+"${devices[@]}"}; do
     maybe_ask "Execute on '$device' device?" || continue
     message info "Executing on '$device' device..."
     execute_on_device "$device" "$@"
