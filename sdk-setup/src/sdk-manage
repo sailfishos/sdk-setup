@@ -606,7 +606,7 @@ check_target_visible() (
 
 # Specialization of get_all_of_type()
 get_all_of_type_target() {
-    echo $(sb2-config -f)
+    sb2-config -f
 }
 
 get_tooling_used_by_target() (
