@@ -183,6 +183,10 @@ try_to_make_spec_from_yaml() {
     try_to_make_spec "${1%.yaml}.spec"
 }
 
+sanitize_changelog() {
+    sed 's/%/%%/g'
+}
+
 try_to_make_changelog() {
     local changes_file=${OPT_SPEC%.spec}.changes
     local changes_run_file=${OPT_SPEC%.spec}.changes.run
@@ -190,11 +194,11 @@ try_to_make_changelog() {
     if [[ $OPT_GIT_CHANGE_LOG ]]; then
         notice "Auto generating changelog from Git history ..."
         echo "%changelog"
-        git-change-log $OPT_GIT_CHANGE_LOG_ARGS
+        git-change-log $OPT_GIT_CHANGE_LOG_ARGS |sanitize_changelog
     elif [[ -f $changes_file ]]; then
         notice "Appending changelog entries to spec ..."
         echo "%changelog"
-        cat $changes_file
+        cat $changes_file |sanitize_changelog
     elif [[ -f $changes_run_file ]]; then
         notice "Generating changelog entries with $changes_run_file ..."
         local runner=
@@ -207,7 +211,8 @@ try_to_make_changelog() {
             fi
         fi
         echo "%changelog"
-        $runner $changes_run_file || fatal "unable to generate changelog entries"
+        $runner $changes_run_file |sanitize_changelog
+        [[ ${PIPESTATUS[0]} -eq 0 ]] || fatal "unable to generate changelog entries"
     fi
 }
 
