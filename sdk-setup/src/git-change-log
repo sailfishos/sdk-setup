@@ -62,7 +62,7 @@ usage: $SELF [-a|--auto-add-annotations] [-A|--only-add-annotations]
        [-d|--dense <regexp>] [--[no-]favor-tagger] [--no-squeeze-spaces]
        [--rev-list-args=[<args>]] [-s|--since[-date|-rev] {<date>|<rev>|<file>}]
        [--sort-entries] [--strip-tag-prefix <prefix>] [-t|--tags <pattern>]
-       [--tags-with-path] [-<number>] [--] [REVISION]
+       [-F|--append-from <file>] [--tags-with-path] [-<number>] [--] [REVISION]
    or: $SELF {-u|--untagged-only} [--] [REVISION]
 EOF
 }
@@ -137,6 +137,10 @@ Options:
                                    tags, (2) does not imply '--favor-tagger' and
                                    (3) accepts patterns as understood by
                                    git-for-each-ref(1)
+    -F | --append-from <file>    : append new lines added to <file> for each
+                                   revision.  Only the topmost batch of added
+                                   lines will be considered, ignoring changes
+                                   to recently added lines.
     --tags-with-path             : when turning a tag name into revision name,
                                    preserve the path prefix like 'git rev-parse
                                    --symbolic --abbrev-ref' would do for the tag
@@ -291,6 +295,17 @@ stderr.close()
 stable_uniq()
 {
     nl |sort -k 2 -u |sort -k 1,1 |cut -f 2-
+}
+
+trim_newlines()
+{
+    sed -e '/./,$!d' |tac |sed -e '/./,$!d' |tac
+}
+
+# Read a patch produced by git-diff and output just the first sequence of '+' lines
+head_added_lines()
+{
+    sed '0,/^@@/d' |sed '/^+/,$!d' |sed '/^[^+]/,$d' |sed -n 's/^+//p'
 }
 
 # Each output line describes one tag with the following fields, sorted first by
@@ -546,6 +561,7 @@ OPT_SINCE_TYPE=
 OPT_SORT_ENTRIES=
 OPT_STRIP_TAG_PREFIX='v'
 OPT_TAGS='refs/tags/*'
+OPT_APPEND_FROM=
 OPT_TAGS_WITH_PATH=
 OPT_UNTAGGED_ONLY=
 OPT_LIMIT=
@@ -614,6 +630,11 @@ while [[ ${1:-} ]]; do
             [[ $2 ]] || bad_usage "Argument expected: '$1'"
             shift
             OPT_TAGS=$1
+            ;;
+        -F | --append-from )
+            [[ $2 ]] || bad_usage "Argument expected: '$1'"
+            shift
+            OPT_APPEND_FROM=$1
             ;;
         --tags-with-path )
             OPT_TAGS_WITH_PATH=1
@@ -725,6 +746,14 @@ else
         if ! list_objects "$range" |extract_entries; then
             tag_abbrev=$(git rev-parse --symbolic --abbrev-ref $tag)
             warn "No change log entries for tag '$tag_abbrev'"
+        fi
+
+        if [[ $OPT_APPEND_FROM ]]; then
+            if [[ $range == *..* ]]; then
+                git diff $range -- "$OPT_APPEND_FROM" |head_added_lines |trim_newlines
+            else
+                git show $range:"$OPT_APPEND_FROM"
+            fi |sed 's/^/  /'
         fi
 
         : $((++i))
@@ -1800,6 +1829,60 @@ verify --tags 'refs/tags/our/*' --rev-list-args='^upstream/master' master <<EOF
 
 * Thu Mar 02 2000 John Author <john.author@example.net> - 0.1+git1
 - [FooBar] Commit 2000-03
+EOF
+# ============================================================
+
+# Case: Ignoring upstream commits with --rev-list-args but adding appending upstream Changelog
+git init .
+touch Changelog
+git add Changelog
+git checkout -b upstream/master
+echo "Committed 2000-01" > Changelog
+git commit -m 'Upstream commit 2000-01' -a
+git commit -m '[FooBar] Upstream commit 2000-02'
+git tag 0.1
+git checkout -b master
+git commit -m '[FooBar] Commit 2000-03'
+git tag our/0.1+git1
+git checkout upstream/master
+sed -i "1i Committed 2000-04" Changelog
+git commit -m '[FooBar] Upstream commit 2000-04' -a
+sed -i "1i Committed 2000-05" Changelog
+git commit -m '[FooBar] Upstream commit 2000-05' -a
+git tag 0.1.1
+git checkout master
+git commit -m '[FooBar] Commit 2000-06'
+git tag our/0.1+git2
+git checkout upstream/master
+sed -i "1i Committed 2000-07" Changelog
+git commit -m '[FooBar] Upstream commit 2000-07' -a
+git tag 0.1.2
+git checkout master
+git merge upstream/master -m '[FooBar] Merge branch "upstream/master" 2000-08'
+git tag our/0.1+git3
+git commit -m '[FooBar] Commit 2000-09'
+git tag our/0.1+git4
+git checkout upstream/master
+sed -i "1i Committed 2000-10" Changelog
+git commit -m '[FooBar] Upstream commit 2000-10' -a
+git tag 0.1.3
+# ------------------------------------------------------------
+verify --tags 'refs/tags/our/*' --rev-list-args='^upstream/master' --append-from Changelog master <<EOF
+* Sat Sep 02 2000 John Author <john.author@example.net> - 0.1+git4
+- [FooBar] Commit 2000-09
+
+* Wed Aug 02 2000 John Author <john.author@example.net> - 0.1+git3
+- [FooBar] Merge branch "upstream/master" 2000-08
+  Committed 2000-07
+  Committed 2000-05
+  Committed 2000-04
+
+* Fri Jun 02 2000 John Author <john.author@example.net> - 0.1+git2
+- [FooBar] Commit 2000-06
+
+* Thu Mar 02 2000 John Author <john.author@example.net> - 0.1+git1
+- [FooBar] Commit 2000-03
+  Committed 2000-01
 EOF
 # ============================================================
 
