@@ -768,7 +768,7 @@ $expected
 $out
 }}}
   Git-Log: {{{
-$(command git --no-pager log --graph)
+$(command git --no-pager log --graph --pretty=fuller --all -p)
 }}}
   Git-Tags: {{{
 $(command git --no-pager tag -l -n9)
