@@ -59,6 +59,7 @@ synopsis()
 {
     cat <<EOF
 usage: $SELF [-a|--auto-add-annotations] [-A|--only-add-annotations]
+       [-T|--only-add-tagged]
        [-d|--dense <regexp>] [--[no-]favor-tagger] [--no-squeeze-spaces]
        [--rev-list-args=[<args>]] [-s|--since[-date|-rev] {<date>|<rev>|<file>}]
        [--sort-entries] [--strip-tag-prefix <prefix>] [-t|--tags <pattern>]
@@ -101,6 +102,11 @@ Options:
     -A | --only-add-annotations  : always use the subjects (first lines) of tag
                                    annotations as change log entries, completely
                                    ignore commit messages
+    -T | --only-add-tagged       : only consider tagged commits when searching
+                                   for change log entries. This honours the
+                                   '--tags' option and therefore can be used to
+                                   exclude upstream commits where
+                                   '--rev-list-args' cannot be used.
     -d | --dense <regexp>        : print headlines just for revisions denoted by
                                    tags matching the given <regexp>. This is
                                    matched agains the full refname, including
@@ -489,7 +495,10 @@ extract_entries()
         if [[ $commit && $OPT_ONLY_ADD_ANNOTATIONS ]]; then
             : # noop
         elif [[ $commit && ${#annotatedtags[*]} -le 1 ]]; then
-            allobjects="$allobjects${annotatedtags:+ ${annotatedtags[*]}} $commit"
+            allobjects="$allobjects${annotatedtags:+ ${annotatedtags[*]}}"
+            if [[ ! $OPT_ONLY_ADD_TAGGED || ${#annotatedtags[*]} -gt 0 || $(look $commit $TAG_INFO) ]]; then
+                allobjects="$allobjects $commit"
+            fi
         else
             local contents=
             local allcontents=
@@ -502,8 +511,10 @@ extract_entries()
                 allcontents=$allcontents$NL$contents
             fi
             if [[ $commit ]]; then
-                contents=$(git show $NO_PATCH_OPT $commit)
-                allcontents=$allcontents$NL$contents
+                if [[ ! $OPT_ONLY_ADD_TAGGED || ${#annotatedtags[*]} -gt 0 || $(look $commit $TAG_INFO) ]]; then
+                    contents=$(git show $NO_PATCH_OPT $commit)
+                    allcontents=$allcontents$NL$contents
+                fi
             fi
 
             # search all objects for lines with special markup
@@ -647,6 +658,7 @@ append_from()
 
 OPT_AUTO_ADD_ANNOTATIONS=
 OPT_ONLY_ADD_ANNOTATIONS=
+OPT_ONLY_ADD_TAGGED=
 OPT_DENSE=
 OPT_FAVOR_TAGGER=
 OPT_NO_FAVOR_TAGGER=
@@ -681,6 +693,9 @@ while [[ ${1:-} ]]; do
         -A | --only-add-annotations )
             OPT_AUTO_ADD_ANNOTATIONS=1
             OPT_ONLY_ADD_ANNOTATIONS=1
+            ;;
+        -T | --only-add-tagged )
+            OPT_ONLY_ADD_TAGGED=1
             ;;
         -d | --dense )
             [[ $2 ]] || bad_usage "Argument expected: '$1'"
@@ -2163,6 +2178,49 @@ verify --tags 'refs/tags/our/*' master <<EOF
 * Thu Mar 02 2000 John Author <john.author@example.net> - 0.1+git1
 - [FooBar] Commit 2000-03
 - [FooBar] Upstream commit 2000-02
+EOF
+# ============================================================
+
+# Case: Ignoring upstream commits with --tags and --only-add-tagged
+git init .
+git checkout -b upstream/master
+git commit -m 'Upstream commit 2000-01'
+git commit -m '[FooBar] Upstream commit 2000-02'
+git tag 0.1
+git checkout -b master
+git commit -m '[FooBar] Commit 2000-03'
+git tag our/0.1+git1
+git checkout upstream/master
+git commit -m '[FooBar] Upstream commit 2000-04'
+git commit -m '[FooBar] Upstream commit 2000-05'
+git tag 0.1.1
+git checkout master
+git commit -m '[FooBar] Commit 2000-06'
+git tag our/0.1+git2
+git checkout upstream/master
+git commit -m '[FooBar] Upstream commit 2000-07'
+git tag 0.1.2
+git checkout master
+git merge upstream/master -m '[FooBar] Merge branch "upstream/master" 2000-08'
+git tag our/0.1+git3
+git commit -m '[FooBar] Commit 2000-09'
+git tag our/0.1+git4
+git checkout upstream/master
+git commit -m '[FooBar] Upstream commit 2000-10'
+git tag 0.1.3
+# ------------------------------------------------------------
+verify --tags 'refs/tags/our/*' --only-add-tagged master <<EOF
+* Sat Sep 02 2000 John Author <john.author@example.net> - 0.1+git4
+- [FooBar] Commit 2000-09
+
+* Wed Aug 02 2000 John Author <john.author@example.net> - 0.1+git3
+- [FooBar] Merge branch "upstream/master" 2000-08
+
+* Fri Jun 02 2000 John Author <john.author@example.net> - 0.1+git2
+- [FooBar] Commit 2000-06
+
+* Thu Mar 02 2000 John Author <john.author@example.net> - 0.1+git1
+- [FooBar] Commit 2000-03
 EOF
 # ============================================================
 
