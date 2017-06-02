@@ -349,7 +349,7 @@ create_tag_info()
         write $commit %(refname) %(objecttype) "$date" "$name" "$email"
     '
     eval=$(TZ=UTC git for-each-ref --shell --format="$format" $merged_opt "$OPT_TAGS")
-    eval "$eval" |sort_tag_info |merged_filt
+    TZ=UTC eval "$eval" |sort_tag_info |merged_filt
 }
 
 # Reads input produced by list_objects and outputs change log entries, each line
@@ -768,7 +768,7 @@ $expected
 $out
 }}}
   Git-Log: {{{
-$(command git --no-pager log --graph)
+$(command git --no-pager log --graph --pretty=fuller --all -p)
 }}}
   Git-Tags: {{{
 $(command git --no-pager tag -l -n9)
