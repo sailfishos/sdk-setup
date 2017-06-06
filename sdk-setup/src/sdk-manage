@@ -376,7 +376,10 @@ install_target() {
     orig_downloaded_file=
 
     # make sure the target dir exists
-    [[ ! -d $mer_targets ]] && mkdir -p $mer_targets
+    if [[ ! -d $mer_targets ]]; then
+        sudo mkdir -p $(dirname $mer_targets)
+        sudo install -d -o $(id -u) -g $(id -g) $mer_targets
+    fi
 
     local_file=""
     target_downloaded=0
