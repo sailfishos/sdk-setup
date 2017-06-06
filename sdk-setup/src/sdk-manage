@@ -74,7 +74,7 @@ umask 022
 
 get_toolchains() {
     zypper --quiet --no-refresh --non-interactive search patterns-sailfish-sb2-* | \
-	grep patterns-sailfish-sb2 | while IFS='| ' read installed pkg dummy; do
+	grep patterns-sailfish-sb2 |grep -v sb2-common | while IFS='| ' read installed pkg dummy; do
 	echo "${pkg},${installed}"
     done
     return ${PIPESTATUS[0]}
