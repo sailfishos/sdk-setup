@@ -288,7 +288,7 @@ ssh_as() {
     local user="$1";shift
     local key=$(get_shared_dir)/${device_sshkeypath}/$user
     [[ -f "$key" ]] || fatal "No key for user $user on $device_name given in devices.xml ($key)"
-    ssh -F /etc/ssh/ssh_config.sdk -i "$key" -l $user $device_ip "$@"
+    ssh -F /etc/ssh/ssh_config.sdk -i "$key" -l $user $device_ip "$(quote "$@")"
 }
 
 cd_to_spec_setup_dir() {
@@ -350,15 +350,12 @@ increment_build_number() {
     fi
 }
 
-# quote possible whitespace arguments
-fix_arguments() {
-    local orig_args=("$@")
-    local num_oargs=${#orig_args[@]}
+quote() {
+    [[ $# -gt 0 ]] && printf "%q " "$@" |sed 's/ $//'
+}
 
-    for ((i=0; i<$num_oargs; i++)); do
-        local tmp_arg=$(printf "'%s' " "${orig_args[${i}]}")
-        fixed_args="$fixed_args $tmp_arg"
-    done
+rpm_quote() {
+    quote "$@" |sed 's/\\/&&/g'
 }
 
 run_installdeps() {
@@ -412,7 +409,7 @@ run_build() {
 
     increment_build_number;
     local tmp_spec="$OPT_SPEC.$$"
-    if [ -z "$BUILD_PREP" ]; then
+    if [[ ! $BUILD_PREP ]]; then
         sed -e '/^%patch/d' "$OPT_SPEC" > "$tmp_spec"
     else
         cp "$OPT_SPEC" "$tmp_spec"
@@ -430,19 +427,20 @@ run_build() {
     (
         cd_to_spec_setup_dir;
         rm -f "$_basedir/RPMS/"*.rpm;
-        eval sb2 -t $OPT_TARGET rpmbuild --build-in-place --target=$build_tgt \
-            $BUILD_DEBUG \
-            --define \"_smp_mflags -j$BUILD_JOBS\" \
-            --define \"_rpmdir $_basedir/RPMS \" \
-            --define \"_sourcedir $_basedir/rpm \" \
-            --define \"_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm \" \
-            --buildroot=\"$buildroot\" \
-            $BUILD_PREP \
+        sb2 -t $OPT_TARGET rpmbuild --build-in-place --target=$build_tgt \
+            "${BUILD_DEBUG[@]}" \
+            --define "_smp_mflags -j$(rpm_quote "$BUILD_JOBS")" \
+            --define "_rpmdir $_basedir/RPMS " \
+            --define "_sourcedir $_basedir/rpm " \
+            --define "_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm " \
+            --buildroot="$buildroot" \
+            "${BUILD_PREP[@]}" \
             --dobuild \
             --doinstall \
             --dobinary \
             --docheck \
-            \"$tmp_spec\"
+            "$tmp_spec" \
+            "$@"
     )
     local rc=$?
     rm -f "$tmp_spec"
@@ -467,15 +465,15 @@ run_prep() {
     (
         cd_to_spec_setup_dir;
         rm -f "$_basedir/RPMS/"*.rpm;
-        eval sb2 -t $OPT_TARGET rpmbuild --build-in-place --target=$build_tgt \
-            $BUILD_DEBUG \
-            --define \"_smp_mflags -j$BUILD_JOBS\" \
-            --define \"_rpmdir $_basedir/RPMS \" \
-            --define \"_sourcedir $_basedir/rpm \" \
-            --define \"_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm \" \
-            --buildroot=\"$buildroot\" \
+        sb2 -t $OPT_TARGET rpmbuild --build-in-place --target=$build_tgt \
+            "${BUILD_DEBUG[@]}" \
+            --define "_smp_mflags -j$BUILD_JOBS" \
+            --define "_rpmdir $_basedir/RPMS " \
+            --define "_sourcedir $_basedir/rpm " \
+            --define "_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm " \
+            --buildroot="$buildroot" \
             --doprep \
-            \"$tmp_spec\"
+            "$tmp_spec"
     )
     local rc=$?
     rm -f "$tmp_spec"
@@ -493,22 +491,18 @@ run_qmake() {
         # get rid of potential windows linefeeds
         sed -i "s/\x0D$//g" "$tmp_spec"
 
-        # The paths that are passed to rpmbuild via the --define
-        # options can contain whitespace so let's quote all args
-        fix_arguments "$@"
-
         # This is a good time to verify the target dependencies as per mb
         verify_target_dependencies
         (
             cd_to_spec_setup_dir;
-            eval sb2 -t $OPT_TARGET rpmbuild --build-in-place --target=$build_tgt \
+            sb2 -t $OPT_TARGET rpmbuild --build-in-place --target=$build_tgt \
                 --dobuild \
-                --define \"noecho 1 \" \
-                --define \"qtc_builddir $_basedir \" \
-                --define \"qtc_make true ignoring make\" \
-                --define \"qtc_qmake5 %qmake5 $fixed_args\" \
-                --define \"qtc_qmake %qmake $fixed_args\" \
-                \"$tmp_spec\"
+                --define "noecho 1 " \
+                --define "qtc_builddir $_basedir" \
+                --define "qtc_make true ignoring make" \
+                --define "qtc_qmake5 %qmake5 $(rpm_quote "$@") " \
+                --define "qtc_qmake %qmake $(rpm_quote "$@") " \
+                "$tmp_spec"
         )
         local rc=$?
         rm -f "$tmp_spec"
@@ -531,14 +525,14 @@ run_make() {
         build_tgt=${build_tgt%-gnueabi}
         (
             cd_to_spec_setup_dir;
-            eval sb2 -t $OPT_TARGET rpmbuild --build-in-place --target=$build_tgt \
+            sb2 -t $OPT_TARGET rpmbuild --build-in-place --target=$build_tgt \
                 --dobuild \
-                --define \"noecho 1 \" \
-                --define \"qtc_builddir $_basedir \" \
-                --define \"qtc_qmake5 true ignoring qmake\" \
-                --define \"qtc_qmake true ignoring qmake\" \
-                --define \"qtc_make make %{?_smp_mflags} "$@"\" \
-                \"$tmp_spec\"
+                --define "noecho 1 " \
+                --define "qtc_builddir $_basedir" \
+                --define "qtc_qmake5 true ignoring qmake" \
+                --define "qtc_qmake true ignoring qmake" \
+                --define "qtc_make make %{?_smp_mflags} $(rpm_quote "$@") " \
+                "$tmp_spec"
         )
         local rc=$?
         rm -f "$tmp_spec"
@@ -561,14 +555,14 @@ run_install() {
     # Install to buildroot which should be rsync'ed to /opt/sdk/$package on device
     (
         cd_to_spec_setup_dir;
-        eval sb2 -t $OPT_TARGET rpmbuild --build-in-place --target=$build_tgt \
-            --define \"noecho 1 \" \
-            --define \"qtc_builddir $_basedir \" \
-            --define \"_sourcedir $_basedir/rpm \" \
-            --define \"_skip_install_processing 1\" \
-            --buildroot=\"$buildroot\" \
+        sb2 -t $OPT_TARGET rpmbuild --build-in-place --target=$build_tgt \
+            --define "noecho 1 " \
+            --define "qtc_builddir $_basedir" \
+            --define "_sourcedir $_basedir/rpm " \
+            --define "_skip_install_processing 1" \
+            --buildroot="$buildroot" \
             --doinstall \
-            \"$tmp_spec\"
+            "$tmp_spec"
     )
     local rc=$?
     rm -f "$tmp_spec"
@@ -593,17 +587,17 @@ run_rpm() {
         increment_build_number;
         cd_to_spec_setup_dir;
         rm -f "$_basedir/RPMS/"*.rpm;
-        eval sb2 -t $OPT_TARGET rpmbuild --build-in-place --target=$build_tgt \
-            --define \"noecho 1 \" \
-            --define \"qtc_builddir $_basedir \" \
-            --define \"_rpmdir $_basedir/RPMS \" \
-            --define \"_sourcedir $_basedir/rpm \" \
-            --define \"_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm \" \
-            --buildroot=\"$buildroot\" \
+        sb2 -t $OPT_TARGET rpmbuild --build-in-place --target=$build_tgt \
+            --define "noecho 1 " \
+            --define "qtc_builddir $_basedir" \
+            --define "_rpmdir $_basedir/RPMS " \
+            --define "_sourcedir $_basedir/rpm " \
+            --define "_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm " \
+            --buildroot="$buildroot" \
             --doinstall \
             --dobinary \
             --docheck \
-            \"$tmp_spec\"
+            "$tmp_spec"
     )
     local rc=$?
     rm -f "$tmp_spec"
@@ -856,13 +850,13 @@ case "$1" in
         ;;
     build | installdeps )
         cmd=run_$1; shift
-        BUILD_DEBUG='--define "debug_package %{nil} "'
+        BUILD_DEBUG=(--define "debug_package %{nil} ")
         BUILD_JOBS=
-        BUILD_PREP=
+        BUILD_PREP=()
         while [[ "$1" ]]; do
             case "$1" in
                 -d|--enable-debug) shift
-                    BUILD_DEBUG= ;;
+                    BUILD_DEBUG=() ;;
                 -j*)
                     # support giving -j with and without space between
                     # it and the 'n'
@@ -874,7 +868,7 @@ case "$1" in
                     fi
                     ;;
                 -p|--doprep) shift
-                    BUILD_PREP="--doprep"
+                    BUILD_PREP=(--doprep)
                     ;;
                 *)
                     break
@@ -887,7 +881,7 @@ case "$1" in
         if [[ "$OPT_DEVICE" ]]; then
             cmd="ssh_as $deviceuser"
         else
-            cmd="eval"
+            cmd=""
         fi
         ;;
     *)
@@ -950,7 +944,7 @@ run_tc() {
     local args=("${@:3}")
 
     let tc_num++
-    echo "*** Executing test case: $TS_NAME - $TC_NAME"
+    echo "*** Executing test case: ${TS_NAME:+$TS_NAME - }$TC_NAME"
 
     local known_issue
     for known_issue in ${KNOWN_ISSUES[@]:+"${KNOWN_ISSUES[@]}"}; do
@@ -959,7 +953,7 @@ run_tc() {
     KNOWN_ISSUES=()
 
     local stderr=
-    { stderr=$(${tc}_tc "${args[@]}" 3>&1 1>&2 2>&3 3>&-); } 2>&1
+    { stderr=$(${tc}_tc ${args[@]:+"${args[@]}"} 3>&1 1>&2 2>&3 3>&-); } 2>&1
     local rc=$?
 
     if [[ $rc -ne 0 ]]; then
@@ -1032,6 +1026,61 @@ else
 fi
 
 ################################################################################
+# Test the rpm_quote function
+
+rpm_quote_tc() {
+    arg_pass_stub_create make || return
+
+    # Create an minimal spec file
+    mkdir rpm || return
+    cat >rpm/test.spec <<END || return
+Name: test
+Version: 1.0
+Release: 0
+Summary: Test
+License: BSD
+
+# This would normally come from the environment
+%{!?make:%define make make}
+
+%description
+Test
+
+%build
+%make "x  y"
+END
+
+    rpmbuild --dobuild --noprep --build-in-place --define "_sourcedir $(readlink -f rpm)" rpm/test.spec \
+        --define "make make $(rpm_quote "a b" "c  d" e f)" >&2 || return
+    local rc=0 expected= actual= diff=
+    expected=$(expect_args "a b" "c  d" e f "x  y")
+    actual=$(arg_pass_stub_results make) || return
+    if ! diff=$(diff <(cat <<<"$expected") <(cat <<<"$actual")); then
+        rc=1
+        cat <<END
+Test case failed: $TC_NAME
+  ** Mismatch   ** [[
+$diff
+]]
+  ** Expected   ** [[
+$expected
+]]
+  ** Actual     ** [[
+$actual
+]]
+END
+    fi
+
+    arg_pass_stub_remove make || return
+    rm -f rpm/test.spec || return
+    rmdir rpm || return
+
+    return $rc
+}
+
+run_tc rpm_quote "Test RPM macro escaping"
+
+################################################################################
 # Test sb2 argument passing
 
 sb2_arg_pass_ts_set_up() {
@@ -1064,7 +1113,7 @@ sb2_arg_pass_tc() {
     if ! diff=$(diff <(cat <<<"$expected") <(cat <<<"$actual")); then
         cat <<END
 Test case failed: $TC_NAME
-  ** Command    ** $ME $(printf "%q " "${args[@]}")
+  ** Command    ** $ME $(quote "${args[@]}")
   ** Mismatch   ** [[
 $diff
 ]]
@@ -1101,13 +1150,11 @@ run_tc sb2_arg_pass "prep" \
     prep "a b" "c  d" e f
 
 KNOWN_ISSUE "Adds trailing space to macro definitions"
-KNOWN_ISSUE "Does not quote argument to -j"
-KNOWN_ISSUE "Silently ignores extra arguments"
 run_tc sb2_arg_pass "build" \
     "$(expect_args \
         -t "$DEFAULT_TARGET" rpmbuild --build-in-place --target= \
         --define 'debug_package %{nil} ' \
-        --define '_smp_mflags -jbad 1' \
+        --define "_smp_mflags -j$(rpm_quote "bad  1")" \
         --define '_rpmdir /tmp/@TMPDIR@/RPMS ' \
         --define '_sourcedir /tmp/@TMPDIR@/rpm ' \
         --define '_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm ' \
@@ -1117,16 +1164,15 @@ run_tc sb2_arg_pass "build" \
         --doinstall \
         --dobinary \
         --docheck \
-        /tmp/@TMPDIR@/rpm/@TEST_SPEC@)" \
+        /tmp/@TMPDIR@/rpm/@TEST_SPEC@ \
+        "a b" "c  d" e f)" \
     build --doprep -j "bad  1" "a b" "c  d" e f
 
 KNOWN_ISSUE "Adds trailing space to macro definitions"
-KNOWN_ISSUE "Does not quote argument to -j"
-KNOWN_ISSUE "Silently ignores extra arguments"
 run_tc sb2_arg_pass "build with debug" \
     "$(expect_args \
         -t "$DEFAULT_TARGET" rpmbuild --build-in-place --target= \
-        --define '_smp_mflags -jbad 1' \
+        --define "_smp_mflags -j$(rpm_quote "bad  1")" \
         --define '_rpmdir /tmp/@TMPDIR@/RPMS ' \
         --define '_sourcedir /tmp/@TMPDIR@/rpm ' \
         --define '_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm ' \
@@ -1136,11 +1182,11 @@ run_tc sb2_arg_pass "build with debug" \
         --doinstall \
         --dobinary \
         --docheck \
-        /tmp/@TMPDIR@/rpm/@TEST_SPEC@)" \
+        /tmp/@TMPDIR@/rpm/@TEST_SPEC@ \
+        "a b" "c  d" e f)" \
     build --doprep --enable-debug -j "bad  1" "a b" "c  d" e f
 
 KNOWN_ISSUE "Adds trailing space to macro definitions"
-KNOWN_ISSUE "Passes wrong arguments to qmake"
 run_tc sb2_arg_pass "qmake" \
     "$(expect_args \
         -t "$DEFAULT_TARGET" rpmbuild --build-in-place --target= \
@@ -1148,13 +1194,12 @@ run_tc sb2_arg_pass "qmake" \
         --define 'noecho 1 ' \
         --define 'qtc_builddir /tmp/@TMPDIR@' \
         --define 'qtc_make true ignoring make' \
-        --define "qtc_qmake5 %qmake5 'a b' 'c d' 'e' 'f' " \
-        --define "qtc_qmake %qmake 'a b' 'c d' 'e' 'f' " \
+        --define "qtc_qmake5 %qmake5 $(rpm_quote "a b" "c  d" e f) " \
+        --define "qtc_qmake %qmake $(rpm_quote "a b" "c  d" e f) " \
         /tmp/@TMPDIR@/rpm/@TEST_SPEC@)" \
     qmake "a b" "c  d" e f
 
 KNOWN_ISSUE "Adds trailing space to macro definitions"
-KNOWN_ISSUE "Passes wrong arguments to qmake"
 run_tc sb2_arg_pass "make" \
     "$(expect_args \
         -t "$DEFAULT_TARGET" rpmbuild --build-in-place --target= \
@@ -1163,7 +1208,7 @@ run_tc sb2_arg_pass "make" \
         --define 'qtc_builddir /tmp/@TMPDIR@' \
         --define 'qtc_qmake5 true ignoring qmake' \
         --define 'qtc_qmake true ignoring qmake' \
-        --define "qtc_make make %{?_smp_mflags} a b c  d e f" \
+        --define "qtc_make make %{?_smp_mflags} $(rpm_quote "a b" "c  d" e f) " \
         /tmp/@TMPDIR@/rpm/@TEST_SPEC@)" \
     make "a b" "c  d" e f
 
@@ -1349,29 +1394,26 @@ END
 
 set_up_ts rpmbuild_arg_pass "Passing arguments to commands invoked by rpmbuild"
 
-KNOWN_ISSUE "Silently ignores extra arguments"
 run_tc rpmbuild_arg_pass "build" \
     "$(expect_args )" \
     "$(expect_args -j"$DEFAULT_JOBS")" \
-    build "a b" "c  d" e f
+    build
 
-KNOWN_ISSUE "Passes wrong arguments to qmake"
 run_tc rpmbuild_arg_pass "qmake" \
-    "$(expect_args "a b" "c d" e f)" \
+    "$(expect_args "a b" "c  d" e f)" \
     "$(expect_args )" \
     qmake "a b" "c  d" e f
 
-KNOWN_ISSUE "Passes wrong arguments to make"
 KNOWN_ISSUE "Passes extra -j to make"
 if [[ $DEFAULT_JOBS -ne 1 ]]; then
     run_tc rpmbuild_arg_pass "make" \
         "$(expect_args )" \
-        "$(expect_args -j"$DEFAULT_JOBS" a b c d e f -j"$DEFAULT_JOBS")" \
+        "$(expect_args -j"$DEFAULT_JOBS" "a b" "c  d" e f -j"$DEFAULT_JOBS")" \
         make "a b" "c  d" e f
 else
     run_tc rpmbuild_arg_pass "make" \
         "$(expect_args )" \
-        "$(expect_args a b c d e f)" \
+        "$(expect_args "a b" "c  d" e f)" \
         make "a b" "c  d" e f
 fi
 
@@ -1414,39 +1456,29 @@ END
 
 set_up_ts ssh_arg_pass "Passing arguments using run|ssh subcommand"
 
-KNOWN_ISSUE "Unable to pass argument with space"
 run_tc ssh_arg_pass "local - just spaces" \
-    'abcdef' \
+    "$(printf '%q ' 'a b' 'c  d' e f)" \
     run printf '%q ' 'a b' 'c  d' e f
 
-KNOWN_ISSUE "Unable to pass argument with space"
-KNOWN_ISSUE "Unable to pass argument with newline - interpreted as multiple commands"
 run_tc ssh_arg_pass "local - spaces and newlines" \
-    "''b c d e f" \
+    "$(printf '%q'$'\n' 'echo b' 'c  d' e f)" \
     run printf '%q'$'\n' 'echo b' 'c  d' e f
 
-KNOWN_ISSUE "Unable to pass argument with space"
-KNOWN_ISSUE "Unable to pass argument with backslashes - valid escape sequences are substituted"
 run_tc ssh_arg_pass "local - spaces and backslashes" \
-    'a\ bncndnenfn' \
+    "$(printf '%q\n' 'a\ b' 'c  d' e f)" \
     run printf '%q\n' 'a\ b' 'c  d' e f
 
 if [[ $DEFAULT_DEVICE ]]; then
-    KNOWN_ISSUE "Unable to pass argument with space"
     run_tc ssh_arg_pass "remote - just spaces" \
-        'abcdef' \
+        "$(printf '%q ' 'a b' 'c  d' e f)" \
         --device "$DEFAULT_DEVICE" run printf '%q ' 'a b' 'c  d' e f
 
-    KNOWN_ISSUE "Unable to pass argument with space"
-    KNOWN_ISSUE "Unable to pass argument with newline - interpreted as multiple commands"
     run_tc ssh_arg_pass "remote - spaces and newlines" \
-        "''b c d e f" \
+        "$(printf '%q'$'\n' 'echo b' 'c  d' e f)" \
         --device "$DEFAULT_DEVICE" run printf '%q'$'\n' 'echo b' 'c  d' e f
 
-    KNOWN_ISSUE "Unable to pass argument with space"
-    KNOWN_ISSUE "Unable to pass argument with backslashes - valid escape sequences are substituted"
     run_tc ssh_arg_pass "remote - spaces and backslashes" \
-        'a\ bncndnenfn' \
+        "$(printf '%q\n' 'a\ b' 'c  d' e f)" \
         --device "$DEFAULT_DEVICE" run printf '%q\n' 'a\ b' 'c  d' e f
 fi
 
