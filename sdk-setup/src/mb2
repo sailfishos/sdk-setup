@@ -430,9 +430,9 @@ run_build() {
         sb2 -t $OPT_TARGET rpmbuild --build-in-place --target=$build_tgt \
             "${BUILD_DEBUG[@]}" \
             --define "_smp_mflags -j$(rpm_quote "$BUILD_JOBS")" \
-            --define "_rpmdir $_basedir/RPMS " \
-            --define "_sourcedir $_basedir/rpm " \
-            --define "_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm " \
+            --define "_rpmdir $_basedir/RPMS" \
+            --define "_sourcedir $_basedir/rpm" \
+            --define "_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm" \
             --buildroot="$buildroot" \
             "${BUILD_PREP[@]}" \
             --dobuild \
@@ -468,9 +468,9 @@ run_prep() {
         sb2 -t $OPT_TARGET rpmbuild --build-in-place --target=$build_tgt \
             "${BUILD_DEBUG[@]}" \
             --define "_smp_mflags -j$BUILD_JOBS" \
-            --define "_rpmdir $_basedir/RPMS " \
-            --define "_sourcedir $_basedir/rpm " \
-            --define "_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm " \
+            --define "_rpmdir $_basedir/RPMS" \
+            --define "_sourcedir $_basedir/rpm" \
+            --define "_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm" \
             --buildroot="$buildroot" \
             --doprep \
             "$tmp_spec"
@@ -497,11 +497,11 @@ run_qmake() {
             cd_to_spec_setup_dir;
             sb2 -t $OPT_TARGET rpmbuild --build-in-place --target=$build_tgt \
                 --dobuild \
-                --define "noecho 1 " \
+                --define "noecho 1" \
                 --define "qtc_builddir $_basedir" \
                 --define "qtc_make true ignoring make" \
-                --define "qtc_qmake5 %qmake5 $(rpm_quote "$@") " \
-                --define "qtc_qmake %qmake $(rpm_quote "$@") " \
+                --define "qtc_qmake5 %qmake5 $(rpm_quote "$@")" \
+                --define "qtc_qmake %qmake $(rpm_quote "$@")" \
                 "$tmp_spec"
         )
         local rc=$?
@@ -527,11 +527,11 @@ run_make() {
             cd_to_spec_setup_dir;
             sb2 -t $OPT_TARGET rpmbuild --build-in-place --target=$build_tgt \
                 --dobuild \
-                --define "noecho 1 " \
+                --define "noecho 1" \
                 --define "qtc_builddir $_basedir" \
                 --define "qtc_qmake5 true ignoring qmake" \
                 --define "qtc_qmake true ignoring qmake" \
-                --define "qtc_make make %{?_smp_mflags} $(rpm_quote "$@") " \
+                --define "qtc_make make %{?_smp_mflags} $(rpm_quote "$@")" \
                 "$tmp_spec"
         )
         local rc=$?
@@ -556,9 +556,9 @@ run_install() {
     (
         cd_to_spec_setup_dir;
         sb2 -t $OPT_TARGET rpmbuild --build-in-place --target=$build_tgt \
-            --define "noecho 1 " \
+            --define "noecho 1" \
             --define "qtc_builddir $_basedir" \
-            --define "_sourcedir $_basedir/rpm " \
+            --define "_sourcedir $_basedir/rpm" \
             --define "_skip_install_processing 1" \
             --buildroot="$buildroot" \
             --doinstall \
@@ -588,11 +588,11 @@ run_rpm() {
         cd_to_spec_setup_dir;
         rm -f "$_basedir/RPMS/"*.rpm;
         sb2 -t $OPT_TARGET rpmbuild --build-in-place --target=$build_tgt \
-            --define "noecho 1 " \
+            --define "noecho 1" \
             --define "qtc_builddir $_basedir" \
-            --define "_rpmdir $_basedir/RPMS " \
-            --define "_sourcedir $_basedir/rpm " \
-            --define "_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm " \
+            --define "_rpmdir $_basedir/RPMS" \
+            --define "_sourcedir $_basedir/rpm" \
+            --define "_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm" \
             --buildroot="$buildroot" \
             --doinstall \
             --dobinary \
@@ -850,7 +850,7 @@ case "$1" in
         ;;
     build | installdeps )
         cmd=run_$1; shift
-        BUILD_DEBUG=(--define "debug_package %{nil} ")
+        BUILD_DEBUG=(--define "debug_package %{nil}")
         BUILD_JOBS=
         BUILD_PREP=()
         while [[ "$1" ]]; do
@@ -1133,7 +1133,6 @@ END
 
 set_up_ts sb2_arg_pass "Passing arguments to sb2"
 
-KNOWN_ISSUE "Adds trailing space to macro definitions"
 KNOWN_ISSUE "Does not disable debug by default (ignores --enable-debug)"
 KNOWN_ISSUE "Passes -j without argument"
 KNOWN_ISSUE "Silently ignores extra arguments"
@@ -1141,23 +1140,22 @@ run_tc sb2_arg_pass "prep" \
     "$(expect_args \
         -t "$DEFAULT_TARGET" rpmbuild --build-in-place --target= \
         --define '_smp_mflags -j' \
-        --define '_rpmdir /tmp/@TMPDIR@/RPMS ' \
-        --define '_sourcedir /tmp/@TMPDIR@/rpm ' \
-        --define '_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm ' \
+        --define '_rpmdir /tmp/@TMPDIR@/RPMS' \
+        --define '_sourcedir /tmp/@TMPDIR@/rpm' \
+        --define '_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm' \
         --buildroot=/tmp/@TMPDIR@/installroot \
         --doprep \
         /tmp/@TMPDIR@/rpm/@TEST_SPEC@)" \
     prep "a b" "c  d" e f
 
-KNOWN_ISSUE "Adds trailing space to macro definitions"
 run_tc sb2_arg_pass "build" \
     "$(expect_args \
         -t "$DEFAULT_TARGET" rpmbuild --build-in-place --target= \
-        --define 'debug_package %{nil} ' \
+        --define 'debug_package %{nil}' \
         --define "_smp_mflags -j$(rpm_quote "bad  1")" \
-        --define '_rpmdir /tmp/@TMPDIR@/RPMS ' \
-        --define '_sourcedir /tmp/@TMPDIR@/rpm ' \
-        --define '_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm ' \
+        --define '_rpmdir /tmp/@TMPDIR@/RPMS' \
+        --define '_sourcedir /tmp/@TMPDIR@/rpm' \
+        --define '_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm' \
         --buildroot=/tmp/@TMPDIR@/installroot \
         --doprep \
         --dobuild \
@@ -1168,14 +1166,13 @@ run_tc sb2_arg_pass "build" \
         "a b" "c  d" e f)" \
     build --doprep -j "bad  1" "a b" "c  d" e f
 
-KNOWN_ISSUE "Adds trailing space to macro definitions"
 run_tc sb2_arg_pass "build with debug" \
     "$(expect_args \
         -t "$DEFAULT_TARGET" rpmbuild --build-in-place --target= \
         --define "_smp_mflags -j$(rpm_quote "bad  1")" \
-        --define '_rpmdir /tmp/@TMPDIR@/RPMS ' \
-        --define '_sourcedir /tmp/@TMPDIR@/rpm ' \
-        --define '_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm ' \
+        --define '_rpmdir /tmp/@TMPDIR@/RPMS' \
+        --define '_sourcedir /tmp/@TMPDIR@/rpm' \
+        --define '_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm' \
         --buildroot=/tmp/@TMPDIR@/installroot \
         --doprep \
         --dobuild \
@@ -1186,56 +1183,52 @@ run_tc sb2_arg_pass "build with debug" \
         "a b" "c  d" e f)" \
     build --doprep --enable-debug -j "bad  1" "a b" "c  d" e f
 
-KNOWN_ISSUE "Adds trailing space to macro definitions"
 run_tc sb2_arg_pass "qmake" \
     "$(expect_args \
         -t "$DEFAULT_TARGET" rpmbuild --build-in-place --target= \
         --dobuild \
-        --define 'noecho 1 ' \
+        --define 'noecho 1' \
         --define 'qtc_builddir /tmp/@TMPDIR@' \
         --define 'qtc_make true ignoring make' \
-        --define "qtc_qmake5 %qmake5 $(rpm_quote "a b" "c  d" e f) " \
-        --define "qtc_qmake %qmake $(rpm_quote "a b" "c  d" e f) " \
+        --define "qtc_qmake5 %qmake5 $(rpm_quote "a b" "c  d" e f)" \
+        --define "qtc_qmake %qmake $(rpm_quote "a b" "c  d" e f)" \
         /tmp/@TMPDIR@/rpm/@TEST_SPEC@)" \
     qmake "a b" "c  d" e f
 
-KNOWN_ISSUE "Adds trailing space to macro definitions"
 run_tc sb2_arg_pass "make" \
     "$(expect_args \
         -t "$DEFAULT_TARGET" rpmbuild --build-in-place --target= \
         --dobuild \
-        --define 'noecho 1 ' \
+        --define 'noecho 1' \
         --define 'qtc_builddir /tmp/@TMPDIR@' \
         --define 'qtc_qmake5 true ignoring qmake' \
         --define 'qtc_qmake true ignoring qmake' \
-        --define "qtc_make make %{?_smp_mflags} $(rpm_quote "a b" "c  d" e f) " \
+        --define "qtc_make make %{?_smp_mflags} $(rpm_quote "a b" "c  d" e f)" \
         /tmp/@TMPDIR@/rpm/@TEST_SPEC@)" \
     make "a b" "c  d" e f
 
-KNOWN_ISSUE "Adds trailing space to macro definitions"
 KNOWN_ISSUE "Silently ignores extra arguments"
 run_tc sb2_arg_pass "install" \
     "$(expect_args \
         -t "$DEFAULT_TARGET" rpmbuild --build-in-place --target= \
-        --define 'noecho 1 ' \
+        --define 'noecho 1' \
         --define 'qtc_builddir /tmp/@TMPDIR@' \
-        --define '_sourcedir /tmp/@TMPDIR@/rpm ' \
+        --define '_sourcedir /tmp/@TMPDIR@/rpm' \
         --define '_skip_install_processing 1' \
         --buildroot='/tmp/@TMPDIR@/installroot' \
         --doinstall \
         /tmp/@TMPDIR@/rpm/@TEST_SPEC@)" \
     install "a b" "c  d" e f
 
-KNOWN_ISSUE "Adds trailing space to macro definitions"
 KNOWN_ISSUE "Silently ignores extra arguments"
 run_tc sb2_arg_pass "rpm" \
     "$(expect_args \
         -t "$DEFAULT_TARGET" rpmbuild --build-in-place --target= \
-        --define 'noecho 1 ' \
+        --define 'noecho 1' \
         --define 'qtc_builddir /tmp/@TMPDIR@' \
-        --define '_rpmdir /tmp/@TMPDIR@/RPMS ' \
-        --define '_sourcedir /tmp/@TMPDIR@/rpm ' \
-        --define '_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm ' \
+        --define '_rpmdir /tmp/@TMPDIR@/RPMS' \
+        --define '_sourcedir /tmp/@TMPDIR@/rpm' \
+        --define '_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm' \
         --buildroot='/tmp/@TMPDIR@/installroot' \
         --doinstall \
         --dobinary \
