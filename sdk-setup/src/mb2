@@ -752,14 +752,9 @@ while [[ "$1" ]]; do
         "-c" | "--git-change-log" ) shift
             OPT_GIT_CHANGE_LOG=1
             ;;
-        "-c="* )
+        "-c="* | "--git-change-log="* )
             OPT_GIT_CHANGE_LOG=1
-            OPT_GIT_CHANGE_LOG_ARGS="${1#-c=}"
-            shift
-            ;;
-        "--git-change-log="* )
-            OPT_GIT_CHANGE_LOG=1
-            OPT_GIT_CHANGE_LOG_ARGS="${1#--git-change-log=}"
+            OPT_GIT_CHANGE_LOG_ARGS="${1#*=}"
             shift
             ;;
         "-m" | "--submodule" ) shift
