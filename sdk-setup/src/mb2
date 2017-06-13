@@ -30,7 +30,7 @@
 short_usage() {
     cat <<EOF
 usage: $ME [-t <target>] [-s <specfile>] [-d <device>] [-p <projectdir>]
-           [-f <folder>] [-i] [-P] [-x] [-c[=<args>]]
+           [-f <folder>] [-i] [-P] [-x[=<tag>]] [-c[=<args>]]
            build [-p] [-d] [-j <n>] [<args>] | qmake [<args>] | make [<args>] | ssh <args>
            install [<args>] | installdeps <args> | rpm [<args>] | deploy <args>
            prep | apply [-R] | run <args>
@@ -116,7 +116,15 @@ usage() {
                          this option is useful if deploy option is used outside of virtual
                          machine
   -P | --pedantic      : do extra checks
-  -x | --fix-version   : use the latest tag from the current git branch as package version
+  -x[=<tag>] | --fix-version[=<tag>]
+                       : use the latest tag from the current git branch as
+                         package version or the given <tag>.  If the current
+                         HEAD, index or working tree differs from the tree
+                         denoted by the tag, a suffix composed from the current
+                         branch name, time stamp and a commit SHA1 will be added
+                         to the package version.  If git-state is not clean
+                         a git-stash will be created and its SHA1 will be used
+                         instead of HEAD.
   -c[=<args>] | --git-change-log[=<args>]
                        : include change log generated from Git history with
                          'git-change-log' command, forwarding any <args>.
@@ -209,21 +217,35 @@ get_spec_tag() {
 fix_package_version() {
     [[ ! $OPT_FIX_VERSION ]] && return
 
-    local tag=$(git describe --tags --abbrev=0 2>/dev/null)
-    if [[ -n $tag ]]; then
-        # tagver piece copied from tar_git service
-        if [[ $(echo $tag | grep "/") ]] ; then
-            # allow tags to have a prefix to allow vendor marking
-            tagver=$(echo $tag | cut -f2 -d'/')
-        # some people like to prefix versions with a v
-        elif [[ $(echo $tag | grep -Po "^v") ]]; then
-            tagver=$(echo $tag | cut -f2 -d'v')
-        else
-            tagver=$tag
-        fi
-        # '-' is not an allowed character in the version field
-        sed -i "s,^Version:.*,Version: ${tagver//-/+}," "$1"
+    local head
+    if [[ $(git status --short --untracked-files=no) ]]; then
+        head=$(git stash create)
+    else
+        head=$(git rev-parse HEAD)
     fi
+
+    local tag
+    if [[ $OPT_FIX_VERSION_HINT ]]; then
+        tag=$OPT_FIX_VERSION_HINT
+    else
+        tag=$(git describe --tags --abbrev=0 "$head") || return
+    fi
+
+    local version=$tag
+    version=${version#*/}   # allow tags to have a prefix to allow vendor marking
+    version=${version#v}    # some people like to prefix versions with a v
+
+    if [[ $(git rev-parse "$tag^{}") != "$head" ]]; then
+        local branch=$(git rev-parse --abbrev-ref HEAD)
+        local timestamp=$(TZ=UTC date --date=@$(git log --max-count=1 --pretty=%ct "$head") +%Y%m%d%H%M%S)
+        local sha1sum=$(git rev-list --max-count=1 --abbrev-commit "$head")
+        version=$version+$branch.$timestamp.$sha1sum
+    fi
+
+    version=${version//-/+} # '-' is not an allowed character in the version field
+
+    echo "Setting version: ${version}"
+    sed -i "s,^Version:.*,Version: ${version}," "$1"
 }
 
 # Helper to read XML
@@ -674,6 +696,8 @@ OPT_PKGDIR="./rpm"
 OPT_PROJDIR=
 OPT_NEEDSPEC=
 OPT_PEDANTIC=0
+OPT_FIX_VERSION=
+OPT_FIX_VERSION_HINT=
 OPT_GIT_CHANGE_LOG=
 OPT_GIT_CHANGE_LOG_ARGS=
 OPT_SHARED_DIR=/etc/mersdk/share
@@ -716,6 +740,14 @@ while [[ "$1" ]]; do
             ;;
         "-x" | "--fix-version" ) shift
             OPT_FIX_VERSION=1
+            ;;
+        "-x="* | "--fix-version="* )
+            OPT_FIX_VERSION=1
+            OPT_FIX_VERSION_HINT=${1#*=}
+            if [[ ! $(git tag --list "$OPT_FIX_VERSION_HINT") ]]; then
+                fatal "'$OPT_FIX_VERSION_HINT' no such Git tag"
+            fi
+            shift
             ;;
         "-c" | "--git-change-log" ) shift
             OPT_GIT_CHANGE_LOG=1
@@ -918,7 +950,7 @@ tc_failed_num=0
 set_up_ts() {
     local ts=$1
     TS_NAME=$2
-    ${ts}_ts_set_up
+    ${ts}_ts_set_up "${@:3}"
     if [[ $? -ne 0 ]]; then
         fatal "Test suite set-up failed: $ts"
     fi
@@ -1476,6 +1508,183 @@ if [[ $DEFAULT_DEVICE ]]; then
 fi
 
 tear_down_ts ssh_arg_pass
+
+################################################################################
+# Test --fix-version behavior
+
+fix_version_ts_set_up() {
+    COMMITS_U=()
+    COMMITS_D=()
+
+    get_commit() {
+        eval echo \${COMMITS_${1:0:1}[${1:1}]} |grep .
+    }
+
+    local i= commit= tag_name= tag_object=
+
+    git init . --quiet || return
+    git config user.email "john@doe.com" || return
+    git config user.name "John Doe" || return
+
+    git checkout -b upstream --quiet
+    for ((i=0; i<=30; i++)); do
+        printf "U%02d\n" "$i" > U
+        git add U || return
+        date="@$(TZ=UTC date --date="2000-01-01 00:00:00 UTC +$i days" +%s) +0000"
+        GIT_AUTHOR_DATE=$date GIT_COMMITTER_DATE=$date \
+            git commit --message "$(<U)" --quiet || return
+        commit=$(git rev-list --max-count=1 --abbrev-commit HEAD) || return
+        COMMITS_U=(${COMMITS_U[*]:-} $commit)
+    done
+
+    git checkout -b downstream "${COMMITS_U[10]}" --quiet || return
+    for ((i=0; i<=20; i++)); do
+        if [[ $i -eq 10 ]]; then
+            git merge --no-commit "${COMMITS_U[20]}" --quiet 2>/dev/null || return
+        fi
+        printf "D%02d\n" "$i" > D
+        git add D || return
+        date="@$(TZ=UTC date --date="2000-01-01 00:00:00 UTC +$((i+10)) days +12 hours" +%s) +0000"
+        GIT_AUTHOR_DATE=$date GIT_COMMITTER_DATE=$date \
+            git commit --message "$(<D)" --quiet || return
+        commit=$(git rev-list --max-count=1 --abbrev-commit HEAD) || return
+        COMMITS_D=(${COMMITS_D[*]:-} $commit)
+    done
+
+    while [[ ${1:-} ]]; do
+        case $1 in
+            --tag)
+                tag_name=$2
+                tag_object=$(get_commit $3) || return
+                git tag "$tag_name" "$tag_object" || return
+                shift 2
+                ;;
+            --tag-a)
+                tag_name=$2
+                tag_object=$(get_commit $3) || return
+                tag_annotation="$3"
+                git tag -a -m "$tag_annotation" "$tag_name" "$tag_object" || return
+                shift 2
+                ;;
+            *)
+                return 1
+                ;;
+        esac
+        shift
+    done
+}
+
+fix_version_ts_tear_down() {
+    unset COMMITS_U COMMITS_D
+    unset -f get_commit
+    rm -rf .git || return
+    rm -f U D dirty || return
+}
+
+fix_version_tc() {
+    local dirty=$1 head=$2 expected_raw=$3 hint=${4:-}
+
+    head=$(get_commit "$head") || return
+
+    git reset --hard --quiet || return
+    git checkout -B downstream "$head" --quiet || return
+    if [[ $dirty == dirty ]]; then
+        echo dirty >> D
+    fi
+
+    local version_file=version
+    local last_stash_file=last_stash
+
+    echo "Version:" > $version_file
+
+    (
+        git() (
+            echo "stub invoked: git" >&2
+            if [[ $1 == stash && $2 == create ]]; then
+                date="@$(TZ=UTC date --date="2000-12-31 18:00:00 UTC" +%s) +0000"
+                GIT_AUTHOR_DATE=$date GIT_COMMITTER_DATE=$date \
+                    command git stash create |tee $last_stash_file
+            else
+                command git "$@"
+            fi
+        )
+
+        OPT_FIX_VERSION=1
+        OPT_FIX_VERSION_HINT=$hint
+        fix_package_version $version_file >&2
+    ) || return
+
+    local actual=$(sed 's/^Version: //' $version_file)
+
+    local stash_sha1=
+    if [[ -e $last_stash_file ]]; then
+        stash_sha1=$(git rev-list --max-count=1 --abbrev-commit "$(<$last_stash_file)")
+    fi
+
+    local expected=$expected_raw i=
+    for ((i=0; i<=30; i++)); do
+        expected=${expected//@U$i@/${COMMITS_U[$i]}}
+    done
+    for ((i=0; i<=20; i++)); do
+        expected=${expected//@D$i@/${COMMITS_D[$i]}}
+    done
+    expected=${expected//@STASH@/${stash_sha1:-<none>}}
+
+    if [[ $actual != "$expected" ]]; then
+        cat <<END
+Test case failed: $TC_NAME
+  ** Arguments    ** $(printf "%q " "$@")
+  ** Expected     ** '$expected'
+  ** Actual       ** '$actual'
+  ** Expected RAW ** '$expected_raw'
+  ** Git-status   ** [[
+$(git status)
+]]
+  ** Git-log      ** [[
+$(git log --graph --decorate --pretty=fuller --all ${stash_sha1:-})
+]]
+END
+        return 1
+    fi
+}
+
+# Works with Git history like this
+#
+# U00---...---U10---U11---...---U20---U21---...---U30 <-- upstream
+#               \                 \
+#                D00---D01---...---D10---D11---...---D20 <-- downstream
+#
+# Upstream commit dates are 2000-01-01 + <num> days 00:00 UTC, downstream commit dates are
+# 2000-01-01 + <num+10> days 12:00 UTC, stashes are 2000-12-31 18:00 UTC.
+
+set_up_ts fix_version "Test --fix-version behavior" \
+    --tag v0.1 U5 \
+    --tag v0.2 U10 \
+    --tag v0.3 U15 \
+    --tag v0.4 U20 \
+    --tag v0.5 U25 \
+    --tag mer/v0.2+git1 D5 \
+    --tag mer/v0.4+git1 D11 \
+    --tag-a mer/v0.4+git2 D15 \
+    --tag mer/v0.4+git3 D20
+
+run_tc fix_version "on tag, clean D5"               clean D5  0.2+git1
+run_tc fix_version "ahead tag, clean D7"            clean D7  0.2+git1+downstream.2000''01''18''12''00''00.@D7@
+run_tc fix_version "ahead tag, dirty D7"            dirty D7  0.2+git1+downstream.2000''12''31''18''00''00.@STASH@
+run_tc fix_version "ahead upstream tag, clean D10"  clean D10 0.4+downstream.2000''01''21''12''00''00.@D10@
+run_tc fix_version "on tag, clean D11"              clean D11 0.4+git1
+run_tc fix_version "on tag, dirty D11"              dirty D11 0.4+git1+downstream.2000''12''31''18''00''00.@STASH@
+run_tc fix_version "ahead tag, clean D12"           clean D12 0.4+git1+downstream.2000''01''23''12''00''00.@D12@
+run_tc fix_version "ahead tag, dirty D12"           dirty D12 0.4+git1+downstream.2000''12''31''18''00''00.@STASH@
+run_tc fix_version "on annotated, clean D15"        clean D15 0.4+git2
+run_tc fix_version "ahead annotated, clean D16"     clean D16 0.4+git2+downstream.2000''01''27''12''00''00.@D16@
+run_tc fix_version "ahead annotated, dirty D16"     dirty D16 0.4+git2+downstream.2000''12''31''18''00''00.@STASH@
+run_tc fix_version "on tag, clean D15 + hint"       clean D15 0.4+git1+downstream.2000''01''26''12''00''00.@D15@    mer/v0.4+git1
+run_tc fix_version "on tag, dirty D15 + hint"       dirty D15 0.4+git1+downstream.2000''12''31''18''00''00.@STASH@  mer/v0.4+git1
+run_tc fix_version "ahead tag, clean D16 + hint"    clean D16 0.4+git1+downstream.2000''01''27''12''00''00.@D16@    mer/v0.4+git1
+run_tc fix_version "ahead tag, dirty D16 + hint"    dirty D16 0.4+git1+downstream.2000''12''31''18''00''00.@STASH@  mer/v0.4+git1
+
+tear_down_ts fix_version
 
 ################################################################################
 
