@@ -146,6 +146,21 @@ fatal() {
     exit 1
 }
 
+# readarray is a bash >= 4.0 feature
+if ! type readarray &>/dev/null; then
+    readarray() {
+        if ! [[ $# -eq 2 && $1 == -t && $(declare -p "$2" 2>/dev/null) == "declare -a "* ]]; then
+            fatal "Internal error: readarray: unimplemented case"
+        fi
+
+        local line=
+        eval $2=\(\)
+        while IFS= read -r line; do
+            eval $2=\(\${$2[@]:+\"\${$2[@]}\"} \"\$line\"\)
+        done
+    }
+fi
+
 check_spec_supports_qtc_silent() {
     grep "define qtc_qmake" "$OPT_SPEC" >/dev/null 2>&1
 }
@@ -206,8 +221,11 @@ ensure_spec_newer_than_yaml() {
 }
 
 verify_target_dependencies() {
-    sb2 -t "$OPT_TARGET" rpmspec --query --buildrequires "$OPT_SPEC" | \
-        xargs --no-run-if-empty sb2 -t "$OPT_TARGET" -m sdk-install -R zypper --quiet --non-interactive in
+    local deps=()
+    readarray -t deps < <(sb2 -t "$OPT_TARGET" rpmspec --query --buildrequires "$OPT_SPEC" |sed 's/\s*$//')
+    if [[ $deps ]]; then
+        sb2 -t "$OPT_TARGET" -m sdk-install -R zypper --quiet --non-interactive in "${deps[@]}"
+    fi
 }
 
 get_spec_tag() {
@@ -1680,6 +1698,36 @@ run_tc fix_version "ahead tag, clean D16 + hint"    clean D16 0.4+git1+downstrea
 run_tc fix_version "ahead tag, dirty D16 + hint"    dirty D16 0.4+git1+downstream.2000''12''31''18''00''00.@STASH@  mer/v0.4+git1
 
 tear_down_ts fix_version
+
+################################################################################
+# Test the readarray behavior - simplified version implemented as a shell
+# function for compatibility with older BASH
+
+readarray_tc() {
+    local expected=('  abc *  def  ' '  g  h  i  ')
+    local actual=()
+    echo "Note: readarray is a $(type -t readarray)" >&2
+    readarray -t actual < <(printf "%s\n" "${expected[@]}")
+    if ! (
+        [[ ${#expected[*]} -eq ${#actual[*]} ]] || exit
+        for ((i=0; i<${#expected[*]}; i++)); do
+            [[ ${actual[$i]} == "${expected[$i]}" ]] || exit
+        done
+        ); then
+        cat <<END
+Test case failed: $TC_NAME
+  ** Expected   ** [[
+$(declare -p expected)
+]]
+  ** Actual     ** [[
+$(declare -p actual)
+]]
+END
+        return 1
+    fi
+}
+
+run_tc readarray "Test readarray behavior"
 
 ################################################################################
 
