@@ -11,7 +11,7 @@ Release:    1
 Group:      System/Base
 License:    GPL
 BuildArch:  noarch
-URL:        https://github.com/sailfish-sdk/sdk-setup
+URL:        https://github.com/sailfishos/sdk-setup
 Source0:    %{name}-%{version}.tar.bz2
 BuildRequires:  systemd
 
