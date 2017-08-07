@@ -134,10 +134,23 @@ prepare_etc() {
     }
 }
 
+# Replace 'shell' field in `getent passwd` output with /bin/bash if the shell
+# is not available in the chroot
+fix_shell() {
+    local shell= other=
+    while IFS=: read shell other; do
+        if ! [[ -e ${sdkroot}${shell} ]]; then
+            shell=/bin/bash
+        fi
+
+        echo "$other:$shell"
+    done <<<"$(cut -d: -f7,1-6)"
+}
+
 prepare_user() {
     # getent is probably best for user data 
     sed -i -e "/^${user}:/d" ${sdkroot}/etc/passwd
-    getent passwd $user >> ${sdkroot}/etc/passwd
+    getent passwd $user |fix_shell >> ${sdkroot}/etc/passwd
 
     if [[ $bind_mount_home == "yes" ]] ; then
 	echo "Mounting home directory"
