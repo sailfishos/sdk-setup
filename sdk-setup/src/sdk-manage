@@ -59,6 +59,13 @@ usage:
 
     $SELF --version
 
+Usage notes
+    $SELF target install
+        When tooling selection is forced with '--tooling' without passing
+        '--tooling-url', the selected tooling MUST exist.  If '--tooling-url' is
+        passed as well, the tooling MAY NOT exist, in which case it will be
+        installed automatically prior to target installation.
+
 For more information see https://sailfishos.org/wiki/Platform_SDK
 
 EOF
