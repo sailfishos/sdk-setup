@@ -42,9 +42,13 @@ usage:
     $SELF target register --user <user> --password <password> [--force]
     $____                 {--all | <name>...}
 
-    $SELF devel list <target> [<search string>]
-    $SELF devel install <target> <devel package list>
-    $SELF devel remove <target> <devel package list>
+    $SELF toolchain list <tooling>
+    $SELF toolchain install <tooling> <name>...
+    $SELF toolchain remove <tooling> <name>...
+
+    $SELF develpkg list <target> [<search string>]
+    $SELF develpkg install <target> <name>...
+    $SELF develpkg remove <target> <name>...
 
     $SELF sdk version
     $SELF sdk refresh
@@ -533,6 +537,41 @@ manage_toolings() {
             ;;
         ?(--)register ) shift
             register_object tooling "$@"
+            ;;
+        * )
+            echo >&2 "unrecognized option '$1'"
+            usage
+            return 1
+            ;;
+    esac
+}
+
+################################################################'
+# Toolchains
+
+manage_toolchains() {
+    if ! [[ {$1:-} ]]; then
+        usage
+        return 1
+    fi
+
+    case $1 in
+        ?(--)list ) shift
+            local tooling=${1:-}
+            assert_tooling_exists "$tooling" || return
+            get_toolchains "$tooling"
+            ;;
+        ?(--)install ) shift
+            local tooling=${1:-}
+            assert_tooling_exists "$tooling" || return
+            shift
+            object_zypper "tooling:$tooling" --no-refresh install "$@" || return
+            ;;
+        ?(--)remove ) shift
+            local tooling=${1:-}
+            assert_tooling_exists "$tooling" || return
+            shift
+            object_zypper "tooling:$tooling" --no-refresh remove "$@" || return
             ;;
         * )
             echo >&2 "unrecognized option '$1'"
@@ -1241,7 +1280,10 @@ case $1 in
     ?(--)target ) shift
 	manage_targets "$@"
 	;;
-    ?(--)devel ) shift
+    ?(--)toolchain ) shift
+	manage_toolchains "$@"
+	;;
+    ?(--)devel?(pkg) ) shift
 	manage_develpkgs "$@"
 	;;
     ?(--)sdk ) shift
