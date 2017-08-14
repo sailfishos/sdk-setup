@@ -1,10 +1,10 @@
 #!/bin/bash
 #
-# sdk-assitant is a helper script for simple scratchbox2 target tasks
+# sdk-assitant is a helper script for simple scratchbox2 management tasks
 # in MerSDK
 #
-# Copyright (C) 2014 Jolla Ltd.
-# Contact: Juha Kallioinen <juha.kallioinen@jolla.com>
+# Copyright (C) 2014-2017 Jolla Ltd.
+# Contact: Martin Kampas <martin.kampas@jolla.com>
 # All rights reserved.
 #
 # You may use this file under the terms of BSD license as follows:
@@ -32,6 +32,8 @@
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 
+set -o nounset
+
 fail() {
     echo "FAIL: $@"
     exit 1
@@ -47,21 +49,18 @@ usage() {
 SDK assistant script
 
 Usage:
-    $(basename $0) create [OPTION] <target-name> <rootstrap>
-                            : create a new sb2 target
+    $(basename $0) [tooling|target] create [OPTION] <name> <URL>
+                            : create a new sb2 tooling or target.
 
-    $(basename $0) remove <target-name>
-                            : remove the given sb2 target
+    $(basename $0) [tooling|target] remove <name>
+                            : remove the given sb2 tooling or target
 
-    $(basename $0) list
-                            : list available sb2 targets
+    $(basename $0) [tooling|target] list
+                            : list available sb2 toolings and/or targets
 
 Options:
-    <target-name>           : name of the sb2 target
-    <rootstrap>             : a rootstrap tarball URL or a local file
-    -a | --arch <arm|i486>  : create a target of the given arch
-                              if this option is not given, arch will be guessed
-                              from the name of the rootstrap
+    <name>                  : name of the sb2 tooling or target
+    <URL>                   : a tarball URL or a local file
     -y | --non-interactive  : do not ask questions
     -z | --dry-run          : do nothing, just print out what would happen
     -h | --help             : show this help
@@ -72,53 +71,48 @@ EOF
     [[ -n "$1" ]] && exit 1
 }
 
-guess_target_architecture()
-{
-    # examples of strings the guesser can handle:
-    # 
-    # zoobar-latest-Sailfish_SDK_Target-armv7hl.tar.bz2
-    # Vendor-1.0.7.16_SDK_Target-i486.tar.bz2
-    # foobar-arm.tbz
-    # bar-foo-zoidberg-x86.tar.gz
+guess_type() (
+    local url=$1
 
-    local rootstrap=$(rev <<< $OPT_ROOTSTRAP | cut -f 1 -d / )
-    local arch=$(cut -f 3 -d . <<< $rootstrap | cut -f 1 -d - | rev)
-
-    case "$arch" in
-        arm | armv7hl )
-            OPT_ARCH="arm"
-            ;;
-        i486 | *86 )
-            OPT_ARCH="i486"
-            ;;
-        * )
-            local arch2=$(cut -f 2 -d . <<< $rootstrap | cut -f 1 -d - | rev)
-            case "$arch2" in
-                arm | armv7hl )
-                    OPT_ARCH="arm"
-                    ;;
-                i486 | *86 )
-                    OPT_ARCH="i486"
-                    ;;
-                * )
-                    fail "unable to guess target architecture from $(rev <<< $rootstrap)"
-                    ;;
-            esac
-            ;;
+    shopt -s nocasematch
+    case $url in
+        *target*) echo target;;
+        *tooling*) echo tooling;;
+        *) return 1;;
     esac
+)
 
-    echo "Guessing target architecture [$OPT_ARCH]"
+list() {
+    local type=${1:-}
+    if [[ $type ]]; then
+        sdk-manage --"$type" --list
+    else
+        echo "Toolings:"
+        sdk-manage --tooling --list |sed 's/^/ /'
+        echo "Targets:"
+        # FIXME: targets are listed all on one line
+        sdk-manage --target --list |tr ' ' '\n' |sed 's/^/ /'
+    fi
 }
+
+have() {
+    local type=$1
+    local name=$2
+    # FIXME: targets are listed all on one line
+    sdk-manage --"$type" --list |tr ' ' '\n' |grep -q -F --line-regexp "$name"
+}
+
+OPT_CREATE=
+OPT_DRY_RUN=
+OPT_NAME=
+OPT_REMOVE=
+OPT_TYPE=
+OPT_URL=
+OPT_YES=
 
 # handle commandline options
 while [[ ${1:-} ]]; do
     case "$1" in
-        -a | --arch ) shift
-            OPT_ARCH=$1; shift
-            if [[ $OPT_ARCH != "arm" ]] && [[ $OPT_ARCH != "i486" ]]; then
-                fail "unsupported architecture given - see: $(basename $0) --help"
-            fi
-            ;;
         -y | --non-interactive ) shift
             OPT_YES=1
             ;;
@@ -128,17 +122,21 @@ while [[ ${1:-} ]]; do
         -h | --help ) shift
             usage quit
             ;;
+        tooling|target )
+            OPT_TYPE=$1
+            shift
+            ;;
         create ) shift
             OPT_CREATE=1
             ;;
         remove ) shift
             OPT_REMOVE=1
-            OPT_TARGET=$1; shift
-            [[ -z $OPT_TARGET ]] && fail "remove: target name required"
+            OPT_NAME=$1; shift
+            [[ $OPT_NAME ]] || fail "remove: ${OPT_TYPE:+$OPT_TYPE }name required"
             ;;
         list ) shift
             # list requested, just do it
-            sb2-config -f
+            list "$OPT_TYPE"
             exit $?
             ;;
         -* )
@@ -146,8 +144,8 @@ while [[ ${1:-} ]]; do
             ;;
         * )
             if [[ $OPT_CREATE ]]; then
-                OPT_TARGET=$1; shift
-                OPT_ROOTSTRAP=$1; shift
+                OPT_NAME=$1; shift
+                OPT_URL=$1; shift
             fi
             [[ $# -eq 0 ]] || fail "$1: unexpected argument"
             ;;
@@ -165,49 +163,47 @@ fi
 [[ ! $OPT_CREATE ]] && [[ ! $OPT_REMOVE ]] && usage quit
 
 if [[ $OPT_CREATE ]]; then
-    if [[ ! $OPT_TARGET ]] || [[ ! $OPT_ROOTSTRAP ]]; then
-        fail "create: target name and rootstrap URL or filename required"
+    if [[ ! $OPT_NAME ]] || [[ ! $OPT_URL ]]; then
+        fail "create: ${OPT_TYPE:+$OPT_TYPE }<name> and <URL> required"
     fi
 
-    if [[ $(sdk-manage --target --list) =~ $(echo "\<$OPT_TARGET\>") ]]; then
-        fail "$OPT_TARGET: target already exists"
+    if [[ ! $OPT_TYPE ]]; then
+        if ! OPT_TYPE=$(guess_type "$OPT_URL"); then
+            fail "Failed to guess type of tarball. Please specify either 'tooling' or 'target' on command line."
+        fi
     fi
 
-    if [[ ! ($OPT_ROOTSTRAP =~ ^https?://) && ! -f ${OPT_ROOTSTRAP/#file:\/\/} ]]; then
-        fail "$OPT_ROOTSTRAP: no such file"
+    if have "$OPT_TYPE" "$OPT_NAME"; then
+        fail "$OPT_NAME: $OPT_TYPE already exists"
     fi
 
-    if [[ -z $OPT_ARCH ]]; then
-        guess_target_architecture
+    if [[ ! ($OPT_URL =~ ^https?://) && ! -f ${OPT_URL#file://} ]]; then
+        fail "$OPT_URL: no such file"
     fi
-
-    case $OPT_ARCH in
-        arm )
-            TOOLCHAIN="patterns-sailfish-sb2-armv7hl"
-            ;;
-        i486 )
-            TOOLCHAIN="patterns-sailfish-sb2-i486"
-            ;;
-        * )
-            fail "internal error - arch is [$OPT_ARCH]"
-            ;;
-    esac
 
     cat <<EOF
-Creating the target [$OPT_TARGET] for arch [$OPT_ARCH]
-Using rootstrap [$OPT_ROOTSTRAP]
+Creating $OPT_TYPE [$OPT_NAME]
+Using tarball [$OPT_URL]
 EOF
-
-    if sdk-manage --toolchain --list | grep -q -F "$TOOLCHAIN,i"; then
-        TOOLCHAIN_INSTALLED=1
-        echo "Required toolchain [$TOOLCHAIN] already installed"
-    else
-        echo "Installing required toolchain [$TOOLCHAIN]"
-    fi
 fi
 
 if [[ $OPT_REMOVE ]]; then
-    echo "Going to remove the target [$OPT_TARGET]"
+    if [[ ! $OPT_TYPE ]]; then
+        if have tooling "$OPT_NAME"; then
+            OPT_TYPE=tooling
+        fi
+        if have target "$OPT_NAME"; then
+            if [[ $OPT_TYPE ]]; then
+                fail "$OPT_NAME: Ambiguous. Please specify either 'tooling' or 'target' on command line."
+            fi
+            OPT_TYPE=target
+        fi
+        if [[ ! $OPT_TYPE ]]; then
+            fail "$OPT_NAME: No such tooling or target"
+        fi
+    fi
+
+    echo "Going to remove the $OPT_TYPE [$OPT_NAME]"
 fi
 
 [[ $OPT_DRY_RUN ]] && echo "[only print out what would be done]"
@@ -231,16 +227,12 @@ if [[ -z $OPT_YES ]]; then
 fi
 
 if [[ $OPT_CREATE ]]; then
-    if ! [[ $TOOLCHAIN_INSTALLED ]]; then
-        _ sdk-manage --toolchain --install $TOOLCHAIN || exit
-    fi
-
-    _ sdk-manage --target --install $OPT_TARGET $TOOLCHAIN $OPT_ROOTSTRAP
+    _ sdk-manage --"$OPT_TYPE" --install "$OPT_NAME" "$OPT_URL"
     exit $?
 fi
 
 if [[ $OPT_REMOVE ]]; then
-    _ sdk-manage --target --remove $OPT_TARGET
+    _ sdk-manage --"$OPT_TYPE" --remove "$OPT_NAME"
     exit $?
 fi
 

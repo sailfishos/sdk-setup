@@ -1,0 +1,89 @@
+#!/bin/bash
+# mer-tooling-chroot - chroot into a Mer SDK tooling
+
+set -u
+set -e
+
+usage() {
+    cat <<EOF
+usage: $0 [<command> <args>...]
+       $0 -h
+
+    $0 - chroot into a Mer SDK tooling.
+
+    Options:
+
+     <command> [<args>...]  If present the given command will be executed
+                            instead of a login shell
+     -h                     Show this help
+
+EOF
+    return 0
+}
+
+while getopts "h" opt; do
+    case $opt in
+        h ) usage
+            exit;;
+        \? ) usage
+            exit 1;;
+    esac
+done
+shift $(($OPTIND - 1))
+
+if [[ ! -f /etc/MerSDK ]]; then
+    echo "$0 cannot be run outside the SDK; exiting"
+    exit 1
+fi
+
+if [[ $EUID -ne 0 ]]; then
+    exec sudo $0 "$@"
+    echo "$0 must be run as root and sudo failed; exiting"
+    exit 1
+fi
+
+if cmp -s /proc/$PPID/mountinfo /proc/self/mountinfo; then
+    if ! mountpoint --quiet /; then
+        # When used inside SDK chroot "/" is not a mountpoint so "unshare" would fail trying to
+        # change the propagation. OTOH the propagation is already "slave" (see mer-sdk-chroot),
+        # so no need to change it actually.
+        propagation="unchanged"
+    else
+        propagation="private"
+    fi
+    exec unshare -m --propagation $propagation -- $0 "$@"
+    echo "$0 must be run in private namespace and unshare failed; exiting"
+    exit 1
+fi
+
+toolingroot=$(dirname $(readlink -f $0))
+
+if [[ ! -f ${toolingroot}/etc/SDKTooling ]] ; then
+    echo "${toolingroot} does not look like a Mer SDK tooling root."
+    exit 1
+fi
+
+################################################################
+
+prepare_etc() {
+    if [[ -h ${toolingroot}/etc/resolv.conf ]]; then
+        rm -f ${toolingroot}/etc/resolv.conf
+        touch ${toolingroot}/etc/resolv.conf
+    fi
+    mount -o bind,ro $(readlink -f /etc/resolv.conf) ${toolingroot}/etc/resolv.conf
+
+    cat >${toolingroot}/etc/profile.d/90_prompt.sh <<END
+# Do not edit! Created by /$(basename $0)
+PS1="($(basename ${toolingroot}) tooling) \$PS1"
+END
+}
+
+################################################################
+
+prepare_etc
+
+if [[ $# -ne 0 ]]; then
+    setarch i386 chroot ${toolingroot} "${@}"
+else
+    setarch i386 chroot ${toolingroot} /bin/bash --login
+fi
