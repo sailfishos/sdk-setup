@@ -330,46 +330,37 @@ setup_user_hooks      # (after prepare so HOMEDIR is known)
 prepare_etc           # resolv.conf and ssl certs
 run_user_hook mount_sdk
 run_user_hook enter_sdk
+trap 'rv=$?; run_user_hook leave_sdk; exit "$rv"' EXIT
 
-case "$#" in
-    0 )
-	echo "Entering chroot as $user"
-	setarch i386 chroot ${sdkroot} /bin/su -s /bin/bash -l $user -- -c "$(cat <<END
-            [[ -d "$cwd" ]] && cd "$cwd"
-            export SSH_AUTH_SOCK='${MY_SSH_AUTH_SOCK}'
-            export SSH_AGENT_PID=${SSH_AGENT_PID:-}
-            export MERSDK='$sdkroot'
+if [[ ${1:-} == 'exec' ]]; then
+	cat <<EOF
+WARN: sdk 'exec' is deprecated. Just execute SDK commands using:
+	$0 <cmd> <args>
 
-            exec bash --init-file /mer-bash-setup -i
-END
-)"
-	;;
-    * )
-	if [[ $1 == 'exec' ]]; then
-	    cat <<EOF
-	    WARN: sdk 'exec' is deprecated. Just execute SDK commands using:
-  $0 <cmd> <args>
-  
 Executing commands as requested
 EOF
-	    shift # Remove the offending 'exec'
-	fi
-	if [[ ! $1 ]]; then
-	    echo "You must supply a command to exec"
-	    usage
-	    retval=1
-	else
-	    setarch i386 chroot "${sdkroot}" /bin/su -s /bin/bash -l $user -- -c "$(cat <<END
-                [[ -d "$cwd" ]] && cd "$cwd"
-                export MERSDK='$sdkroot'
+	shift # Remove the offending 'exec'
 
-                $*
+	if ! [[ $1 ]]; then
+		echo "You must supply a command to exec"
+	    usage
+		exit 1
+	fi
+fi
+
+if [[ $# -gt 0 ]]; then
+	cmd=("$@")
+else
+	cmd=(bash --init-file /mer-bash-setup -i)
+	echo "Entering chroot as $user"
+fi
+
+setarch i386 chroot ${sdkroot} /bin/su -s /bin/bash -l $user -- -c "$(cat <<END
+[[ -d "$cwd" ]] && cd "$cwd"
+export SSH_AUTH_SOCK='${MY_SSH_AUTH_SOCK}'
+export SSH_AGENT_PID=${SSH_AGENT_PID:-}
+export MERSDK='$sdkroot'
+
+exec $(printf "%q " "${cmd[@]}")
 END
 )"
-	    retval=$?
-	fi
-	;;
-esac
-run_user_hook leave_sdk
-
-exit $retval
