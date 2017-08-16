@@ -657,7 +657,8 @@ manage_develpkgs() {
 
 target_exists() {
     local target=$1
-    sb2-config -f |grep -q -F --line-regexp "$target"
+    # sb2-config is verbose when no target exists
+    sb2-config -f 2>/dev/null |grep -q -F --line-regexp "$target"
 }
 
 check_target_visible() (
@@ -669,7 +670,8 @@ check_target_visible() (
 
 # Specialization of get_all_of_type()
 get_all_of_type_target() {
-    sb2-config -f
+    # sb2-config is verbose when no target exists
+    sb2-config -f 2>/dev/null
 }
 
 get_tooling_used_by_target() (
