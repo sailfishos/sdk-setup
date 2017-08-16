@@ -442,7 +442,7 @@ install_toolchain() {
         return 1
     fi
 
-    object_zypper "tooling:$tooling" --no-refresh install -t pattern "$pkg"
+    object_zypper "tooling:$tooling" --no-refresh install "$pkg"
 }
 
 install_tooling() {
