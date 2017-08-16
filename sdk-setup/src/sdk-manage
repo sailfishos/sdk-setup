@@ -91,7 +91,7 @@ ensure_installable() {
 install_toolchain() {
     pkg=$1
     if ensure_installable $pkg; then
-	sudo zypper --quiet --non-interactive install -t pattern $pkg
+	sudo zypper --quiet --non-interactive install $pkg
 	return $?
     else
 	echo >&2 "Toolchain $pkg doesn't exist or is already installed- can not install."
@@ -102,7 +102,7 @@ install_toolchain() {
 remove_toolchain() {
     pkg=$1
     if ensure_installed $pkg; then
-	sudo zypper --quiet --no-refresh --non-interactive remove -t pattern $pkg
+	sudo zypper --quiet --no-refresh --non-interactive remove $pkg
 	return $?
     else
 	echo >&2 "Toolchain $pkg is not installed - can not remove."
