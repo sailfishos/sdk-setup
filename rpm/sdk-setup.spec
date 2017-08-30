@@ -119,6 +119,8 @@ mkdir -p %{buildroot}/srv/mer/targets
 mkdir -p %{buildroot}/srv/mer/toolings
 mkdir -p %{buildroot}%{_sysconfdir}/zypp/systemCheck.d
 cp etc/sdk-chroot.check %{buildroot}%{_sysconfdir}/zypp/systemCheck.d/
+mkdir -p %{buildroot}%{_sysconfdir}/security/limits.d
+cp etc/95-nproc-sdk.conf %{buildroot}%{_sysconfdir}/security/limits.d
 
 # sdk-vm
 mkdir -p %{buildroot}/%{_unitdir}
@@ -225,6 +227,7 @@ fi
 %dir /srv/mer/targets
 %dir /srv/mer/toolings
 %{_sysconfdir}/zypp/systemCheck.d/sdk-chroot.check
+%{_sysconfdir}/security/limits.d/95-nproc-sdk.conf
 
 %files -n sdk-vm
 %defattr(-,root,root,-)
