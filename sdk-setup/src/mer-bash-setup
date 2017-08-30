@@ -1,5 +1,4 @@
 # This emulates normal bash login behaviour
-export MERSDK=1
 [[ -e /etc/profile ]] && . /etc/profile
 
 if [[ -e ~/.bash_profile ]] ; then
