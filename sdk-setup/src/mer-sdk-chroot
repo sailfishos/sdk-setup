@@ -226,12 +226,25 @@ prepare_mountpoints() {
 
 }
 
+# Replace 'shell' field in `getent passwd` output with /bin/bash if the shell
+# is not available in the chroot
+fix_shell() {
+    local shell= other=
+    while IFS=: read shell other; do
+        if ! [[ -e ${sdkroot}${shell} ]]; then
+            shell=/bin/bash
+        fi
+
+        echo "$other:$shell"
+    done <<<"$(cut -d: -f7,1-6)"
+}
+
 prepare_user() {
     # remove mer user if present
     sed -i -e "/^mer:/d" ${sdkroot}/etc/passwd
     # getent is probably best for user data
     sed -i -e "/^${user}:/d" ${sdkroot}/etc/passwd
-    getent passwd $user >> ${sdkroot}/etc/passwd
+    getent passwd $user |fix_shell >> ${sdkroot}/etc/passwd
     group=$(getent passwd $user | cut -f4 -d:)
     sed -i -e "/^[^:]*:[^:]*:${group}:/d" ${sdkroot}/etc/group
     getent group $group >> ${sdkroot}/etc/group

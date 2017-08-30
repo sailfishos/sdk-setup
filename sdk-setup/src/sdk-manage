@@ -237,6 +237,11 @@ ssu() (
 
 disk_full() [[ $(stat --file-system --format '%a*%s/1024' "$1") -lt 10000 ]]
 
+# Replace 'shell' field in `getent passwd` output with /bin/bash
+fix_shell() {
+    cut -d: -f1-6 |sed 's,$,:/bin/bash,'
+}
+
 ################################################################'
 # Polymorphic utilities for common operations on targets, toolings and the SDK itself.
 #
@@ -1027,7 +1032,7 @@ install_target() {
     esac
 
     if [[ $INSIDE_CHROOT ]]; then
-        getent passwd $(id -u) |sudo tee -a "$MER_TARGETS/$target/etc/passwd" >/dev/null
+        getent passwd $(id -u) |fix_shell |sudo tee -a "$MER_TARGETS/$target/etc/passwd" >/dev/null
         getent group $(id -u) |sudo tee -a "$MER_TARGETS/$target/etc/group" >/dev/null
     fi
 
