@@ -197,6 +197,10 @@ mount_bind() {
     mount --bind $1 ${sdkroot}$1
 }
 prepare_mountpoints() {
+    # This prevents the following mount_bind to hang first time after reboot.
+    # Bug in binfmt_misc pseudo-filesystem?
+    ls /proc/sys/fs/binfmt_misc -a > /dev/null
+
     echo "Mounting system directories..."
     mount_bind /proc
     mount_bind /proc/sys/fs/binfmt_misc
