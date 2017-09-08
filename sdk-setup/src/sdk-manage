@@ -90,6 +90,12 @@ fi
 ################################################################'
 # Common utilities
 
+# When sb2 is used outside of home directory CWD mapping may not be possible.
+# This would break e.g. `sdk-manage target install <pkg>` when invoked outside
+# of home directory - zypper would fail.  The `cd` is intentionally
+# unconditional, so that eventual issues are discovered ASAP.
+sb2() ( cd; command sb2 "$@" )
+
 print_array() {
     local array=("$@")
     declare -p array |sed 's/^[^=]*=//'
