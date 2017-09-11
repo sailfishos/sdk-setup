@@ -144,7 +144,7 @@ fix_shell() {
         fi
 
         echo "$other:$shell"
-    done <<<"$(cut -d: -f7,1-6)"
+    done <<<"$(awk -F: -v OFS=: '{print $7,$1,$2,$3,$4,$5,$6}')"
 }
 
 prepare_user() {
