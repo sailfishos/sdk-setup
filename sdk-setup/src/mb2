@@ -1030,7 +1030,7 @@ arg_pass_stub_create() {
         cat >"$stub" <<END || return
 #!/bin/bash
 echo "stub invoked: \$0 \$(printf "%q " "\$@")" >&2
-[[ \$# -ne 0 ]] && printf "%q\\n" "\$@" >"$results"
+{ [[ \$# -ne 0 ]] && printf "%q\\n" "\$@"; } >"$results"
 exit 0
 END
         chmod +x "$stub" || return
@@ -1050,13 +1050,13 @@ arg_pass_stub_remove() {
 
 arg_pass_stub_results() {
     local results=$STUBS_DIR/$1.args
-    cat "$results"
+    [[ -e $results ]] && cat "$results"
 }
 
 arg_pass_stub_clear() {
     while [[ ${1:-} ]]; do
         local results=$STUBS_DIR/$1.args
-        :> "$results" || return
+        rm -f "$results" || return
         shift
     done
 }
@@ -1412,7 +1412,7 @@ rpmbuild_arg_pass_tc() {
         local stub= expected= actual= diff=
         stub=${RPMBUILD_STUBS[i]}
         expected=${all_expected[i]}
-        actual=$(arg_pass_stub_results "$stub") || return
+        actual=$(arg_pass_stub_results "$stub")
         if ! diff=$(diff <(cat <<<"$expected") <(cat <<<"$actual")); then
             rc=1
             cat <<END
