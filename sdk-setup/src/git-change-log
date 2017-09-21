@@ -41,11 +41,15 @@ set -o errexit
 set -o pipefail
 #set -v
 
+: ${GIT_CHANGE_LOG_RESTRICTED:=}
 : ${GIT_CHANGE_LOG_NO_COMPAT_WARNINGS:=}
 
 NL=$'\n'
+US=$'\x1F'
+RS=$'\x1E'
 SELF=$(basename $0)
 SHA1_WIDTH=40
+REQUIRED_SCRIPT_SHEBANG=$'#!/usr/bin/git-change-log --script\n'
 
 SEPARATOR=';'
 cut() { command cut -d $SEPARATOR "$@"; }
@@ -66,6 +70,7 @@ usage: $SELF [-a|--auto-add-annotations] [-A|--only-add-annotations]
        [-F|--append-from <file>[,<opts>]] [--append-cmd <cmd>]
        [--tags-with-path] [-<number>] [--] [REVISION]
    or: $SELF {-u|--untagged-only} [--] [REVISION]
+   or: $SELF --script <file>
 EOF
 }
 
@@ -93,6 +98,14 @@ Unless '--auto-add-annotations' or '--only-add-annotations' is used, just the
 lines matching the following pattern will be used as change log entries:
 
     [BLANKS] '[' SHORT-DESCRIPTION ']' BLANKS LONG-DESCRIPTION
+
+The '--script' option provides restricted execution environment, enabling
+untrusted sources to customize their changelog generation without the need for a
+full-fledged process isolation.  It accepts a shell-like script that consists
+just from plain command invocations of 'git-change-log', 'git-show' or 'echo'.
+Any other command will be rejected.  The '--append-cmd' option is not available
+inside the script.  The script MUST start with the magic string
+'${REQUIRED_SCRIPT_SHEBANG%$NL}\\n'.
 
 Options:
     -h | --help                  : show this help
@@ -125,6 +138,8 @@ Options:
                                    clears everything including the implicit
                                    argument '--topo-order'.  Can be used to
                                    exclude upstream commits
+    --script <file>              : execute the given script <file>. See above
+                                   for more details about this option
     -s | --since[-date] <date>   : only print revisions after the given <date>,
        | --since[-rev] <rev>       <rev> or the latest revision found in the
        | --since <file>            given change log <file>.  <rev> is compared
@@ -161,7 +176,9 @@ Options:
                                    (For the oldest revision only <rev> is
                                    passed.)  <cmd> can be an arbitrary complex
                                    shell command. See "Using '--append-cmd'
-                                   Option" below for details.
+                                   Option" below for details.  This option is
+                                   not available when invoked from a script
+                                   executed with the '--script' option.
     --tags-with-path             : when turning a tag name into revision name,
                                    preserve the path prefix like 'git rev-parse
                                    --symbolic --abbrev-ref' would do for the tag
@@ -266,6 +283,11 @@ bad_usage()
     exit 1
 }
 
+fatal()
+{
+    echo "$SELF: FATAL: $*" >&2
+}
+
 configure()
 {
     feature()
@@ -343,6 +365,14 @@ stderr.close()
     feature HAS_GIT_SHORT_LOCAL \
         $(! git for-each-ref --format="%(authordate:short-local)" refs/heads/ &>/dev/null \
             || echo 1)
+
+    feature HAS_GIT_ALLOW_UNRELATED_HISTORIES_OPT \
+        $(! { git merge -h 2>&1 || :; } |grep -q allow-unrelated-histories || echo 1)
+    if [[ $HAS_GIT_ALLOW_UNRELATED_HISTORIES_OPT ]]; then
+        ALLOW_UNRELATED_HISTORIES_OPT='--allow-unrelated-histories'
+    else
+        ALLOW_UNRELATED_HISTORIES_OPT=
+    fi
 }
 
 # Output unique lines, keep order
@@ -656,6 +686,85 @@ append_from()
         fi
 }
 
+# Continuation character is single backslash preceded by space and immediately
+# followed by line break.
+join_continuation_lines()
+{
+    sed ':a;/ \\$/{N;s/\\\n//;ba}'
+}
+
+# Comments are only recognized at the beginning of line, optionally preceded by
+# spaces.
+remove_comments_and_blanks()
+{
+    sed '/^[[:space:]]*\(#.*\)\?$/d'
+}
+
+# Parse a simple shell-like script consisting just from command invocations.
+#
+# Each command must start on a new line. No other construct is recognized except
+# for comments. Comment leader must be the very first nonblank character on a
+# line.
+#
+# Produces one $RS delimited record for each command, with arguments (starting
+# with the command itself) delimited with $US.
+parse_script()
+{
+    local parser='
+foreach my $line (Text::ParseWords::nested_quotewords("\\s+", 0, <STDIN>)) {
+    print join($ENV{"US"}, @{$line}), $ENV{"RS"};
+}
+'
+
+    join_continuation_lines | remove_comments_and_blanks| \
+        (export US RS; perl -mText::ParseWords -e "$parser")
+}
+
+run_script()
+{
+    local file=$1
+
+    {
+        local magic=
+        # Special care must be taken to not have the trailing newline removed
+        # as it normally happens with process substitution
+        IFS= read -r -d '' -n "${#REQUIRED_SCRIPT_SHEBANG}" magic
+
+        if [[ $magic != "$REQUIRED_SCRIPT_SHEBANG" ]]; then
+            fatal "$file: The script MUST start with '${REQUIRED_SCRIPT_SHEBANG%$NL}'."
+            return 1
+        fi
+
+        local parsed=
+        parsed=$(parse_script) || return
+    } <"$file"
+
+    local invocation=() cmd= args=
+    while IFS=$US builtin read -a invocation -d "$RS" -r; do
+        cmd=${invocation[0]:-}
+        args=("${invocation[@]:1}")
+        case $cmd in
+            "$SELF")
+                cmd=$0
+                ;;
+            git-show)
+                cmd=git
+                args=(show ${args[@]:+"${args[@]}"})
+                ;;
+            echo)
+                ;;
+            *)
+                fatal "Command '$cmd' not allowed in script"
+                return 1
+                ;;
+        esac
+        if ! GIT_CHANGE_LOG_RESTRICTED=1 "$cmd" ${args[@]:+"${args[@]}"}; then
+            fatal "Command failed: $file: $cmd${args[@]:+ $(printf '%q ' "${args[@]}")}"
+            return 1
+        fi
+    done <<<"$parsed"
+}
+
 OPT_AUTO_ADD_ANNOTATIONS=
 OPT_ONLY_ADD_ANNOTATIONS=
 OPT_ONLY_ADD_TAGGED=
@@ -666,6 +775,7 @@ OPT_HEAD=
 OPT_NO_SQUEEZE_SPACES=
 OPT_REV_LIST_ARGS='--topo-order'
 OPT_SELF_TEST=
+OPT_SCRIPT=
 OPT_SINCE=
 OPT_SINCE_TYPE=
 OPT_SORT_ENTRIES=
@@ -723,6 +833,11 @@ while [[ ${1:-} ]]; do
         --self-test )
             OPT_SELF_TEST=1
             ;;
+        --script )
+            [[ $2 ]] || bad_usage "Argument expected: '$1'"
+            shift
+            OPT_SCRIPT=$1
+            ;;
         --since-date | --since-rev )
             [[ $2 ]] || bad_usage "Argument expected: '$1'"
             OPT_SINCE_TYPE=${1#--since-}
@@ -760,6 +875,9 @@ while [[ ${1:-} ]]; do
             ;;
         --append-cmd )
             [[ $2 ]] || bad_usage "Argument expected: '$1'"
+            if [[ $GIT_CHANGE_LOG_RESTRICTED ]]; then
+                bad_usage "The '$1' option is not available in restricted mode."
+            fi
             shift
             OPT_APPEND_CMD=$1
             ;;
@@ -828,6 +946,11 @@ configure
 ##############################################################################
 if [[ ! $OPT_SELF_TEST ]]; then ###  M A I N  EXECUTION BEGINS HERE ##########
 ##############################################################################
+
+if [[ $OPT_SCRIPT ]]; then
+    run_script "$OPT_SCRIPT"
+    exit
+fi
 
 TAG_INFO=$(mktemp $SELF.tag-info.XXX)
 trap "rm $TAG_INFO" EXIT
@@ -2222,6 +2345,143 @@ verify --tags 'refs/tags/our/*' --only-add-tagged master <<EOF
 * Thu Mar 02 2000 John Author <john.author@example.net> - 0.1+git1
 - [FooBar] Commit 2000-03
 EOF
+# ============================================================
+
+# Case: Executing script
+git init .
+
+# Initialize upstream repository, add at least one file so that git-subtree has
+# anything to work with
+git checkout -b upstream/master
+echo foo > foo
+git add foo
+git commit -m 'Upstream commit 2000-01'
+git commit -m '[FooBar] Upstream commit 2000-02'
+git tag 0.1
+
+# Initialize our own repository with upstream code in a subtree
+git checkout -b master
+git subtree add -q --squash --prefix src upstream/master
+echo our > our
+echo bar > src/bar
+git add our src/bar
+git commit -m '[FooBar] Commit 2000-03'
+git tag 0.1+git1
+
+# Upstream releases 0.2
+git checkout upstream/master
+git commit -m '[FooBar] Upstream commit 2000-04'
+git commit -m '[FooBar] Upstream commit 2000-05'
+git tag 0.2
+
+# Update to upstream 0.2
+git checkout master
+git subtree merge --squash --prefix src upstream/master
+git commit -m '[FooBar] Update to upstream version 0.2 2000-06'
+git tag 0.2+git1
+
+# We do some changes
+echo OUR > our
+echo BAR > src/bar
+git add our src/bar
+git commit -m '[FooBar] Commit 2000-07'
+git tag 0.2+git2
+
+# Upstream releases 0.3
+git checkout upstream/master
+git commit -m '[FooBar] Upstream commit 2000-07'
+git tag 0.3
+
+# We decided to stop using git-subtree prior to updating to upstream 0.3
+git checkout master
+splitted=$(command git subtree split --prefix src)
+git branch splitted $splitted
+git checkout -b no-subtree 0.2
+git merge --strategy ours ${ALLOW_UNRELATED_HISTORIES_OPT} master -m 'Reset master to upstream tag 0.2'
+git branch -f master
+git rebase no-subtree splitted
+git checkout -B no-subtree splitted
+git show 0.2+git2:our > our
+git add our
+git commit -m 'Add our files as of 0.2+git2'
+git checkout master
+git merge --no-ff no-subtree -m 'Convert from subtree to normal branch'
+
+# Update to upstream 0.3
+git merge upstream/master -m 'Merge upstream version 0.3 2000-08'
+# Summarize upstream changes since last time we updated
+echo "Upstream changelog 0.3" > UpstreamChanges
+git add UpstreamChanges
+git commit -m '[FooBar] Update to upstream version 0.3 2000-08'
+git tag our/0.3+git1
+
+# We do some changes
+git commit -m '[FooBar] Commit 2000-09'
+git tag our/0.3+git2
+
+# Upstream releases 0.4
+git checkout upstream/master
+git commit -m '[FooBar] Upstream commit 2000-10'
+git tag 0.4
+
+# We do some changes
+git checkout master
+git commit -m '[FooBar] Commit 2000-10'
+git tag our/0.3+git3
+
+# Update to upstream 0.4
+git merge upstream/master -m 'Merge upstream version 0.4 2000-11'
+# Summarize upstream changes since last time we updated
+echo "Upstream changelog 0.4" >> UpstreamChanges
+git add UpstreamChanges
+git commit -m '[FooBar] Update to upstream version 0.4 2000-11'
+git tag our/0.4+git1
+
+# ------------------------------------------------------------
+verify --script <(cat <<EOF
+#!/usr/bin/git-change-log --script
+# Originally we used git-subtree to separate our change log from upstream.
+# Since 0.3+git1 we keep our changes in a normal git branch, using
+# --only-add-tagged and --tags to select our own change log items. We now also
+# include summary of upstream changes (stored in 'UpstreamChanges') and trim
+# very old entries.
+
+git-change-log --tags 'refs/tags/our/*' \
+               --only-add-tagged \
+               --append-from UpstreamChanges \
+               master
+echo ""
+git-change-log --since 0.1+git1 \
+               0.2+git2
+echo ""
+echo "  [Some changelog entries trimmed for brevity]"
+EOF
+) <<EOF
+* Thu Nov 02 2000 John Author <john.author@example.net> - 0.4+git1
+- [FooBar] Update to upstream version 0.4 2000-11
+
+  Upstream changelog 0.4
+
+* Mon Oct 02 2000 John Author <john.author@example.net> - 0.3+git3
+- [FooBar] Commit 2000-10
+
+* Sat Sep 02 2000 John Author <john.author@example.net> - 0.3+git2
+- [FooBar] Commit 2000-09
+
+* Wed Aug 02 2000 John Author <john.author@example.net> - 0.3+git1
+- [FooBar] Update to upstream version 0.3 2000-08
+
+  Upstream changelog 0.3
+
+* Sun Jul 02 2000 John Author <john.author@example.net> - 0.2+git2
+- [FooBar] Commit 2000-07
+
+* Fri Jun 02 2000 John Author <john.author@example.net> - 0.2+git1
+- [FooBar] Update to upstream version 0.2 2000-06
+
+  [Some changelog entries trimmed for brevity]
+EOF
+
 # ============================================================
 
 # Case: Example printed with --help
