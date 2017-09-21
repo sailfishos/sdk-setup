@@ -972,8 +972,8 @@ git()
 REPO=$(readlink -f $(mktemp -d $SELF.test.XXX))
 trap "rm -rf '$REPO/.git' && rm -r '$REPO'" EXIT
 
+SELF=$(which "$0")
 cd $REPO
-SELF=$(PATH=$OLDPWD:$PATH which $SELF)
 
 # Do not test on empty repository - it will fail with error message possibly
 # specific to particular Git version
