@@ -63,7 +63,7 @@ synopsis()
 {
     cat <<EOF
 usage: $SELF [-a|--auto-add-annotations] [-A|--only-add-annotations]
-       [-T|--only-add-tagged]
+       [-T|--only-add-tagged] [-D|--descendants-of <rev>]
        [-d|--dense <regexp>] [--[no-]favor-tagger] [--no-squeeze-spaces]
        [--rev-list-args=[<args>]] [-s|--since[-date|-rev] {<date>|<rev>|<file>}]
        [--sort-entries] [--strip-tag-prefix <prefix>] [-t|--tags <pattern>]
@@ -120,6 +120,12 @@ Options:
                                    '--tags' option and therefore can be used to
                                    exclude upstream commits where
                                    '--rev-list-args' cannot be used.
+    -D | --descendants-of <rev>  : only consider commits that exist directly on
+                                   the ancestry path from <rev>, including <rev>
+                                   itself.  This can be used to exclude upstream
+                                   commits where '--rev-list-args' cannot be
+                                   used.  This is most likely to be used
+                                   together with '--tags'.
     -d | --dense <regexp>        : print headlines just for revisions denoted by
                                    tags matching the given <regexp>. This is
                                    matched agains the full refname, including
@@ -576,6 +582,9 @@ list_objects()
 
     local commit=
     while read commit; do
+        if [[ $OPT_DESCENDANTS_OF ]]; then
+            [[ -s $DESCENDANTS ]] && look $commit $DESCENDANTS >/dev/null || continue
+        fi
         local commit_tags=$(! [[ -s $TAG_INFO ]] || look $commit $TAG_INFO \
             |awk -F "$SEPARATOR" '($'$TI_TYPE' == "tag") { print $'$TI_REFNAME' }')
         write $commit $commit_tags
@@ -768,6 +777,7 @@ run_script()
 OPT_AUTO_ADD_ANNOTATIONS=
 OPT_ONLY_ADD_ANNOTATIONS=
 OPT_ONLY_ADD_TAGGED=
+OPT_DESCENDANTS_OF=
 OPT_DENSE=
 OPT_FAVOR_TAGGER=
 OPT_NO_FAVOR_TAGGER=
@@ -806,6 +816,11 @@ while [[ ${1:-} ]]; do
             ;;
         -T | --only-add-tagged )
             OPT_ONLY_ADD_TAGGED=1
+            ;;
+        -D | --descendants-of )
+            [[ $2 ]] || bad_usage "Argument expected: '$1'"
+            shift
+            OPT_DESCENDANTS_OF=$1
             ;;
         -d | --dense )
             [[ $2 ]] || bad_usage "Argument expected: '$1'"
@@ -952,9 +967,26 @@ if [[ $OPT_SCRIPT ]]; then
     exit
 fi
 
+cleanup()
+{
+    local rv=$?
+    [[ ${TAG_INFO:-} ]] && rm -f "$TAG_INFO"
+    [[ ${DESCENDANTS:-} ]] && rm -f "$DESCENDANTS"
+    return $rv
+}
+trap cleanup EXIT
+
 TAG_INFO=$(mktemp $SELF.tag-info.XXX)
-trap "rm $TAG_INFO" EXIT
 create_tag_info > $TAG_INFO
+
+if [[ $OPT_DESCENDANTS_OF ]]; then
+    DESCENDANTS=$(mktemp $SELF.descendants.XXX)
+    {
+        git rev-list --ancestry-path "$OPT_DESCENDANTS_OF..$OPT_HEAD"
+        git rev-parse "$OPT_DESCENDANTS_OF" # actually descendant-or-self
+    } |sort > $DESCENDANTS
+    OPT_REV_LIST_ARGS="$OPT_REV_LIST_ARGS ^$OPT_DESCENDANTS_OF^"
+fi
 
 if [[ $OPT_SINCE_TYPE == 'rev' ]]; then
     valid_rev=
@@ -2344,6 +2376,63 @@ verify --tags 'refs/tags/our/*' --only-add-tagged master <<EOF
 
 * Thu Mar 02 2000 John Author <john.author@example.net> - 0.1+git1
 - [FooBar] Commit 2000-03
+EOF
+# ============================================================
+
+# Case: Ignoring upstream commits with --tags and --descendants-of
+git init .
+git checkout -b upstream/master
+git commit -m 'Upstream commit 2000-01'
+git commit -m '[FooBar] Upstream commit 2000-02'
+git tag 0.1
+git checkout -b master
+git commit -m '[FooBar] Commit 2000-02'
+start_of_our_devel=$(command git rev-parse HEAD)
+git commit -m '[FooBar] Commit 2000-03'
+git tag our/0.1+git1
+git checkout upstream/master
+git commit -m '[FooBar] Upstream commit 2000-04'
+git commit -m '[FooBar] Upstream commit 2000-05'
+git tag 0.1.1
+git checkout -b feature master
+git commit -m '[FooBar] Feature commit 2000-06'
+git checkout master
+git commit -m '[FooBar] Commit 2000-06'
+git commit -m '[FooBar] Commit 2000-07'
+git tag our/0.1+git2
+git checkout upstream/master
+git commit -m '[FooBar] Upstream commit 2000-07'
+git tag 0.1.2
+git checkout feature
+git commit -m '[FooBar] Feature commit 2000-08'
+git checkout master
+git merge upstream/master -m '[FooBar] Merge branch "upstream/master" 2000-08'
+git merge feature -m 'Merge branch "feature" 2000-08'
+git tag our/0.1+git3
+git commit -m '[FooBar] Commit 2000-09'
+git commit -m '[FooBar] Commit 2000-10'
+git tag our/0.1+git4
+git checkout upstream/master
+git commit -m '[FooBar] Upstream commit 2000-10'
+git tag 0.1.3
+# ------------------------------------------------------------
+verify --tags 'refs/tags/our/*' --descendants-of "$start_of_our_devel" master <<EOF
+* Mon Oct 02 2000 John Author <john.author@example.net> - 0.1+git4
+- [FooBar] Commit 2000-10
+- [FooBar] Commit 2000-09
+
+* Wed Aug 02 2000 John Author <john.author@example.net> - 0.1+git3
+- [FooBar] Feature commit 2000-08
+- [FooBar] Feature commit 2000-06
+- [FooBar] Merge branch "upstream/master" 2000-08
+
+* Sun Jul 02 2000 John Author <john.author@example.net> - 0.1+git2
+- [FooBar] Commit 2000-07
+- [FooBar] Commit 2000-06
+
+* Thu Mar 02 2000 John Author <john.author@example.net> - 0.1+git1
+- [FooBar] Commit 2000-03
+- [FooBar] Commit 2000-02
 EOF
 # ============================================================
 
