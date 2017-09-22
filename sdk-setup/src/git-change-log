@@ -327,16 +327,27 @@ configure()
         {
             local field=$(($1-1))
             python -c '
-from distutils.version import LooseVersion
 from sys import exit, stdin, stdout, stderr
 import errno
 import csv
+import rpm
 
 reader = csv.reader(stdin, delimiter="'$SEPARATOR'", lineterminator="\n")
 writer = csv.writer(stdout, delimiter="'$SEPARATOR'", lineterminator="\n")
 
+def cmp_ver(v1, v2):
+    v1h = rpm.hdr()
+    v2h = rpm.hdr()
+    v1h[rpm.RPMTAG_EPOCH] = 0
+    v2h[rpm.RPMTAG_EPOCH] = 0
+    v1h[rpm.RPMTAG_RELEASE] = "0"
+    v2h[rpm.RPMTAG_RELEASE] = "0"
+    v1h[rpm.RPMTAG_VERSION] = v1
+    v2h[rpm.RPMTAG_VERSION] = v2
+    return rpm.versionCompare(v1h, v2h)
+
 try:
-    writer.writerows(sorted(reader, key=lambda row: LooseVersion(row['$field']), reverse=True))
+    writer.writerows(sorted(reader, cmp=cmp_ver, key=lambda row: row['$field'], reverse=True))
 except IOError as e:
     if e.errno == errno.EPIPE:
         pass
@@ -348,8 +359,8 @@ stderr.close()
             $(! python_version_sort_reverse 0 </dev/null &>/dev/null || echo 1)
         if [[ ! $HAS_PYTHON_VERSION_SORT ]]; then
             warn_c "Your 'sort' utility does not support --version-sort and"
-            warn_c "    you either do not have python installed or the"
-            warn_c "    'distutils.version' module could not be used."
+            warn_c "    you either do not have python installed or the 'rpm' module"
+            warn_c "    could not be used."
         fi
     fi
 
@@ -1281,6 +1292,49 @@ git-change-log: WARNING: No change log entries for tag '0.1.2'
 EOF
 # ============================================================
 
+# Case: Proper version sort
+git init .
+git commit -m 'Commit 2000-01'
+git commit -m 'Commit 2000-02'
+git commit -m '[FooBar] Commit 2000-03'
+git tag 0.1+git1
+git commit -m '[FooBar] Commit 2000-04'
+git tag 0.1.1+git1
+git commit -m '[FooBar] Commit 2000-05'
+git tag 0.1.2+git1
+git commit -m '[FooBar] Commit 2000-06'
+git tag 0.1.2+git2
+git commit -m '[FooBar] Commit 2000-07'
+git tag 0.1.2+git10
+git commit -m '[FooBar] Commit 2000-08'
+git tag 0.1.10+git1
+git commit -m '[FooBar] Commit 2000-09'
+git tag 0.10+git1
+# ------------------------------------------------------------
+verify <<EOF
+* Sat Sep 02 2000 John Author <john.author@example.net> - 0.10+git1
+- [FooBar] Commit 2000-09
+
+* Wed Aug 02 2000 John Author <john.author@example.net> - 0.1.10+git1
+- [FooBar] Commit 2000-08
+
+* Sun Jul 02 2000 John Author <john.author@example.net> - 0.1.2+git10
+- [FooBar] Commit 2000-07
+
+* Fri Jun 02 2000 John Author <john.author@example.net> - 0.1.2+git2
+- [FooBar] Commit 2000-06
+
+* Tue May 02 2000 John Author <john.author@example.net> - 0.1.2+git1
+- [FooBar] Commit 2000-05
+
+* Sun Apr 02 2000 John Author <john.author@example.net> - 0.1.1+git1
+- [FooBar] Commit 2000-04
+
+* Thu Mar 02 2000 John Author <john.author@example.net> - 0.1+git1
+- [FooBar] Commit 2000-03
+EOF
+# ============================================================
+
 # Case: Annotated tag
 git init .
 git commit -m 'Commit 2000-01'
@@ -2092,18 +2146,18 @@ git commit -m '[FooBar] Upstream commit 2000-07'
 git tag 0.1.2
 git checkout master
 git merge upstream/master -m '[FooBar] Merge branch "upstream/master" 2000-08'
-git tag our/0.1+git3
+git tag our/0.1.2+git1
 git commit -m '[FooBar] Commit 2000-09'
-git tag our/0.1+git4
+git tag our/0.1.2+git2
 git checkout upstream/master
 git commit -m '[FooBar] Upstream commit 2000-10'
 git tag 0.1.3
 # ------------------------------------------------------------
 verify --tags 'refs/tags/our/*' --rev-list-args='^upstream/master' master <<EOF
-* Sat Sep 02 2000 John Author <john.author@example.net> - 0.1+git4
+* Sat Sep 02 2000 John Author <john.author@example.net> - 0.1.2+git2
 - [FooBar] Commit 2000-09
 
-* Wed Aug 02 2000 John Author <john.author@example.net> - 0.1+git3
+* Wed Aug 02 2000 John Author <john.author@example.net> - 0.1.2+git1
 - [FooBar] Merge branch "upstream/master" 2000-08
 
 * Fri Jun 02 2000 John Author <john.author@example.net> - 0.1+git2
@@ -2141,19 +2195,19 @@ git commit -m '[FooBar] Upstream commit 2000-07' -a
 git tag 0.1.2
 git checkout master
 git merge upstream/master -m '[FooBar] Merge branch "upstream/master" 2000-08'
-git tag our/0.1+git3
+git tag our/0.1.2+git1
 git commit -m '[FooBar] Commit 2000-09'
-git tag our/0.1+git4
+git tag our/0.1.2+git2
 git checkout upstream/master
 sed -i "1i Committed 2000-10" Changelog
 git commit -m '[FooBar] Upstream commit 2000-10' -a
 git tag 0.1.3
 # ------------------------------------------------------------
 verify --tags 'refs/tags/our/*' --rev-list-args='^upstream/master' --append-from Changelog master <<EOF
-* Sat Sep 02 2000 John Author <john.author@example.net> - 0.1+git4
+* Sat Sep 02 2000 John Author <john.author@example.net> - 0.1.2+git2
 - [FooBar] Commit 2000-09
 
-* Wed Aug 02 2000 John Author <john.author@example.net> - 0.1+git3
+* Wed Aug 02 2000 John Author <john.author@example.net> - 0.1.2+git1
 - [FooBar] Merge branch "upstream/master" 2000-08
 
   Committed 2000-07
@@ -2197,19 +2251,19 @@ git commit -m '[FooBar] Upstream commit 2000-07' -a
 git tag 0.1.2
 git checkout master
 git merge upstream/master -m '[FooBar] Merge branch "upstream/master" 2000-08'
-git tag our/0.1+git3
+git tag our/0.1.2+git1
 git commit -m '[FooBar] Commit 2000-09'
-git tag our/0.1+git4
+git tag our/0.1.2+git2
 git checkout upstream/master
 sed -i "1i Committed 2000-10" Change,log
 git commit -m '[FooBar] Upstream commit 2000-10' -a
 git tag 0.1.3
 # ------------------------------------------------------------
 verify --tags 'refs/tags/our/*' --rev-list-args='^upstream/master' --append-from Change\\,log,stick,noindent master <<EOF
-* Sat Sep 02 2000 John Author <john.author@example.net> - 0.1+git4
+* Sat Sep 02 2000 John Author <john.author@example.net> - 0.1.2+git2
 - [FooBar] Commit 2000-09
 
-* Wed Aug 02 2000 John Author <john.author@example.net> - 0.1+git3
+* Wed Aug 02 2000 John Author <john.author@example.net> - 0.1.2+git1
 - [FooBar] Merge branch "upstream/master" 2000-08
 Committed 2000-07
 Committed 2000-05
@@ -2252,9 +2306,9 @@ git commit -m '[FooBar] Upstream commit 2000-07' -a
 git tag 0.1.2
 git checkout master
 git merge upstream/master -m '[FooBar] Merge branch "upstream/master" 2000-08'
-git tag our/0.1+git3
+git tag our/0.1.2+git1
 git commit -m '[FooBar] Commit 2000-09'
-git tag our/0.1+git4
+git tag our/0.1.2+git2
 git checkout upstream/master
 sed -i "1i Committed 2000-10" Changelog
 git commit -m '[FooBar] Upstream commit 2000-10' -a
@@ -2268,10 +2322,10 @@ my_append()
 }
 verify --append-cmd "$(declare -f my_append); my_append" \
     --tags 'refs/tags/our/*' --rev-list-args='^upstream/master' master <<EOF
-* Sat Sep 02 2000 John Author <john.author@example.net> - 0.1+git4
+* Sat Sep 02 2000 John Author <john.author@example.net> - 0.1.2+git2
 - [FooBar] Commit 2000-09
 
-* Wed Aug 02 2000 John Author <john.author@example.net> - 0.1+git3
+* Wed Aug 02 2000 John Author <john.author@example.net> - 0.1.2+git1
 - [FooBar] Merge branch "upstream/master" 2000-08
 
   Committed 2000-07
@@ -2310,18 +2364,18 @@ git commit -m '[FooBar] Upstream commit 2000-07'
 git tag 0.1.2
 git checkout master
 git merge upstream/master -m '[FooBar] Merge branch "upstream/master" 2000-08'
-git tag our/0.1+git3
+git tag our/0.1.2+git1
 git commit -m '[FooBar] Commit 2000-09'
-git tag our/0.1+git4
+git tag our/0.1.2+git2
 git checkout upstream/master
 git commit -m '[FooBar] Upstream commit 2000-10'
 git tag 0.1.3
 # ------------------------------------------------------------
 verify --tags 'refs/tags/our/*' master <<EOF
-* Sat Sep 02 2000 John Author <john.author@example.net> - 0.1+git4
+* Sat Sep 02 2000 John Author <john.author@example.net> - 0.1.2+git2
 - [FooBar] Commit 2000-09
 
-* Wed Aug 02 2000 John Author <john.author@example.net> - 0.1+git3
+* Wed Aug 02 2000 John Author <john.author@example.net> - 0.1.2+git1
 - [FooBar] Merge branch "upstream/master" 2000-08
 - [FooBar] Upstream commit 2000-07
 - [FooBar] Upstream commit 2000-05
@@ -2357,18 +2411,18 @@ git commit -m '[FooBar] Upstream commit 2000-07'
 git tag 0.1.2
 git checkout master
 git merge upstream/master -m '[FooBar] Merge branch "upstream/master" 2000-08'
-git tag our/0.1+git3
+git tag our/0.1.2+git1
 git commit -m '[FooBar] Commit 2000-09'
-git tag our/0.1+git4
+git tag our/0.1.2+git2
 git checkout upstream/master
 git commit -m '[FooBar] Upstream commit 2000-10'
 git tag 0.1.3
 # ------------------------------------------------------------
 verify --tags 'refs/tags/our/*' --only-add-tagged master <<EOF
-* Sat Sep 02 2000 John Author <john.author@example.net> - 0.1+git4
+* Sat Sep 02 2000 John Author <john.author@example.net> - 0.1.2+git2
 - [FooBar] Commit 2000-09
 
-* Wed Aug 02 2000 John Author <john.author@example.net> - 0.1+git3
+* Wed Aug 02 2000 John Author <john.author@example.net> - 0.1.2+git1
 - [FooBar] Merge branch "upstream/master" 2000-08
 
 * Fri Jun 02 2000 John Author <john.author@example.net> - 0.1+git2
@@ -2408,20 +2462,20 @@ git commit -m '[FooBar] Feature commit 2000-08'
 git checkout master
 git merge upstream/master -m '[FooBar] Merge branch "upstream/master" 2000-08'
 git merge feature -m 'Merge branch "feature" 2000-08'
-git tag our/0.1+git3
+git tag our/0.1.2+git1
 git commit -m '[FooBar] Commit 2000-09'
 git commit -m '[FooBar] Commit 2000-10'
-git tag our/0.1+git4
+git tag our/0.1.2+git2
 git checkout upstream/master
 git commit -m '[FooBar] Upstream commit 2000-10'
 git tag 0.1.3
 # ------------------------------------------------------------
 verify --tags 'refs/tags/our/*' --descendants-of "$start_of_our_devel" master <<EOF
-* Mon Oct 02 2000 John Author <john.author@example.net> - 0.1+git4
+* Mon Oct 02 2000 John Author <john.author@example.net> - 0.1.2+git2
 - [FooBar] Commit 2000-10
 - [FooBar] Commit 2000-09
 
-* Wed Aug 02 2000 John Author <john.author@example.net> - 0.1+git3
+* Wed Aug 02 2000 John Author <john.author@example.net> - 0.1.2+git1
 - [FooBar] Feature commit 2000-08
 - [FooBar] Feature commit 2000-06
 - [FooBar] Merge branch "upstream/master" 2000-08
