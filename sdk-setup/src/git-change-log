@@ -106,9 +106,9 @@ untrusted sources to customize their changelog generation without the need for a
 full-fledged process isolation.  It accepts a shell-like script that consists
 just from plain command invocations of 'git-change-log', 'git-show' or 'echo'.
 Any other command will be rejected.  The '--append-cmd' option is not available
-inside the script.  Custom 'sed' script passed with '--sed-entries' will be
-executed with 'sed --sandbox'.  The script MUST start with the magic string
-'${REQUIRED_SCRIPT_SHEBANG%$NL}\\n'.
+inside the script.  Custom 'sed' script passed with '--sed-entries' or
+'--append-from' will be executed with 'sed --sandbox'.  The script MUST start
+with the magic string '${REQUIRED_SCRIPT_SHEBANG%$NL}\\n'.
 
 Options:
     -h | --help                  : show this help
@@ -183,6 +183,10 @@ Options:
                                      notail   : Omit the very last revision
                                      notrim   : Do not trim newlines
                                      stick    : Do not separate with blank line
+                                     sed:<script>
+                                              : Process lines with the supplied
+                                                'sed' <script>. This option must
+                                                appear as the very last one
     --append-cmd <cmd>           : append lines writtend to stdout by <cmd> for
                                    each revision. <cmd> will be executed with a
                                    single argument in form of [<rev-1>..]<rev>.
@@ -709,6 +713,11 @@ append_from()
     fi
 
     git_chl__head_added_lines "$range" "$OPT_APPEND_FROM" \
+        |if [[ $OPT_APPEND_FROM_SED ]]; then
+            sed -n ${GIT_CHANGE_LOG_RESTRICTED:+$SANDBOX_OPT} "$OPT_APPEND_FROM_SED"
+        else
+            cat
+        fi \
         |if [[ $OPT_APPEND_FROM_OPTS == *" notrim "* ]]; then
             cat
         else
@@ -831,6 +840,7 @@ OPT_STRIP_TAG_PREFIX='v'
 OPT_TAGS='refs/tags/*'
 OPT_APPEND_FROM=
 OPT_APPEND_FROM_OPTS=
+OPT_APPEND_FROM_SED=
 OPT_APPEND_CMD=
 OPT_TAGS_WITH_PATH=
 OPT_UNTAGGED_ONLY=
@@ -931,15 +941,27 @@ while [[ ${1:-} ]]; do
             ;;
         -F | --append-from )
             [[ $2 ]] || bad_usage "Argument expected: '$1'"
-            shift
-            IFS="," builtin read -a opts <<<"$1"
-            for opt in "${opts[@]:1}"; do
+            {
+                IFS="," builtin read -d "," OPT_APPEND_FROM || true
+                OPT_APPEND_FROM=${OPT_APPEND_FROM%$NL}
+                opts=$(cat)
+            } <<<"$2"
+            if [[ $opts =~ ^([^:]*)sed:(.*)$ ]]; then
+                if [[ $GIT_CHANGE_LOG_RESTRICTED && ! $HAS_SED_SANDBOX_OPT ]]; then
+                    bad_usage "Your 'sed' version does not support the '--sandbox' option." \
+                        "Without this the 'sed' option to '$1' is not available in restricted mode."
+                fi
+                opts=${BASH_REMATCH[1]%,}
+                OPT_APPEND_FROM_SED=${BASH_REMATCH[2]}
+            fi
+            IFS="," builtin read -a opts <<<"$opts"
+            for opt in "${opts[@]:0}"; do
                 if ! [[ $VALID_APPEND_FROM_OPTS == *" $opt "* ]]; then
                     bad_usage "Unexpected option to '--append-from': '$opt'"
                 fi
             done
-            OPT_APPEND_FROM=${opts[0]:-}
-            OPT_APPEND_FROM_OPTS=" ${opts[*]:1} "
+            OPT_APPEND_FROM_OPTS=" ${opts[*]:-} "
+            shift
             ;;
         --append-cmd )
             [[ $2 ]] || bad_usage "Argument expected: '$1'"
@@ -2336,22 +2358,26 @@ sed -i "1i Committed 2000-10" Change,log
 git commit -m '[FooBar] Upstream commit 2000-10' -a
 git tag 0.1.3
 # ------------------------------------------------------------
-verify --tags 'refs/tags/our/*' --rev-list-args='^upstream/master' --append-from Change\\,log,stick,noindent master <<EOF
+filter='1i Upstream changes,sed:
+s/^/- /p'
+verify --tags 'refs/tags/our/*' --rev-list-args='^upstream/master' --append-from Change\\,log,stick,sed:"$filter" master <<EOF
 * Sat Sep 02 2000 John Author <john.author@example.net> - 0.1.2+git2
 - [FooBar] Commit 2000-09
 
 * Wed Aug 02 2000 John Author <john.author@example.net> - 0.1.2+git1
 - [FooBar] Merge branch "upstream/master" 2000-08
-Committed 2000-07
-Committed 2000-05
-Committed 2000-04
+  Upstream changes,sed:
+  - Committed 2000-07
+  - Committed 2000-05
+  - Committed 2000-04
 
 * Fri Jun 02 2000 John Author <john.author@example.net> - 0.1+git2
 - [FooBar] Commit 2000-06
 
 * Thu Mar 02 2000 John Author <john.author@example.net> - 0.1+git1
 - [FooBar] Commit 2000-03
-Committed 2000-01
+  Upstream changes,sed:
+  - Committed 2000-01
 EOF
 # ============================================================
 
