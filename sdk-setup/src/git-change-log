@@ -65,7 +65,8 @@ synopsis()
 usage: $SELF [-a|--auto-add-annotations] [-A|--only-add-annotations]
        [-T|--only-add-tagged] [-D|--descendants-of <rev>]
        [-d|--dense <regexp>] [--[no-]favor-tagger] [--no-squeeze-spaces]
-       [--rev-list-args=[<args>]] [-s|--since[-date|-rev] {<date>|<rev>|<file>}]
+       [--rev-list-args=[<args>]] [-e|--sed-entries <script>]
+       [-s|--since[-date|-rev] {<date>|<rev>|<file>}]
        [--sort-entries] [--strip-tag-prefix <prefix>] [-t|--tags <pattern>]
        [-F|--append-from <file>[,<opts>]] [--append-cmd <cmd>]
        [--tags-with-path] [-<number>] [--] [REVISION]
@@ -94,8 +95,9 @@ Lists changes in reverse chronological order, starting at REVISION which
 defaults to current HEAD. REVISION can be any revision as understood by
 git-rev-parse(1).
 
-Unless '--auto-add-annotations' or '--only-add-annotations' is used, just the
-lines matching the following pattern will be used as change log entries:
+Unless '--auto-add-annotations', '--only-add-annotations' or '--sed-entries' is
+used, just the lines matching the following pattern will be used as change log
+entries:
 
     [BLANKS] '[' SHORT-DESCRIPTION ']' BLANKS LONG-DESCRIPTION
 
@@ -104,7 +106,8 @@ untrusted sources to customize their changelog generation without the need for a
 full-fledged process isolation.  It accepts a shell-like script that consists
 just from plain command invocations of 'git-change-log', 'git-show' or 'echo'.
 Any other command will be rejected.  The '--append-cmd' option is not available
-inside the script.  The script MUST start with the magic string
+inside the script.  Custom 'sed' script passed with '--sed-entries' will be
+executed with 'sed --sandbox'.  The script MUST start with the magic string
 '${REQUIRED_SCRIPT_SHEBANG%$NL}\\n'.
 
 Options:
@@ -144,6 +147,10 @@ Options:
                                    clears everything including the implicit
                                    argument '--topo-order'.  Can be used to
                                    exclude upstream commits
+    -e | --sed-entries <script>  : use custom 'sed' <script> to extract entries
+                                   from commit messages and tag annotations.
+                                   The script will be executed with auto-print
+                                   disabled ('sed -n')
     --script <file>              : execute the given script <file>. See above
                                    for more details about this option
     -s | --since[-date] <date>   : only print revisions after the given <date>,
@@ -390,6 +397,14 @@ stderr.close()
     else
         ALLOW_UNRELATED_HISTORIES_OPT=
     fi
+
+    feature HAS_SED_SANDBOX_OPT \
+        $(! sed --sandbox 1p </dev/null &>/dev/null || echo 1)
+    if [[ $HAS_SED_SANDBOX_OPT ]]; then
+        SANDBOX_OPT='--sandbox'
+    else
+        SANDBOX_OPT=
+    fi
 }
 
 # Output unique lines, keep order
@@ -495,17 +510,23 @@ create_tag_info()
 # prefixed with '- '
 extract_entries()
 {
+    sed_entries()
+    {
+        sed -n ${GIT_CHANGE_LOG_RESTRICTED:+$SANDBOX_OPT} "$OPT_SED_ENTRIES"
+    }
+
     for_each_ref_desc()
     {
-        local format=$1
+        local quoting=${1/--raw/}
+        local format=$2
         shift
         local refs=$*
 
         if [[ $HAS_GIT_VERSION_SORT ]]; then
-            git for-each-ref --format="$format" --sort=-v:refname $refs
+            git for-each-ref $quoting --format="$format" --sort=-v:refname $refs
         else
             for ref in $refs; do
-                git for-each-ref --format="$format" $ref
+                git for-each-ref $quoting --format="$format" $ref
             done
         fi
     }
@@ -547,26 +568,25 @@ extract_entries()
                 allobjects="$allobjects $commit"
             fi
         else
-            local contents=
-            local allcontents=
+            local entries=
             if [[ $allobjects ]]; then
-                allcontents=$(git show $NO_PATCH_OPT $allobjects)
+                local object=
+                for object in $allobjects; do
+                    entries=$(git show $NO_PATCH_OPT --pretty=format:%s%n%n%b $object |sed_entries)
+                    [[ $entries ]] && allentries=${allentries:+$allentries$NL}$entries
+                done
                 allobjects=
             fi
             if [[ ${#annotatedtags[*]} -gt 1 ]]; then
-                contents=$(for_each_ref_desc "%(contents)" ${annotatedtags[*]})
-                allcontents=$allcontents$NL$contents
+                entries=$(eval "$(for_each_ref_desc --shell "sed_entries <<<%(contents)" ${annotatedtags[*]})")
+                [[ $entries ]] && allentries=${allentries:+$allentries$NL}$entries
             fi
             if [[ $commit ]]; then
                 if [[ ! $OPT_ONLY_ADD_TAGGED || ${#annotatedtags[*]} -gt 0 || $(look $commit $TAG_INFO) ]]; then
-                    contents=$(git show $NO_PATCH_OPT $commit)
-                    allcontents=$allcontents$NL$contents
+                    entries=$(git show $NO_PATCH_OPT --pretty=format:%s%n%n%b $commit |sed_entries)
+                    [[ $entries ]] && allentries=${allentries:+$allentries$NL}$entries
                 fi
             fi
-
-            # search all objects for lines with special markup
-            local entries=$(sed -n '/^[[:space:]]*\[.*\]/s/^[[:space:]]*//p' <<<"$allcontents")
-            allentries=${allentries:+$allentries$NL}$entries
 
             if [[ ! $commit ]]; then
                 break
@@ -575,7 +595,7 @@ extract_entries()
     done
 
     if [[ ! $allentries && $allannotatedtags && $OPT_AUTO_ADD_ANNOTATIONS ]]; then
-        allentries=$(for_each_ref_desc "%(contents:subject)" $allannotatedtags)
+        allentries=$(for_each_ref_desc --raw "%(contents:subject)" $allannotatedtags)
     fi
 
     if [[ ! $allentries ]]; then
@@ -803,6 +823,7 @@ OPT_HEAD=
 OPT_NO_SQUEEZE_SPACES=
 OPT_REV_LIST_ARGS='--topo-order'
 OPT_SCRIPT=
+OPT_SED_ENTRIES='/^[[:space:]]*\[.*\]/s/^[[:space:]]*//p'
 OPT_SINCE=
 OPT_SINCE_TYPE=
 OPT_SORT_ENTRIES=
@@ -862,6 +883,14 @@ while [[ ${1:-} ]]; do
         --rev-list-args=* )
             OPT_REV_LIST_ARGS="${OPT_REV_LIST_ARGS:+$OPT_REV_LIST_ARGS }${1#*=}"
             ;;
+        --sed-entries )
+            [[ $2 ]] || bad_usage "Argument expected: '$1'"
+            if [[ $GIT_CHANGE_LOG_RESTRICTED && ! $HAS_SED_SANDBOX_OPT ]]; then
+                bad_usage "Your 'sed' version does not support the '--sandbox' option." \
+                          "Without this the '$1' option is not available in restricted mode."
+            fi
+            shift
+            OPT_SED_ENTRIES=$1
             ;;
         --script )
             [[ $2 ]] || bad_usage "Argument expected: '$1'"
@@ -1488,6 +1517,44 @@ git-change-log: WARNING: No change log entries for tag '0.1.1'
 
 * Thu Mar 02 2000 John Author <john.author@example.net> - 0.1
 git-change-log: WARNING: No change log entries for tag '0.1'
+EOF
+# ============================================================
+
+# Case: Custom entries extraction
+git init .
+git commit -m 'Commit 2000-01'
+git commit -m 'Commit 2000-02'
+git commit -m 'Commit 2000-03
+
+Lorem ipsum...
+
+changelog: Committed 2000-03
+'
+git tag 0.1
+git commit -m 'Commit 2000-04
+
+Lorem ipsum...
+
+changelog: Committed 2000-04
+'
+git tag 0.1.1
+git commit -m 'Commit 2000-05'
+git tag -a 0.1.2 -m 'Tag 2000-05
+
+Lorem ipsum...
+
+changelog: Tagged 2000-05
+'
+# ------------------------------------------------------------
+verify --sed-entries 's/^changelog: //p' <<EOF
+* Tue May 02 2000 John Author <john.author@example.net> - 0.1.2
+- Tagged 2000-05
+
+* Sun Apr 02 2000 John Author <john.author@example.net> - 0.1.1
+- Committed 2000-04
+
+* Thu Mar 02 2000 John Author <john.author@example.net> - 0.1
+- Committed 2000-03
 EOF
 # ============================================================
 
