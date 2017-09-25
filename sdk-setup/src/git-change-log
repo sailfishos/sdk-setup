@@ -785,6 +785,13 @@ run_script()
     done <<<"$parsed"
 }
 
+##############################################################################
+if [[ ${1:-} != --self-test ]]; then ###  M A I N  EXECUTION BEGINS HERE #####
+##############################################################################
+
+OPT_SELF_TEST=
+configure
+
 OPT_AUTO_ADD_ANNOTATIONS=
 OPT_ONLY_ADD_ANNOTATIONS=
 OPT_ONLY_ADD_TAGGED=
@@ -795,7 +802,6 @@ OPT_NO_FAVOR_TAGGER=
 OPT_HEAD=
 OPT_NO_SQUEEZE_SPACES=
 OPT_REV_LIST_ARGS='--topo-order'
-OPT_SELF_TEST=
 OPT_SCRIPT=
 OPT_SINCE=
 OPT_SINCE_TYPE=
@@ -856,8 +862,6 @@ while [[ ${1:-} ]]; do
         --rev-list-args=* )
             OPT_REV_LIST_ARGS="${OPT_REV_LIST_ARGS:+$OPT_REV_LIST_ARGS }${1#*=}"
             ;;
-        --self-test )
-            OPT_SELF_TEST=1
             ;;
         --script )
             [[ $2 ]] || bad_usage "Argument expected: '$1'"
@@ -967,12 +971,6 @@ if [[ $OPT_SINCE ]]; then
     fi
 fi
 
-configure
-
-##############################################################################
-if [[ ! $OPT_SELF_TEST ]]; then ###  M A I N  EXECUTION BEGINS HERE ##########
-##############################################################################
-
 if [[ $OPT_SCRIPT ]]; then
     run_script "$OPT_SCRIPT"
     exit
@@ -1059,6 +1057,9 @@ exit
 ##############################################################################
 fi ###  S E L F - T E S T  EXECUTION BEGINS HERE #############################
 ##############################################################################
+
+OPT_SELF_TEST=1
+configure
 
 some_failed=
 verify()
