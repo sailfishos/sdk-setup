@@ -65,7 +65,7 @@ synopsis()
 usage: $SELF [-a|--auto-add-annotations] [-A|--only-add-annotations]
        [-T|--only-add-tagged] [-D|--descendants-of <rev>]
        [-d|--dense <regexp>] [--[no-]favor-tagger] [--no-squeeze-spaces]
-       [--rev-list-args=[<args>]] [-e|--sed-entries <script>]
+       [--rev-list-args <args>] [-e|--sed-entries <script>]
        [-s|--since[-date|-rev] {<date>|<rev>|<file>}]
        [--sort-entries] [--strip-tag-prefix <prefix>] [-t|--tags <pattern>]
        [-F|--append-from <file>[,<opts>]] [--append-cmd <cmd>]
@@ -140,10 +140,10 @@ Options:
                                    by annotated tags
     --no-squeeze-spaces          : do not replace sequences of blank characters
                                    with single space character
-    --rev-list-args=[<args>]     : additional arguments to 'git-rev-list'
+    --rev-list-args <args>       : additional arguments to 'git-rev-list'
                                    invoked to list commits between tags denoting
                                    consecutive revisions.  Passing multiple
-                                   times appends <args>.  With no <args> it
+                                   times appends <args>.  With empty <args> it
                                    clears everything including the implicit
                                    argument '--topo-order'.  Can be used to
                                    exclude upstream commits
@@ -877,11 +877,20 @@ while [[ ${1:-} ]]; do
         --no-squeeze-spaces )
             OPT_NO_SQUEEZE_SPACES=1
             ;;
-        --rev-list-args= )
+        --rev-list-args= ) # backward compatibility
             OPT_REV_LIST_ARGS=
             ;;
-        --rev-list-args=* )
+        --rev-list-args=* ) # backward compatibility
             OPT_REV_LIST_ARGS="${OPT_REV_LIST_ARGS:+$OPT_REV_LIST_ARGS }${1#*=}"
+            ;;
+        --rev-list-args )
+            [[ $# -ge 2 ]] || bad_usage "Argument expected: '$1'"
+            shift
+            if [[ $1 ]]; then
+                OPT_REV_LIST_ARGS="${OPT_REV_LIST_ARGS:+$OPT_REV_LIST_ARGS }$1"
+            else
+                OPT_REV_LIST_ARGS=
+            fi
             ;;
         --sed-entries )
             [[ $2 ]] || bad_usage "Argument expected: '$1'"
