@@ -454,7 +454,7 @@ run_build() {
 
     increment_build_number;
     local tmp_spec="$OPT_SPEC.$$"
-    if [[ ! $BUILD_PREP ]]; then
+    if [[ $BUILD_NOPREP ]]; then
         sed -e '/^%patch/d' "$OPT_SPEC" > "$tmp_spec"
     else
         cp "$OPT_SPEC" "$tmp_spec"
@@ -479,11 +479,8 @@ run_build() {
             --define "_sourcedir $_basedir/rpm" \
             --define "_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm" \
             --buildroot="$buildroot" \
-            "${BUILD_PREP[@]}" \
-            --dobuild \
-            --doinstall \
-            --dobinary \
-            --docheck \
+            "${BUILD_NOPREP[@]}" \
+            -bb \
             "$tmp_spec" \
             "$@"
     )
@@ -517,7 +514,7 @@ run_prep() {
             --define "_sourcedir $_basedir/rpm" \
             --define "_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm" \
             --buildroot="$buildroot" \
-            --doprep \
+            -bp --short-circuit \
             "$tmp_spec"
     )
     local rc=$?
@@ -541,12 +538,12 @@ run_qmake() {
         (
             cd_to_spec_setup_dir;
             sb2 -t $OPT_TARGET rpmbuild --build-in-place --target=$build_tgt \
-                --dobuild \
                 --define "noecho 1" \
                 --define "qtc_builddir $_basedir" \
                 --define "qtc_make true ignoring make" \
                 --define "qtc_qmake5 %qmake5 $(rpm_quote "$@")" \
                 --define "qtc_qmake %qmake $(rpm_quote "$@")" \
+                -bc --short-circuit \
                 "$tmp_spec"
         )
         local rc=$?
@@ -571,12 +568,12 @@ run_make() {
         (
             cd_to_spec_setup_dir;
             sb2 -t $OPT_TARGET rpmbuild --build-in-place --target=$build_tgt \
-                --dobuild \
                 --define "noecho 1" \
                 --define "qtc_builddir $_basedir" \
                 --define "qtc_qmake5 true ignoring qmake" \
                 --define "qtc_qmake true ignoring qmake" \
                 --define "qtc_make make %{?_smp_mflags} $(rpm_quote "$@")" \
+                -bc --short-circuit \
                 "$tmp_spec"
         )
         local rc=$?
@@ -588,6 +585,12 @@ run_make() {
 }
 
 run_install() {
+    # Intentionally undocumented. The --docheck option is used internally by run_rpm()
+    local maybe_nocheck=(--nocheck)
+    if [[ ${1:-} == --docheck ]]; then
+        maybe_nocheck=()
+    fi
+
     local build_tgt=$(sb2 -t $OPT_TARGET gcc -dumpmachine)
     build_tgt=${build_tgt%-gnueabi}
 
@@ -606,7 +609,7 @@ run_install() {
             --define "_sourcedir $_basedir/rpm" \
             --define "_skip_install_processing 1" \
             --buildroot="$buildroot" \
-            --doinstall \
+            -bi --short-circuit "${maybe_nocheck[@]}" \
             "$tmp_spec"
     )
     local rc=$?
@@ -615,6 +618,13 @@ run_install() {
 }
 
 run_rpm() {
+    # Intentionally undocumented. The --noinstall option is there mostly for
+    # self-test use, to avoid the need to deal with multiple invocations of one
+    # stub during one test case execution
+    if [[ ${1:-} != --noinstall ]]; then
+        run_install --docheck
+    fi
+
     local build_tgt=$(sb2 -t $OPT_TARGET gcc -dumpmachine)
     build_tgt=${build_tgt%-gnueabi}
 
@@ -639,9 +649,7 @@ run_rpm() {
             --define "_sourcedir $_basedir/rpm" \
             --define "_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm" \
             --buildroot="$buildroot" \
-            --doinstall \
-            --dobinary \
-            --docheck \
+            -bb --short-circuit --noclean \
             "$tmp_spec"
     )
     local rc=$?
@@ -902,7 +910,7 @@ case "$1" in
         cmd=run_$1; shift
         BUILD_DEBUG=(--define "debug_package %{nil}")
         BUILD_JOBS=
-        BUILD_PREP=()
+        BUILD_NOPREP=(--noprep)
         while [[ "$1" ]]; do
             case "$1" in
                 -d|--enable-debug) shift
@@ -918,7 +926,7 @@ case "$1" in
                     fi
                     ;;
                 -p|--doprep) shift
-                    BUILD_PREP=(--doprep)
+                    BUILD_NOPREP=()
                     ;;
                 *)
                     break
@@ -1030,7 +1038,7 @@ arg_pass_stub_create() {
         cat >"$stub" <<END || return
 #!/bin/bash
 echo "stub invoked: \$0 \$(printf "%q " "\$@")" >&2
-[[ \$# -ne 0 ]] && printf "%q\\n" "\$@" >"$results"
+{ [[ \$# -ne 0 ]] && printf "%q\\n" "\$@"; } >"$results"
 exit 0
 END
         chmod +x "$stub" || return
@@ -1050,13 +1058,13 @@ arg_pass_stub_remove() {
 
 arg_pass_stub_results() {
     local results=$STUBS_DIR/$1.args
-    cat "$results"
+    [[ -e $results ]] && cat "$results"
 }
 
 arg_pass_stub_clear() {
     while [[ ${1:-} ]]; do
         local results=$STUBS_DIR/$1.args
-        :> "$results" || return
+        rm -f "$results" || return
         shift
     done
 }
@@ -1100,7 +1108,7 @@ Test
 %make "x  y"
 END
 
-    rpmbuild --dobuild --noprep --build-in-place --define "_sourcedir $(readlink -f rpm)" rpm/test.spec \
+    rpmbuild -bc --short-circuit --noprep --build-in-place --define "_sourcedir $(readlink -f rpm)" rpm/test.spec \
         --define "make make $(rpm_quote "a b" "c  d" e f)" >&2 || return
     local rc=0 expected= actual= diff=
     expected=$(expect_args "a b" "c  d" e f "x  y")
@@ -1194,7 +1202,7 @@ run_tc sb2_arg_pass "prep" \
         --define '_sourcedir /tmp/@TMPDIR@/rpm' \
         --define '_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm' \
         --buildroot=/tmp/@TMPDIR@/installroot \
-        --doprep \
+        -bp --short-circuit \
         /tmp/@TMPDIR@/rpm/@TEST_SPEC@)" \
     prep "a b" "c  d" e f
 
@@ -1207,11 +1215,7 @@ run_tc sb2_arg_pass "build" \
         --define '_sourcedir /tmp/@TMPDIR@/rpm' \
         --define '_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm' \
         --buildroot=/tmp/@TMPDIR@/installroot \
-        --doprep \
-        --dobuild \
-        --doinstall \
-        --dobinary \
-        --docheck \
+        -bb \
         /tmp/@TMPDIR@/rpm/@TEST_SPEC@ \
         "a b" "c  d" e f)" \
     build --doprep -j "bad  1" "a b" "c  d" e f
@@ -1224,11 +1228,7 @@ run_tc sb2_arg_pass "build with debug" \
         --define '_sourcedir /tmp/@TMPDIR@/rpm' \
         --define '_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm' \
         --buildroot=/tmp/@TMPDIR@/installroot \
-        --doprep \
-        --dobuild \
-        --doinstall \
-        --dobinary \
-        --docheck \
+        -bb \
         /tmp/@TMPDIR@/rpm/@TEST_SPEC@ \
         "a b" "c  d" e f)" \
     build --doprep --enable-debug -j "bad  1" "a b" "c  d" e f
@@ -1236,24 +1236,24 @@ run_tc sb2_arg_pass "build with debug" \
 run_tc sb2_arg_pass "qmake" \
     "$(expect_args \
         -t "$DEFAULT_TARGET" rpmbuild --build-in-place --target= \
-        --dobuild \
         --define 'noecho 1' \
         --define 'qtc_builddir /tmp/@TMPDIR@' \
         --define 'qtc_make true ignoring make' \
         --define "qtc_qmake5 %qmake5 $(rpm_quote "a b" "c  d" e f)" \
         --define "qtc_qmake %qmake $(rpm_quote "a b" "c  d" e f)" \
+        -bc --short-circuit \
         /tmp/@TMPDIR@/rpm/@TEST_SPEC@)" \
     qmake "a b" "c  d" e f
 
 run_tc sb2_arg_pass "make" \
     "$(expect_args \
         -t "$DEFAULT_TARGET" rpmbuild --build-in-place --target= \
-        --dobuild \
         --define 'noecho 1' \
         --define 'qtc_builddir /tmp/@TMPDIR@' \
         --define 'qtc_qmake5 true ignoring qmake' \
         --define 'qtc_qmake true ignoring qmake' \
         --define "qtc_make make %{?_smp_mflags} $(rpm_quote "a b" "c  d" e f)" \
+        -bc --short-circuit \
         /tmp/@TMPDIR@/rpm/@TEST_SPEC@)" \
     make "a b" "c  d" e f
 
@@ -1266,7 +1266,7 @@ run_tc sb2_arg_pass "install" \
         --define '_sourcedir /tmp/@TMPDIR@/rpm' \
         --define '_skip_install_processing 1' \
         --buildroot='/tmp/@TMPDIR@/installroot' \
-        --doinstall \
+        -bi --short-circuit --nocheck \
         /tmp/@TMPDIR@/rpm/@TEST_SPEC@)" \
     install "a b" "c  d" e f
 
@@ -1280,11 +1280,9 @@ run_tc sb2_arg_pass "rpm" \
         --define '_sourcedir /tmp/@TMPDIR@/rpm' \
         --define '_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm' \
         --buildroot='/tmp/@TMPDIR@/installroot' \
-        --doinstall \
-        --dobinary \
-        --docheck \
+        -bb --short-circuit --noclean \
         /tmp/@TMPDIR@/rpm/@TEST_SPEC@)" \
-    rpm "a b" "c  d" e f
+    rpm --noinstall "a b" "c  d" e f
 
 tear_down_ts sb2_arg_pass
 
@@ -1319,17 +1317,8 @@ rpmbuild_arg_pass_sb2_stub() {
             esac
             ;;
         rpmbuild)
-            local args=("$@")
-            for i in ${!args[*]}; do
-                case ${args[i]} in
-                    --doinstall|--dobinary|--docheck)
-                        echo "stub $0: filtering out '${args[i]}' argument to rpmbuild" >&2
-                        unset args[i]
-                        ;;
-                esac
-            done
             # rpmbuild writes some progress messages to stdout
-            exec "${args[@]}" >&2
+            exec "$@" >&2
             ;;
         rpmspec)
             exec "$@"
@@ -1361,6 +1350,9 @@ Name:       test
 # These would normally come from the environment
 %{!?qmake:%define qmake qmake}
 %{!?qmake5:%define qmake5 qmake}
+
+# This is to not require meego-rpm-config installed for self-test execution
+%global __os_install_post %{nil}
 
 %{!?qtc_qmake:%define qtc_qmake %qmake}
 %{!?qtc_qmake5:%define qtc_qmake5 %qmake5}
@@ -1412,7 +1404,7 @@ rpmbuild_arg_pass_tc() {
         local stub= expected= actual= diff=
         stub=${RPMBUILD_STUBS[i]}
         expected=${all_expected[i]}
-        actual=$(arg_pass_stub_results "$stub") || return
+        actual=$(arg_pass_stub_results "$stub")
         if ! diff=$(diff <(cat <<<"$expected") <(cat <<<"$actual")); then
             rc=1
             cat <<END
@@ -1733,6 +1725,200 @@ END
 }
 
 run_tc readarray "Test readarray behavior"
+
+################################################################################
+# Test build phases separation
+
+rpmbuild_phases_sb2_stub() {
+    echo "stub invoked: $0 $(printf "%q " "$@")" >&2
+
+    local args=("$@")
+    bad_args() {
+        echo "stub $0: unexpected arguments: $(printf "%q " "${args[@]}")" >&2
+    }
+
+    if ! [[ $1 == -t && $3 != -* ]]; then
+        bad_args
+        return 1
+    fi
+
+    shift 2
+
+    case $1 in
+        gcc)
+            case $2 in
+                -dumpmachine)
+                    echo "i486-meego-linux"
+                    ;;
+                *)
+                    bad_args
+                    return 1
+                    ;;
+            esac
+            ;;
+        rpmbuild)
+            # rpmbuild writes some progress messages to stdout
+            exec "$@" >&2
+            ;;
+        rpmspec)
+            exec "$@"
+            ;;
+        *)
+            bad_args
+            return 1
+            ;;
+    esac
+}
+
+rpmbuild_phases_ts_set_up() {
+    RPMBUILD_STUBS=(my_setup qmake make my_install my_check)
+    arg_pass_stub_create "${RPMBUILD_STUBS[@]}"
+
+    # Create an sb2 stub
+    cat >"$STUBS_DIR/sb2" <<END || return
+#!/bin/bash
+$(declare -f rpmbuild_phases_sb2_stub)
+rpmbuild_phases_sb2_stub "\$@"
+END
+    chmod +x "$STUBS_DIR/sb2" || return
+
+    # Create a minimal spec file
+    mkdir rpm || return
+    cat >rpm/test.spec <<END || return
+Name:       test
+
+# These would normally come from the environment
+%{!?qmake:%define qmake qmake}
+%{!?qmake5:%define qmake5 qmake}
+
+# This is to not require meego-rpm-config installed for self-test execution
+%global __os_install_post %{nil}
+
+%{!?qtc_qmake:%define qtc_qmake %qmake}
+%{!?qtc_qmake5:%define qtc_qmake5 %qmake5}
+%{!?qtc_make:%define qtc_make make}
+%{?qtc_builddir:%define _builddir %qtc_builddir}
+Summary:    Test
+Version:    0.1
+Release:    1
+Group:      Qt/Qt
+License:    LICENSE
+URL:        http://example.org/
+Source0:    %{name}-%{version}.tar.bz2
+
+%description
+Test
+
+%prep
+my_setup
+
+%build
+%qtc_qmake5
+%qtc_make %{?_smp_mflags}
+
+%install
+mkdir -p %{buildroot}
+my_install
+
+# Verifies that --noclean is used
+touch %{buildroot}/foo
+
+%check
+my_check
+
+%files
+%defattr(-,root,root,-)
+/foo
+END
+}
+
+rpmbuild_phases_ts_tear_down() {
+    arg_pass_stub_remove "${RPMBUILD_STUBS[@]}" || return
+    rm -f "$STUBS_DIR/sb2" || return
+    rm -f rpm/test.spec || return
+    rmdir rpm || return
+    rm -f RPMS/test-0.1-1.i486.rpm || return
+    ! [[ -d RPMS ]] || rmdir RPMS || return
+}
+
+rpmbuild_phases_tc() {
+    local expected=$1
+    local args=("${@:2}")
+
+    arg_pass_stub_clear "${RPMBUILD_STUBS[@]}" || return
+    rm -f RPMS/test-0.1-1.i486.rpm || return
+
+    "$SELF" "${args[@]}" || return
+
+    local actual=
+    if arg_pass_stub_results my_setup &>/dev/null; then
+        actual="+prep"
+    else
+        actual="-prep"
+    fi
+
+    if arg_pass_stub_results qmake &>/dev/null; then
+        actual="$actual +qmake"
+    else
+        actual="$actual -qmake"
+    fi
+
+    if arg_pass_stub_results make &>/dev/null; then
+        actual="$actual +make"
+    else
+        actual="$actual -make"
+    fi
+
+    if arg_pass_stub_results my_install &>/dev/null; then
+        actual="$actual +install"
+    else
+        actual="$actual -install"
+    fi
+
+    if arg_pass_stub_results my_check &>/dev/null; then
+        actual="$actual +check"
+    else
+        actual="$actual -check"
+    fi
+
+    if [[ -e RPMS/test-0.1-1.i486.rpm ]]; then
+        actual="$actual +rpm"
+    else
+        actual="$actual -rpm"
+    fi
+
+    if [[ $actual != "$expected" ]]; then
+        cat <<END
+Test case failed: $TC_NAME
+  ** Command    ** $ME $(printf "%q " "${args[@]}")
+  ** Expected   ** $expected
+  ** Actual     ** $actual
+END
+        return 1
+    fi
+
+    return 0
+}
+
+set_up_ts rpmbuild_phases "Separating build phases"
+
+run_tc rpmbuild_phases "prep" \
+    "+prep -qmake -make -install -check -rpm" prep
+run_tc rpmbuild_phases "build" \
+    "-prep +qmake +make +install +check +rpm" build
+run_tc rpmbuild_phases "build --doprep" \
+    "+prep +qmake +make +install +check +rpm" build --doprep
+run_tc rpmbuild_phases "qmake" \
+    "-prep +qmake -make -install -check -rpm" qmake
+run_tc rpmbuild_phases "make" \
+    "-prep -qmake +make -install -check -rpm" make
+run_tc rpmbuild_phases "install" \
+    "-prep -qmake -make +install -check -rpm" install
+run_tc rpmbuild_phases "rpm" \
+    "-prep -qmake -make +install +check +rpm" rpm
+
+tear_down_ts rpmbuild_phases
+
 
 ################################################################################
 
