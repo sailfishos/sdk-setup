@@ -32,18 +32,7 @@ fi
 /usr/bin/tput cup 25 0
 /usr/bin/ply-image
 
-cat << EOF
-  Welcome to the Sailfish OS Build Engine.
-
-  Use "<host key> + F2" to get a console login prompt.
-  On Linux the <host key> is usually <right-ctrl>.
-  Virtualbox indicates the <host key> for your installation at the bottom right of this window.
-
-  For more information including ssh connection and root access see:
-    https://sailfishos.org/wiki/Application_SDK_FAQ
- 
-EOF
-
+cat /etc/sdk-welcome-message
 
 for src in $(VBoxControl --nologo sharedfolder list | grep -- "- src[0-9]" | cut -f3 -d" ");
 do

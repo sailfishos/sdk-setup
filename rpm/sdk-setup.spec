@@ -34,6 +34,7 @@ Summary:    Mer SDK files for the VM variant
 Group:      System/Base
 BuildArch:  noarch
 Requires:   sdk-utils == %{version}
+Requires:   sdk-welcome-message
 Requires:   connman >= 1.14
 Requires:   virtualbox-guest-tools
 Requires:   openssh-server
@@ -85,6 +86,7 @@ BuildArch:  noarch
 Requires:   plymouth-lite
 Requires:   sdk-vm
 Provides:   boot-splash-screen
+Provides:   sdk-welcome-message
 
 %description -n sdk-mer-branding
 Splash screen for the SDK Engine
@@ -180,6 +182,7 @@ install -D -m 644 src/sdk-assistant.bash %{buildroot}/%{_sysconfdir}/bash_comple
 # sdk-mer-branding
 install -D -m 644 branding/mer-splash.png %{buildroot}%{_datadir}/plymouth/splash.png
 install -D -m 755 branding/splashfontcol %{buildroot}%{_sysconfdir}/sysconfig/splashfontcol
+install -D -m 755 branding/sdk-welcome-message %{buildroot}%{_sysconfdir}/sdk-welcome-message
 
 # connman-configs-mersdk-emul
 mkdir -p %{buildroot}%{_sysconfdir}/connman
@@ -280,6 +283,7 @@ fi
 %defattr(-,root,root,-)
 %{_datadir}/plymouth/splash.png
 %{_sysconfdir}/sysconfig/splashfontcol
+%{_sysconfdir}/sdk-welcome-message
 
 %files -n connman-configs-mersdk-emul
 %defattr(-,root,root,-)
