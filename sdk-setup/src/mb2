@@ -30,7 +30,7 @@
 short_usage() {
     cat <<EOF
 usage: $ME [-t <target>] [-s <specfile>] [-d <device>] [-p <projectdir>]
-           [-f <folder>] [-i] [-P] [-x[=<tag>]] [-c[=<args>]]
+           [-f <folder>] [-i] [-P] [-x[=<tag>] | -X] [-c[=<args>]]
            build [-p] [-d] [-j <n>] [<args>] | qmake [<args>] | make [<args>] | ssh <args>
            install [<args>] | installdeps <args> | rpm [<args>] | deploy <args>
            prep | apply [-R] | run <args>
@@ -72,7 +72,7 @@ usage() {
                      : -p     run %prep phase as well when building
                      : -d     enable debug build
                      : -j <n> use only 'n' CPUs to build
-                     : can use -s -t -p -i -x -c
+                     : can use -s -t -p -i -x -X -c
 
   $ME qmake [<args>] : runs qmake in the 'build' phase
                        Note that this also verifies target
@@ -85,7 +85,7 @@ usage() {
   $ME deploy --zypper|--pkcon|--rsync|--sdk
                      : runs the install or rpm-creation phase and then
                        copies/installs the relevant files to the device
-                     : can use -s -t -p -d -i -f -x -c
+                     : can use -s -t -p -d -i -f -x -X -c
 
   $ME run|ssh [<args>] : runs a command (on device if --device given);
                          intended for running gdb and a gdb server
@@ -99,7 +99,7 @@ usage() {
                      : can use -s -t -p
 
   $ME rpm [<args>]   : runs the install & rpm-creation phases
-                     : can use -s -t -p -i -x -c
+                     : can use -s -t -p -i -x -X -c
 
   $ME apply [-R]     : applies all patches defined in spec from rpm directory
                      : to the source tree, or if detected, submodule
@@ -117,7 +117,9 @@ usage() {
                          machine
   -P | --pedantic      : do extra checks
   -x[=<tag>] | --fix-version[=<tag>]
-                       : use the latest tag from the current git branch as
+                       : this option is implied when used inside a Git working
+                         tree from within a platform SDK (use -X to override).
+                         Use the latest tag from the current git branch as
                          package version or the given <tag>.  If the current
                          HEAD, index or working tree differs from the tree
                          denoted by the tag, a suffix composed from the current
@@ -125,6 +127,8 @@ usage() {
                          to the package version.  If git-state is not clean
                          a git-stash will be created and its SHA1 will be used
                          instead of HEAD.
+  -X | --no-fix-version
+                       : override --fix-version option.
   -c[=<args>] | --git-change-log[=<args>]
                        : include change log generated from Git history with
                          'git-change-log' command, forwarding any <args>.
@@ -715,6 +719,9 @@ get_shared_dir() {
     echo "$OPT_SHARED_DIR"
 }
 
+inside_build_engine() [[ -f /etc/mer-sdk-vbox ]]
+inside_git_worktree() { git status &>/dev/null; }
+
 # this is same as basename $0
 ME=${0/#*\//}
 
@@ -730,7 +737,9 @@ OPT_PKGDIR="./rpm"
 OPT_PROJDIR=
 OPT_NEEDSPEC=
 OPT_PEDANTIC=0
-OPT_FIX_VERSION=
+# Do not enable implicitly when used inside a build engine VM as there is not UI
+# in Qt Creator that would allow to override this
+OPT_FIX_VERSION=$(inside_git_worktree && ! inside_build_engine && echo 1)
 OPT_FIX_VERSION_HINT=
 OPT_GIT_CHANGE_LOG=
 OPT_GIT_CHANGE_LOG_ARGS=
@@ -740,7 +749,7 @@ OPT_SUBMODULE=""
 deviceuser=nemo
 
 # Virtualbox environment will install in this hardcoded location
-if [[ -f /etc/mer-sdk-vbox ]]; then
+if inside_build_engine; then
     buildroot=/home/deploy/installroot
 else
     buildroot="$PWD/installroot"
@@ -774,6 +783,7 @@ while [[ "$1" ]]; do
             ;;
         "-x" | "--fix-version" ) shift
             OPT_FIX_VERSION=1
+            OPT_FIX_VERSION_HINT=
             ;;
         "-x="* | "--fix-version="* )
             OPT_FIX_VERSION=1
@@ -782,6 +792,10 @@ while [[ "$1" ]]; do
                 fatal "'$OPT_FIX_VERSION_HINT' no such Git tag"
             fi
             shift
+            ;;
+        "-X" | "--no-fix-version" ) shift
+            OPT_FIX_VERSION=
+            OPT_FIX_VERSION_HINT=
             ;;
         "-c" | "--git-change-log" ) shift
             OPT_GIT_CHANGE_LOG=1
@@ -1079,7 +1093,7 @@ expect_args() {
 DEFAULT_TARGET=$(. ~/.scratchbox2/config; echo "$DEFAULT_TARGET")
 DEFAULT_JOBS=$(getconf _NPROCESSORS_ONLN)
 
-if [[ -f /etc/mer-sdk-vbox ]]; then
+if inside_build_engine; then
     DEFAULT_DEVICE="Sailfish OS Emulator"
 else
     echo "Note: Skipping test cases involving device connection - not inside a Sailfish OS build engine" >&2
