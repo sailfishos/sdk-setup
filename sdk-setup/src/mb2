@@ -240,23 +240,26 @@ get_spec_tag() {
 fix_package_version() {
     [[ ! $OPT_FIX_VERSION ]] && return
 
+    local tag
+    if [[ $OPT_FIX_VERSION_HINT ]]; then
+        tag=$OPT_FIX_VERSION_HINT
+    else
+        if ! tag=$(git describe --tags --abbrev=0 2>/dev/null); then
+            notice "No tags describe the HEAD, will not fix package version."
+            return
+        fi
+    fi
+
+    local version=$tag
+    version=${version#*/}   # allow tags to have a prefix to allow vendor marking
+    version=${version#v}    # some people like to prefix versions with a v
+
     local head
     if [[ $(git status --short --untracked-files=no) ]]; then
         head=$(git stash create)
     else
         head=$(git rev-parse HEAD)
     fi
-
-    local tag
-    if [[ $OPT_FIX_VERSION_HINT ]]; then
-        tag=$OPT_FIX_VERSION_HINT
-    else
-        tag=$(git describe --tags --abbrev=0 "$head") || return
-    fi
-
-    local version=$tag
-    version=${version#*/}   # allow tags to have a prefix to allow vendor marking
-    version=${version#v}    # some people like to prefix versions with a v
 
     if [[ $(git rev-parse "$tag^{}") != "$head" ]]; then
         local branch=$(git rev-parse --abbrev-ref HEAD)
