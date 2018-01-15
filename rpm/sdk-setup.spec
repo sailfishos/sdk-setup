@@ -176,6 +176,7 @@ cp src/updateQtCreatorTargets %{buildroot}%{_bindir}/updateQtCreatorTargets
 cp src/sdk-motd %{buildroot}%{_bindir}/
 cp src/rpmvalidation %{buildroot}%{_bindir}/
 ln -sf rpmvalidation %{buildroot}%{_bindir}/rpmvalidation.sh
+cp src/git-lltb %{buildroot}%{_bindir}/
 
 # update version info to scripts
 sed -i "s/VERSION_FROM_SPEC/%{version}/" %{buildroot}%{_bindir}/mb2
@@ -285,6 +286,7 @@ fi
 %{_bindir}/sdk-motd
 %{_bindir}/rpmvalidation.sh
 %{_bindir}/rpmvalidation
+%{_bindir}/git-lltb
 %config %{_sysconfdir}/ssh/ssh_config.sdk
 %config %{_sysconfdir}/bash_completion.d/mb2.bash
 %config %{_sysconfdir}/bash_completion.d/sdk-assistant.bash
