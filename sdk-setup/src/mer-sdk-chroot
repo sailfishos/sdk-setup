@@ -309,6 +309,11 @@ prepare_etc() {
 
 }
 
+ensure_machine_id() {
+    setarch i386 chroot ${sdkroot} /bin/systemd-machine-id-setup
+    setarch i386 chroot ${sdkroot} /bin/dbus-uuidgen --ensure
+}
+
 ################
 
 setup_user_hooks(){
@@ -358,6 +363,7 @@ prepare_mountpoints   # host / and data and /proc and similar
 prepare_user          # in /etc/passwd
 setup_user_hooks      # (after prepare so HOMEDIR is known)
 prepare_etc           # resolv.conf and ssl certs
+ensure_machine_id
 run_user_hook mount_sdk
 run_user_hook enter_sdk
 trap 'rv=$?; run_user_hook leave_sdk; exit "$rv"' EXIT
