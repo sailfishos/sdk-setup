@@ -29,6 +29,7 @@ usage:
     $SELF tooling update <name>
     $SELF tooling register [--user <user> [--password <password>]] [--force]
     $____                  {--all | <name>...}
+    $SELF tooling uuidgen {--all | <name>...}
 
     $SELF target list [-l|--long] [--tooling <name>]
     $SELF target upgradable <name>
@@ -41,6 +42,7 @@ usage:
     $SELF target import <name>
     $SELF target register [--user <user> [--password <password>]] [--force]
     $____                 {--all | <name>...}
+    $SELF target uuidgen {--all | <name>...}
 
     $SELF toolchain list <tooling>
     $SELF toolchain install <tooling> <name>...
@@ -470,6 +472,29 @@ init_machine_id() {
     enter "$type:$object" dbus-uuidgen --ensure || return
 }
 
+reset_machine_id() {
+    local type=$1
+    shift
+
+    if [[ $type == sdk ]]; then
+        echo >&2 "reset_machine_id: not intented to be used on sdk"
+        return 1
+    fi
+
+    local objects=
+    objects=($(get_all_or_selected_of_type "$type" "$@")) || return
+
+    local object=
+    for object in "${objects[@]}"; do
+        echo >&2 "Resetting machine ID for $type '$object'"
+
+        enter "$type:$object" rm -f /etc/machine-id || return
+        enter "$type:$object" rm -f /var/lib/dbus/machine-id || return
+        enter "$type:$object" systemd-machine-id-setup || return
+        enter "$type:$object" dbus-uuidgen --ensure || return
+    done
+}
+
 ################################################################'
 # tooling management
 
@@ -689,6 +714,9 @@ manage_toolings() {
             ;;
         ?(--)register ) shift
             register_object tooling "$@"
+            ;;
+        ?(--)uuidgen ) shift
+            reset_machine_id tooling "$@"
             ;;
         * )
             echo >&2 "unrecognized option '$1'"
@@ -1292,6 +1320,9 @@ manage_targets() {
 	?(--)register ) shift
             register_object target "$@"
 	    ;;
+        ?(--)uuidgen ) shift
+            reset_machine_id target "$@"
+            ;;
 	* )
             echo >&2 "unrecognized option '$1'"
             usage
