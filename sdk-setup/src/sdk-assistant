@@ -75,7 +75,7 @@ guess_type() (
     local url=$1
 
     shopt -s nocasematch
-    case $url in
+    case ${url##*/} in
         *target*) echo target;;
         *tooling*) echo tooling;;
         *) return 1;;
