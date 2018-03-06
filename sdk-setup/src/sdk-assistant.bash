@@ -1,7 +1,7 @@
 # sdk-assistant.bash - bash completion for sdk-assitant
 #
-# Copyright (C) 2014 Jolla Ltd.
-# Contact: Juha Kallioinen <juha.kallioinen@jolla.com>
+# Copyright (C) 2013-2018 Jolla Ltd.
+# Contact: Martin Kampas <martin.kampas@jolla.com>
 # All rights reserved.
 #
 # You may use this file under the terms of BSD license as follows:
@@ -32,59 +32,117 @@
 # for the @(pattern-list) syntax to work
 shopt -s extglob
 
-_sdk_ass_comp()
+_sdk_assistant_comp()
 {
-    local cur prev special i
+    local cur=$2 prev=$3
     COMPREPLY=()
-    cur="${COMP_WORDS[COMP_CWORD]}"
-    prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-    if [ "$cur" != -* ]; then
-	for (( i=0; i < ${#COMP_WORDS[@]}-1; i++ )); do
-	    if [[ ${COMP_WORDS[i]} == @(create|remove|list) ]]; then
-		special=${COMP_WORDS[i]}
-	    fi
-	done
-    fi
+    _sdk_assistant_comp_next_positional()
+    {
+        local i=$1
+        local _name=$2
 
-    if [ -n "$special" ]; then
-	case $special in
-	    create)
-		COMPREPLY=( $(compgen -W "-a --arch -y --non-interactive" -- "${cur}") )
-		case $prev in
-		    -a|--arch)
-			COMPREPLY=( $(compgen -W "arm i486" -- "${cur}") )
-			return 0
-			;;
-		esac
-		return 0
-		;;
-	    remove)
-		local targets=$(sb2-config -f)
-		COMPREPLY=( $(compgen -W "${targets} -y --non-interactive" -- "${cur}") )
-		return 0
-		;;
-	    *)
-		COMPREPLY=()
-		return 0
-		;;
-	esac
-    fi
+        for ((; i<${#COMP_WORDS[@]}; i++)); do
+            if [[ ${COMP_WORDS[i]} != -* ]]; then
+                eval $_name=\${COMP_WORDS[i]}
+                eval ${_name}_pos=\$i
+                break
+            fi
+        done
+    }
+    trap 'trap - RETURN; unset _sdk_assistant_comp_next_positional' RETURN
 
-    case $prev in
-	-a|--arch)
-	    COMPREPLY=( $(compgen -W "arm i486" -- "${cur}") )
-	    return 0
-	    ;;
-    esac
+    local i=1
 
-    if [[ "$cur" == -* ]]; then
-	COMPREPLY=( $( compgen -W '-a --arch -y -z --dry-run --non-interactive -h --help' -- "$cur" ) )
+    local type= type_pos=0
+    _sdk_assistant_comp_next_positional $i type
+    if [[ $type == @(tooling|target) ]]; then
+        let i=type_pos+1
     else
-	COMPREPLY=( $( compgen -W 'create remove list \
-                                   -a --arch -y -z --dry-run --non-interactive -h --help' -- "$cur" ) )
+        let i=type_pos
+        type=
+        type_pos=0
     fi
+
+    local command= command_pos=0
+    _sdk_assistant_comp_next_positional $i command
+    if [[ $command == @(create|remove|list) ]]; then
+        let i=command_pos+1
+    else
+        let i=command_pos
+        command=
+        command_pos=0
+    fi
+
+    local garbage= garbage_pos=0
+    _sdk_assistant_comp_next_positional $i garbage
+
+    if [[ ! $type ]]; then
+        if [[ ! $command && (! $garbage || $COMP_CWORD -le $garbage_pos) ]]; then
+            COMPREPLY=( $(compgen -W "tooling target create remove list -h --help" -- "$cur") )
+            return 0
+        elif [[ $COMP_CWORD -lt $command_pos || ! $cur && $COMP_CWORD -eq $command_pos ]]; then
+            COMPREPLY=( $(compgen -W "tooling target -h --help" -- "$cur") )
+            return 0
+        fi
+    elif [[ $COMP_CWORD -lt $type_pos || ! $cur && $COMP_CWORD -eq $type_pos ]]; then
+        COMPREPLY=( $(compgen -W "-h --help" -- "$cur") )
+        return 0
+    fi
+
+    if [[ ! $command ]]; then
+        if [[ ! $garbage || $COMP_CWORD -le $garbage_pos ]]; then
+            COMPREPLY=( $(compgen -W "create remove list -h --help" -- "$cur") )
+            return 0
+        else
+            COMPREPLY=( $(compgen -W "-h --help" -- "$cur") )
+            return 0
+        fi
+    elif [[ $COMP_CWORD -lt $command_pos || ! $cur && $COMP_CWORD -eq $command_pos ]]; then
+        COMPREPLY=( $(compgen -W "-h --help" -- "$cur") )
+        return 0
+    fi
+
+    case $command in
+        create)
+            local name= name_pos=
+            _sdk_assistant_comp_next_positional $((command_pos+1)) name
+            local url= url_pos=
+            _sdk_assistant_comp_next_positional $((name_pos+1)) url
+            local garbage= garbage_pos=
+            _sdk_assistant_comp_next_positional $((url_pos+1)) garbage
+
+            if [[ $name && $COMP_CWORD -gt $name_pos && (! $url || $cur && $COMP_CWORD -eq $url_pos) && ! $garbage ]]; then
+                COMPREPLY=( $(compgen -W "-y --non-interactive -z --dry-run -h --help" -A file -- "$cur") )
+            else
+                COMPREPLY=( $(compgen -W "-y --non-interactive -z --dry-run -h --help" -- "$cur") )
+            fi
+            ;;
+
+        remove)
+            local name= name_pos=
+            _sdk_assistant_comp_next_positional $((command_pos+1)) name
+            local garbage= garbage_pos=
+            _sdk_assistant_comp_next_positional $((name_pos+1)) garbage
+
+            if [[ ( ! $name || $cur && $COMP_CWORD -eq $name_pos ) && ! $garbage ]]; then
+                local known_names=
+                if [[ ! $type ]]; then
+                    known_names=$(sdk-assistant tooling list; sdk-assistant target list)
+                else
+                    known_names=$(sdk-assistant $type list)
+                fi
+                COMPREPLY=( $(compgen -W "$known_names -y --non-interactive -z --dry-run -h --help" -- "$cur") )
+            else
+                COMPREPLY=( $(compgen -W "-y --non-interactive -z --dry-run -h --help" -- "$cur") )
+            fi
+            ;;
+
+        list)
+            COMPREPLY=( $(compgen -W "-h --help" -- "$cur") )
+            ;;
+    esac
 
     return 0;
 } &&
-complete -F _sdk_ass_comp -o default sdk-assistant
+complete -F _sdk_assistant_comp sdk-assistant
