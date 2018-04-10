@@ -1899,7 +1899,11 @@ rpmbuild_phases_tc() {
     fi
 
     if [[ -e RPMS/test-0.1-1.i486.rpm ]]; then
-        actual="$actual +rpm"
+        if rpm -q --requires -p RPMS/test-0.1-1.i486.rpm |grep -q '^rpmlib(ShortCircuited)'; then
+            actual="$actual +rpm (short-circuited)"
+        else
+            actual="$actual +rpm"
+        fi
     else
         actual="$actual -rpm"
     fi
@@ -1931,8 +1935,9 @@ run_tc rpmbuild_phases "make" \
     "-prep -qmake +make -install -check -rpm" make
 run_tc rpmbuild_phases "install" \
     "-prep -qmake -make +install -check -rpm" install
+KNOWN_ISSUE "Produces short-circuited RPM"
 run_tc rpmbuild_phases "rpm" \
-    "-prep -qmake -make +install +check +rpm" rpm
+    "-prep -qmake -make +install +check +rpm (short-circuited)" rpm
 
 tear_down_ts rpmbuild_phases
 
