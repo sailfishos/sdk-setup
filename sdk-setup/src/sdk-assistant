@@ -68,7 +68,7 @@ Options:
 EOF
 
     # exit if any argument is given
-    [[ -n "$1" ]] && exit 1
+    [[ -n "$1" ]] && exit 0
 }
 
 guess_type() (
