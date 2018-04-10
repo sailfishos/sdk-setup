@@ -104,63 +104,80 @@ have() {
 
 OPT_CREATE=
 OPT_DRY_RUN=
+OPT_LIST=
 OPT_NAME=
 OPT_REMOVE=
 OPT_TYPE=
 OPT_URL=
 OPT_YES=
 
-# handle commandline options
+positional_args=()
 while [[ ${1:-} ]]; do
     case "$1" in
-        -y | --non-interactive ) shift
+        -y | --non-interactive )
             OPT_YES=1
             ;;
-        -z | --dry-run ) shift
+        -z | --dry-run )
             OPT_DRY_RUN=1
             ;;
-        -h | --help ) shift
+        -h | --help )
             usage quit
-            ;;
-        tooling|target )
-            OPT_TYPE=$1
-            shift
-            ;;
-        create ) shift
-            OPT_CREATE=1
-            ;;
-        remove ) shift
-            OPT_REMOVE=1
-            OPT_NAME=$1; shift
-            [[ $OPT_NAME ]] || fail "remove: ${OPT_TYPE:+$OPT_TYPE }name required"
-            ;;
-        list ) shift
-            # list requested, just do it
-            list "$OPT_TYPE"
-            exit $?
             ;;
         -* )
             fail "unknown option $1"
             ;;
         * )
-            if [[ $OPT_CREATE ]]; then
-                OPT_NAME=$1; shift
-                OPT_URL=$1; shift
-            fi
-            [[ $# -eq 0 ]] || fail "$1: unexpected argument"
+            positional_args+=("$1")
             ;;
     esac
+    shift
 done
+
+set -- "${positional_args[@]}"
+
+case ${1:-} in
+    tooling|target)
+        OPT_TYPE=$1
+        shift
+        ;;
+esac
+
+[[ $# -gt 0 ]] || fail "command expected"
+
+case $1 in
+    create )
+        OPT_CREATE=1
+        [[ $# -ge 3 && $2 && $3 ]] || fail "create: name and URL required"
+        OPT_NAME=$2
+        OPT_URL=$3
+        shift 3
+        ;;
+    remove )
+        OPT_REMOVE=1
+        [[ $# -ge 2 && $2 ]] || fail "remove: ${OPT_TYPE:+$OPT_TYPE }name required"
+        OPT_NAME=$2
+        shift 2
+        ;;
+    list )
+        OPT_LIST=1
+        shift
+        ;;
+    * )
+        fail "$1: unrecognized command"
+        ;;
+esac
+
+[[ $# -eq 0 ]] || fail "$1: unexpected argument"
 
 if [[ $EUID -eq 0 ]]; then
     fail "$(basename $0) must not be run as root."
 fi
 
-# if not list, at least create or remove required
-[[ $OPT_CREATE ]] && [[ $OPT_REMOVE ]] && usage quit
-
-# cannot be both create and remove
-[[ ! $OPT_CREATE ]] && [[ ! $OPT_REMOVE ]] && usage quit
+if [[ $OPT_LIST ]]; then
+    # list requested, just do it
+    list "$OPT_TYPE"
+    exit $?
+fi
 
 if [[ $OPT_CREATE ]]; then
     if [[ ! $OPT_NAME ]] || [[ ! $OPT_URL ]]; then
