@@ -65,7 +65,8 @@ Description = SDK Engine Configuration
 
 [service_sailfishsdk_ethernet]
 Type = ethernet
-IPv4 = $subnet.254/24/0.0.0.0
+# TODO: The desired effect here is to prevent connman setting gateway - how to do that properly?
+IPv4 = $subnet.254/24/$subnet.253
 IPv6 = off
 MAC = 08:00:5A:11:F1:55
 
