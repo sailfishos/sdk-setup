@@ -592,12 +592,6 @@ run_make() {
 }
 
 run_install() {
-    # Intentionally undocumented. The --docheck option is used internally by run_rpm()
-    local maybe_nocheck=(--nocheck)
-    if [[ ${1:-} == --docheck ]]; then
-        maybe_nocheck=()
-    fi
-
     local build_tgt=$(sb2 -t $OPT_TARGET gcc -dumpmachine)
     build_tgt=${build_tgt%-gnueabi}
 
@@ -616,7 +610,7 @@ run_install() {
             --define "_sourcedir $_basedir/rpm" \
             --define "_skip_install_processing 1" \
             --buildroot="$buildroot" \
-            -bi --short-circuit "${maybe_nocheck[@]}" \
+            -bi --short-circuit --nocheck \
             "$tmp_spec"
     )
     local rc=$?
@@ -625,13 +619,6 @@ run_install() {
 }
 
 run_rpm() {
-    # Intentionally undocumented. The --noinstall option is there mostly for
-    # self-test use, to avoid the need to deal with multiple invocations of one
-    # stub during one test case execution
-    if [[ ${1:-} != --noinstall ]]; then
-        run_install --docheck
-    fi
-
     local build_tgt=$(sb2 -t $OPT_TARGET gcc -dumpmachine)
     build_tgt=${build_tgt%-gnueabi}
 
@@ -656,7 +643,7 @@ run_rpm() {
             --define "_sourcedir $_basedir/rpm" \
             --define "_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm" \
             --buildroot="$buildroot" \
-            -bb --short-circuit --noclean \
+            -bb --noprep --nobuildstage --noclean \
             "$tmp_spec"
     )
     local rc=$?
@@ -1297,9 +1284,9 @@ run_tc sb2_arg_pass "rpm" \
         --define '_sourcedir /tmp/@TMPDIR@/rpm' \
         --define '_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm' \
         --buildroot='/tmp/@TMPDIR@/installroot' \
-        -bb --short-circuit --noclean \
+        -bb --noprep --nobuildstage --noclean \
         /tmp/@TMPDIR@/rpm/@TEST_SPEC@)" \
-    rpm --noinstall "a b" "c  d" e f
+    rpm "a b" "c  d" e f
 
 tear_down_ts sb2_arg_pass
 
@@ -1899,7 +1886,11 @@ rpmbuild_phases_tc() {
     fi
 
     if [[ -e RPMS/test-0.1-1.i486.rpm ]]; then
-        actual="$actual +rpm"
+        if rpm -q --requires -p RPMS/test-0.1-1.i486.rpm |grep -q '^rpmlib(ShortCircuited)'; then
+            actual="$actual +rpm (short-circuited)"
+        else
+            actual="$actual +rpm"
+        fi
     else
         actual="$actual -rpm"
     fi
