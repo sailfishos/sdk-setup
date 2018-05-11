@@ -35,7 +35,8 @@ usage: $ME [-t <target>] [-s <specfile>] [-d <device>] [-p <projectdir>]
            install [<args>] | installdeps <args> | rpm [<args>] | deploy <args>
            prep | apply [-R] | run <args>
        $ME --version
-       $ME --help
+
+Try '$ME --help' for more information.
 EOF
     # exit if any argument is given
     [[ -n "$1" ]] && exit 1
