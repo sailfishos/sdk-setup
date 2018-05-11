@@ -734,7 +734,7 @@ OPT_PKGDIR="./rpm"
 OPT_PROJDIR=
 OPT_NEEDSPEC=
 OPT_PEDANTIC=0
-# Do not enable implicitly when used inside a build engine VM as there is not UI
+# Do not enable implicitly when used inside a build engine VM as there is no UI
 # in Qt Creator that would allow to override this
 OPT_FIX_VERSION=$(inside_git_worktree && ! inside_build_engine && echo 1)
 OPT_FIX_VERSION_HINT=
