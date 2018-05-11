@@ -550,6 +550,8 @@ run_qmake() {
         # get rid of potential windows linefeeds
         sed -i "s/\x0D$//g" "$tmp_spec"
 
+        fix_package_version "$tmp_spec"
+
         # This is a good time to verify the target dependencies as per mb
         verify_target_dependencies
         (
@@ -579,6 +581,8 @@ run_make() {
 
         # get rid of potential windows linefeeds
         sed -i "s/\x0D$//g" "$tmp_spec"
+
+        fix_package_version "$tmp_spec"
 
         local build_tgt=$(sb2 -t $OPT_TARGET gcc -dumpmachine)
         build_tgt=${build_tgt%-gnueabi}
@@ -610,6 +614,8 @@ run_install() {
 
     # get rid of potential windows linefeeds
     sed -i "s/\x0D$//g" "$tmp_spec"
+
+    fix_package_version "$tmp_spec"
 
     # Install to buildroot which should be rsync'ed to /opt/sdk/$package on device
     (
