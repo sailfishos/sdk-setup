@@ -258,18 +258,27 @@ fix_package_version() {
     version=${version#*/}   # allow tags to have a prefix to allow vendor marking
     version=${version#v}    # some people like to prefix versions with a v
 
-    local head
-    if [[ $(git status --short --untracked-files=no) ]]; then
-        head=$(git stash create)
-    else
-        head=$(git rev-parse HEAD)
-    fi
+    local stash=$(git stash create)
+    local head=${stash:-$(git rev-parse HEAD)}
 
-    if [[ $(git rev-parse "$tag^{}") != "$head" ]]; then
+    local modified_submodules=$(
+        describe_if_modified()
+        {
+            local stash=$(git stash create)
+            local head=${stash:-$(git rev-parse HEAD)}
+            if [[ $head != $sha1 ]]; then
+                local short=$(git rev-list --max-count=1 --abbrev-commit "$head")
+                echo -n "+$name.$short"
+            fi
+        }
+        git submodule --quiet foreach --recursive \
+            "$(declare -f describe_if_modified); describe_if_modified")
+
+    if [[ $(git rev-parse "$tag^{}") != "$head" || $modified_submodules ]]; then
         local branch=$(git rev-parse --abbrev-ref HEAD)
         local timestamp=$(TZ=UTC date --date=@$(git log --max-count=1 --pretty=%ct "$head") +%Y%m%d%H%M%S)
         local sha1sum=$(git rev-list --max-count=1 --abbrev-commit "$head")
-        version=$version+$branch.$timestamp.$sha1sum
+        version=$version+$branch.$timestamp.$sha1sum$modified_submodules
     fi
 
     version=${version//-/+} # '-' is not an allowed character in the version field
