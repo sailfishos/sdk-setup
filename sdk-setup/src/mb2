@@ -29,7 +29,7 @@
 
 synopsis() {
     cat <<EOF
-usage: $ME [-t <target>] [-s <specfile>] [-d <device>] [-p <projectdir>]
+usage: $ME [-t <target>] [-s <specfile>] [-d <device>] [-o <outputdir>] [-p <projectdir>]
            [-f <folder>] [-i] [-P] [-x[=<tag>] | -X] [-c[=<args>]]
            build [-p] [-d] [-j <n>] [<args>] | qmake [<args>] | make [<args>] | ssh <args>
            install [<args>] | installdeps <args> | rpm [<args>] | deploy <args>
@@ -117,6 +117,7 @@ usage() {
   -i | --increment     : increment release number in spec file
   -t | --target        : specify the sb2 target to use
   -d | --device        : specify the device
+  -o | --outputdir     : where to place produced RPM files. Defaults to ./RPMS directory
   -p | --projectdir    : when running shadow build/deploy from another dir
   -s | --specfile      : if the specfile is not in rpm/*.spec and cannot be found using -p
   -f | --shared-folder : the folder where QtCreator shares devices.xml and ssh keys
@@ -533,11 +534,11 @@ run_build() {
     build_tgt=${build_tgt%-gnueabi}
     (
         cd_to_spec_setup_dir;
-        rm -f "$_basedir/RPMS/"*.rpm;
+        rm -f "$OPT_OUTPUTDIR/"*.rpm;
         sb2 -t $OPT_TARGET rpmbuild --build-in-place --target=$build_tgt \
             "${BUILD_DEBUG[@]}" \
             --define "_smp_mflags -j$(rpm_quote "$BUILD_JOBS")" \
-            --define "_rpmdir $_basedir/RPMS" \
+            --define "_rpmdir $OPT_OUTPUTDIR" \
             --define "_sourcedir $_basedir/rpm" \
             --define "_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm" \
             --buildroot="$buildroot" \
@@ -568,11 +569,11 @@ run_prep() {
     build_tgt=${build_tgt%-gnueabi}
     (
         cd_to_spec_setup_dir;
-        rm -f "$_basedir/RPMS/"*.rpm;
+        rm -f "$OPT_OUTPUTDIR/"*.rpm;
         sb2 -t $OPT_TARGET rpmbuild --build-in-place --target=$build_tgt \
             "${BUILD_DEBUG[@]}" \
             --define "_smp_mflags -j$BUILD_JOBS" \
-            --define "_rpmdir $_basedir/RPMS" \
+            --define "_rpmdir $OPT_OUTPUTDIR" \
             --define "_sourcedir $_basedir/rpm" \
             --define "_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm" \
             --buildroot="$buildroot" \
@@ -696,11 +697,11 @@ run_rpm() {
     (
         increment_build_number;
         cd_to_spec_setup_dir;
-        rm -f "$_basedir/RPMS/"*.rpm;
+        rm -f "$OPT_OUTPUTDIR/"*.rpm;
         sb2 -t $OPT_TARGET rpmbuild --build-in-place --target=$build_tgt \
             --define "noecho 1" \
             --define "qtc_builddir $_basedir" \
-            --define "_rpmdir $_basedir/RPMS" \
+            --define "_rpmdir $OPT_OUTPUTDIR" \
             --define "_sourcedir $_basedir/rpm" \
             --define "_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm" \
             --buildroot="$buildroot" \
@@ -731,7 +732,7 @@ run_deploy() {
                 shift
                 run_rpm
                 [[ $? -ne 0 ]] && return 1
-                rpms=$(find RPMS -name '*.rpm' -a ! -name '*-debug*.rpm')
+                rpms=$(find $OPT_OUTPUTDIR -name '*.rpm' -a ! -name '*-debug*.rpm')
                 rsync_as $deviceuser -av ${rpms} $device_ip:/home/$deviceuser/RPMS/
                 [[ $? -ne 0 ]] && return 1
                 ssh_as $deviceuser $method ${rpms}
@@ -741,7 +742,7 @@ run_deploy() {
             "--zypper" ) shift
                 run_rpm
                 [[ $? -ne 0 ]] && return 1
-                rpms=$(find RPMS -name '*.rpm' -a ! -name '*-debug*.rpm')
+                rpms=$(find $OPT_OUTPUTDIR -name '*.rpm' -a ! -name '*-debug*.rpm')
                 rsync_as root -av ${rpms} $device_ip:/root/RPMS/
                 [[ $? -ne 0 ]] && return 1
                 ssh_as root zypper --non-interactive --quiet in -f ${rpms}
@@ -781,6 +782,7 @@ if [[ $1 != --self-test ]]; then  ###  M A I N  EXECUTION BEGINS HERE  #########
 OPT_SPEC=
 OPT_TARGET=
 OPT_DEVICE=
+OPT_OUTPUTDIR=$(readlink -f ./RPMS)
 OPT_PKGDIR="./rpm"
 OPT_PROJDIR=
 OPT_NEEDSPEC=
@@ -813,6 +815,10 @@ while [[ "$1" ]]; do
             ;;
         "-d" | "--device") shift
             OPT_DEVICE="$1"; shift
+            ;;
+        "-o" | "--outputdir") shift
+            OPT_OUTPUTDIR="$1"; shift
+            [[ -d "$OPT_OUTPUTDIR" ]] || fatal "'$OPT_OUTPUTDIR' is not a directory"
             ;;
         "-p" | "--projectdir") shift
             OPT_PROJDIR="$1"; shift
