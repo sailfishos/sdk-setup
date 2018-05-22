@@ -125,7 +125,9 @@ usage() {
   -P | --pedantic      : do extra checks
   -x[=<tag>] | --fix-version[=<tag>]
                        : this option is implied when used inside a Git working
-                         tree from within a platform SDK (use -X to override).
+                         tree (use -X to override). Within Application SDK it is
+                         only implied if the version recorded in the spec file
+                         is exactly "0".
                          Use the latest tag from the current git branch as
                          package version or the given <tag>.  If the current
                          HEAD, index or working tree differs from the tree
@@ -249,7 +251,27 @@ get_spec_tag() {
 }
 
 fix_package_version() {
-    [[ ! $OPT_FIX_VERSION ]] && return
+    local spec_file=$1
+
+    local version_in_spec=$(sed -n 's/^Version:[[:space:]]*//p' "$spec_file")
+
+    if [[ $OPT_NO_FIX_VERSION ]]; then
+        return
+    elif [[ ! $OPT_FIX_VERSION ]]; then
+        # When used inside a build engine VM, fixing version is enabled implicitly only if the
+        # version in spec file is exactly "0" - this is because there is no UI in Qt Creator
+        # that would allow to override this.
+        if inside_build_engine && [[ $version_in_spec != 0 ]]; then
+            return
+        fi
+    fi
+
+    if ! inside_git_worktree; then
+        if [[ $OPT_FIX_VERSION || $version_in_spec == 0 ]]; then
+            notice "Not inside a Git working tree, will not fix package version."
+        fi
+        return
+    fi
 
     local tag
     if [[ $OPT_FIX_VERSION_HINT ]]; then
@@ -291,7 +313,7 @@ fix_package_version() {
     version=${version//-/+} # '-' is not an allowed character in the version field
 
     echo "Setting version: ${version}"
-    sed -i "s,^Version:.*,Version: ${version}," "$1"
+    sed -i "s,^Version:.*,Version: ${version}," "$spec_file"
 }
 
 # Helper to read XML
@@ -746,10 +768,9 @@ OPT_PKGDIR="./rpm"
 OPT_PROJDIR=
 OPT_NEEDSPEC=
 OPT_PEDANTIC=0
-# Do not enable implicitly when used inside a build engine VM as there is no UI
-# in Qt Creator that would allow to override this
-OPT_FIX_VERSION=$(inside_git_worktree && ! inside_build_engine && echo 1)
+OPT_FIX_VERSION=
 OPT_FIX_VERSION_HINT=
+OPT_NO_FIX_VERSION=
 OPT_GIT_CHANGE_LOG=
 OPT_GIT_CHANGE_LOG_ARGS=
 OPT_SHARED_DIR=/etc/mersdk/share
@@ -793,10 +814,12 @@ while [[ "$1" ]]; do
         "-x" | "--fix-version" ) shift
             OPT_FIX_VERSION=1
             OPT_FIX_VERSION_HINT=
+            OPT_NO_FIX_VERSION=
             ;;
         "-x="* | "--fix-version="* )
             OPT_FIX_VERSION=1
             OPT_FIX_VERSION_HINT=${1#*=}
+            OPT_NO_FIX_VERSION=
             if [[ ! $(git tag --list "$OPT_FIX_VERSION_HINT") ]]; then
                 fatal "'$OPT_FIX_VERSION_HINT' no such Git tag"
             fi
@@ -805,6 +828,7 @@ while [[ "$1" ]]; do
         "-X" | "--no-fix-version" ) shift
             OPT_FIX_VERSION=
             OPT_FIX_VERSION_HINT=
+            OPT_NO_FIX_VERSION=1
             ;;
         "-c" | "--git-change-log" ) shift
             OPT_GIT_CHANGE_LOG=1
@@ -1647,6 +1671,7 @@ fix_version_tc() {
 
         OPT_FIX_VERSION=1
         OPT_FIX_VERSION_HINT=$hint
+        OPT_NO_FIX_VERSION=
         fix_package_version $version_file >&2
     ) || return
 
