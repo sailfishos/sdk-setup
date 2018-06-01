@@ -1,0 +1,257 @@
+#!/bin/bash
+#
+# sdk-host-shell provides a mean to escape an SDK chroot for command execution
+#
+# Copyright (C) 2018 Jolla Ltd.
+# Contact: Martin Kampas <martin.kampas@jolla.com>
+# All rights reserved.
+#
+# You may use this file under the terms of BSD license as follows:
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+#   * Redistributions of source code must retain the above copyright
+#     notice, this list of conditions and the following disclaimer.
+#   * Redistributions in binary form must reproduce the above copyright
+#     notice, this list of conditions and the following disclaimer in the
+#     documentation and/or other materials provided with the distribution.
+#   * Neither the name of the Jolla Ltd nor the
+#     names of its contributors may be used to endorse or promote products
+#     derived from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+# ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+# WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+# DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS OR CONTRIBUTORS BE LIABLE FOR
+# ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+# (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+# LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+# ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+# SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+#
+
+set -o nounset
+set -o pipefail
+
+SELF=$(basename "$0")
+
+synopsis()
+{
+    cat <<END
+usage: $SELF [OPTIONS] [--] COMMAND
+   or: $SELF [OPTIONS] --server SDK_ROOT
+END
+}
+
+brief_usage()
+{
+    cat <<END
+$(synopsis)
+
+Try '$SELF --help' for more information.
+END
+}
+
+usage()
+{
+    less <<END
+$(synopsis)
+
+Provides a mean to escape an SDK chroot for simple command execution.
+
+Two modes of operation are supported - client (default) and server (when the
+'--server' option is used). Server is to be run outside of the SDK, client
+inside the SDK. It is valid to start multiple server processes simultaneously,
+just one server will be activated at a time.
+
+Options:
+    COMMAND
+        Command string with the same semantics as in case of ssh(1) command
+
+    SDK_ROOT
+        Path to the root of the SDK directory tree to serve for
+
+    --server
+        Choose the server mode of operation. The default is to run in the client
+        mode.
+END
+}
+
+warning()
+{
+    echo "$SELF: Warning: $*" >&2
+}
+
+fatal()
+{
+    echo "$SELF: Fatal: $*" >&2
+}
+
+shs-handler()
+{
+    local options= command=
+    read -r options
+    if [[ $options != "$SHS_PROTO_OPTIONS_START"*"$SHS_PROTO_OPTIONS_END" ]]; then
+        echo "Protocol error: No options" >&2
+        return 1
+    fi
+    read -r command
+
+    options=${options#$SHS_PROTO_OPTIONS_START}
+    options=${options%$SHS_PROTO_OPTIONS_END}
+
+    write_stdout() { stdbuf -o L sed "s/^/$SHS_PROTO_STDOUT_KEY/"; }
+    write_stderr() { stdbuf -o L sed "s/^/$SHS_PROTO_STDERR_KEY/"; }
+    write_ec() { printf '%s%d\n' "$SHS_PROTO_EXITCODE_KEY" "$1"; }
+
+    if [[ ,$options, == *,"$SHS_PROTO_OPTION_SPLITSTREAM",* ]]; then
+        { eval "$command" > >(write_stdout); } 2> >(write_stderr)
+        write_ec $?
+    else
+        eval "$command" &> >(write_stdout)
+        write_ec $?
+    fi
+}
+
+server()
+{
+    flock -e 3 || return
+    rm -f "$OPT_SOCKET" || return
+
+    cd
+
+    export -f shs-handler
+    export ${!SHS_PROTO_*}
+    ncat -l -U "$OPT_SOCKET" --keep-open --sh-exec "bash -c shs-handler" || return
+    rm -f "$OPT_SOCKET" || return
+} 3>"$OPT_LOCK"
+
+client()
+{
+    local command=$1
+
+    local options=()
+    if ! [[ /proc/$$/fd/1 -ef /proc/$$/fd/2 ]]; then
+        options+=("$SHS_PROTO_OPTION_SPLITSTREAM")
+    fi
+    options=$(IFS=$SHS_PROTO_OPTIONS_SEPARATOR; printf '%s' "${options[*]:-}")
+
+    local message=
+    message+="$SHS_PROTO_OPTIONS_START$options$SHS_PROTO_OPTIONS_END"$'\n'
+    message+="$command"$'\n'
+
+    # ncat is not available in the SDK
+    ncat()
+    {
+        local address=$2
+        local python=
+        read -d '' -r python <<'END'
+import socket, sys
+address = sys.argv[1]
+sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+try:
+    sock.connect(address)
+except:
+    print >> sys.stderr, "sdk-host-shell: Fatal: Connection error. Is the server running?"
+    sys.exit(1)
+sock.sendall(sys.stdin.read())
+sock_file = sock.makefile()
+while True:
+    line = sock_file.readline()
+    if line:
+        sys.stdout.write(line)
+    else:
+        break
+END
+        python -c "$python" "$address"
+    }
+
+    ncat -U "$OPT_SOCKET" <<<"$message" | {
+        line= exit_code= received_anything=
+        while read -r line; do
+            received_anything=1
+            case ${line:0:1} in
+                $SHS_PROTO_STDOUT_KEY)
+                    printf '%s\n' "${line:1}"
+                    ;;
+                $SHS_PROTO_STDERR_KEY)
+                    printf '%s\n' "${line:1}" >&2
+                    ;;
+                $SHS_PROTO_EXITCODE_KEY)
+                    exit_code=${line:1}
+                    ;;
+            esac
+        done
+        if [[ ! $exit_code && $received_anything ]]; then
+            warning "No exit code message received"
+        fi
+
+        exit ${exit_code:-0}
+    }
+}
+
+main()
+{
+    SHS_PROTO_OPTIONS_START='##options##'
+    SHS_PROTO_OPTIONS_SEPARATOR=','
+    SHS_PROTO_OPTIONS_END='##'
+    SHS_PROTO_OPTION_SPLITSTREAM=splitstream
+    SHS_PROTO_STDOUT_KEY=O
+    SHS_PROTO_STDERR_KEY=E
+    SHS_PROTO_EXITCODE_KEY=X
+
+    OPT_SERVER=
+
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -h)
+                brief_usage
+                return
+                ;;
+            --help)
+                usage
+                return
+                ;;
+            --server)
+                OPT_SERVER=1
+                ;;
+            --)
+                shift
+                break
+                ;;
+            -*)
+                fatal "Unrecognized option: '$1'"
+                return 1
+                ;;
+            *)
+                break
+                ;;
+        esac
+        shift
+    done
+
+    OPT_SOCKET=/tmp/sdk-host-shell-$USER.sock
+    OPT_LOCK=/tmp/sdk-host-shell-$USER.lock
+
+    if [[ $OPT_SERVER ]]; then
+        if [[ $# -ne 1 ]]; then
+            fatal "Invalid number of positional arguments"
+            return 1
+        fi
+        OPT_SDK_ROOT=$1
+        OPT_SOCKET=$OPT_SDK_ROOT/$OPT_SOCKET
+        OPT_LOCK=$OPT_SDK_ROOT/$OPT_LOCK
+
+        server
+    else
+        if [[ $# -eq 0 ]]; then
+            fatal "No command given"
+            return 1
+        fi
+
+        client "$*"
+    fi
+}
+
+main "$@"
