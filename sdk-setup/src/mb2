@@ -174,6 +174,23 @@ if ! type readarray &>/dev/null; then
     }
 fi
 
+git_() (
+    # Cannot use the '-C' option - it requires newer Git.
+    # Cannot use '--git-dir' + '--work-tree' options - they break at least git-stash.
+    if [[ $OPT_PROJDIR ]]; then
+        cd "$OPT_PROJDIR" || return
+    fi
+    # At least git-stash requires an explicitly set user identity. Setting environment
+    # variables compared to passing options with '-c' works also for subprocesses invoked via
+    # `git-submodule foreach`
+    if inside_build_engine; then
+        export GIT_AUTHOR_NAME='mersdk' GIT_AUTHOR_EMAIL='mersdk@mersdk'
+        export GIT_COMMITTER_NAME='mersdk' GIT_COMMITTER_EMAIL='mersdk@mersdk'
+    fi
+
+    git "$@"
+)
+
 check_spec_supports_qtc_silent() {
     grep "define qtc_qmake" "$OPT_SPEC" >/dev/null 2>&1
 }
@@ -277,7 +294,7 @@ fix_package_version() {
     if [[ $OPT_FIX_VERSION_HINT ]]; then
         tag=$OPT_FIX_VERSION_HINT
     else
-        if ! tag=$(git describe --tags --abbrev=0 2>/dev/null); then
+        if ! tag=$(git_ describe --tags --abbrev=0 2>/dev/null); then
             notice "No tags describe the HEAD, will not fix package version."
             return
         fi
@@ -287,8 +304,8 @@ fix_package_version() {
     version=${version#*/}   # allow tags to have a prefix to allow vendor marking
     version=${version#v}    # some people like to prefix versions with a v
 
-    local stash=$(git stash create)
-    local head=${stash:-$(git rev-parse HEAD)}
+    local stash=$(git_ stash create)
+    local head=${stash:-$(git_ rev-parse HEAD)}
 
     local modified_submodules=$(
         describe_if_modified()
@@ -300,13 +317,13 @@ fix_package_version() {
                 echo -n "+$name.$short"
             fi
         }
-        git submodule --quiet foreach --recursive \
+        git_ submodule --quiet foreach --recursive \
             "$(declare -f describe_if_modified); describe_if_modified")
 
-    if [[ $(git rev-parse "$tag^{}") != "$head" || $modified_submodules ]]; then
-        local branch=$(git rev-parse --abbrev-ref HEAD)
-        local timestamp=$(TZ=UTC date --date=@$(git log --max-count=1 --pretty=%ct "$head") +%Y%m%d%H%M%S)
-        local sha1sum=$(git rev-list --max-count=1 --abbrev-commit "$head")
+    if [[ $(git_ rev-parse "$tag^{}") != "$head" || $modified_submodules ]]; then
+        local branch=$(git_ rev-parse --abbrev-ref HEAD)
+        local timestamp=$(TZ=UTC date --date=@$(git_ log --max-count=1 --pretty=%ct "$head") +%Y%m%d%H%M%S)
+        local sha1sum=$(git_ rev-list --max-count=1 --abbrev-commit "$head")
         version=$version+$branch.$timestamp.$sha1sum$modified_submodules
     fi
 
@@ -751,7 +768,7 @@ get_shared_dir() {
 }
 
 inside_build_engine() [[ -f /etc/mer-sdk-vbox ]]
-inside_git_worktree() { git status &>/dev/null; }
+inside_git_worktree() { git_ status &>/dev/null; }
 
 # this is same as basename $0
 ME=${0/#*\//}
@@ -820,9 +837,6 @@ while [[ "$1" ]]; do
             OPT_FIX_VERSION=1
             OPT_FIX_VERSION_HINT=${1#*=}
             OPT_NO_FIX_VERSION=
-            if [[ ! $(git tag --list "$OPT_FIX_VERSION_HINT") ]]; then
-                fatal "'$OPT_FIX_VERSION_HINT' no such Git tag"
-            fi
             shift
             ;;
         "-X" | "--no-fix-version" ) shift
@@ -881,6 +895,10 @@ if [[ ! "$OPT_TARGET" ]]; then
 fi
 
 [[ -d ~/.scratchbox2/$OPT_TARGET ]] || fatal "$OPT_TARGET is an invalid sb2 target"
+
+if [[ $OPT_FIX_VERSION_HINT && ! $(git_ tag --list "$OPT_FIX_VERSION_HINT") ]]; then
+    fatal "'$OPT_FIX_VERSION_HINT' no such Git tag"
+fi
 
 # spec rules are complex:
 #  a .spec is required for some but not all operations
