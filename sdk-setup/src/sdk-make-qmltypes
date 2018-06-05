@@ -1,0 +1,1390 @@
+#!/bin/bash
+#
+# sdk-make-qmltypes allows to update .qmltypes directly from the SDK
+#
+# Copyright (C) 2018 Jolla Ltd.
+# Contact: Martin Kampas <martin.kampas@jolla.com>
+# All rights reserved.
+#
+# You may use this file under the terms of BSD license as follows:
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+#   * Redistributions of source code must retain the above copyright
+#     notice, this list of conditions and the following disclaimer.
+#   * Redistributions in binary form must reproduce the above copyright
+#     notice, this list of conditions and the following disclaimer in the
+#     documentation and/or other materials provided with the distribution.
+#   * Neither the name of the Jolla Ltd nor the
+#     names of its contributors may be used to endorse or promote products
+#     derived from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+# ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+# WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+# DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS OR CONTRIBUTORS BE LIABLE FOR
+# ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+# (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+# LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+# ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+# SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+#
+
+# At least sort+look do not work together under all locales.
+OLD_LC_ALL=$LC_ALL
+export LC_ALL=C
+
+set -o nounset
+set -o pipefail
+shopt -s extglob
+
+SELF=$(basename "$0")
+
+SEPARATOR=';'
+cut_() { cut -d "$SEPARATOR" "$@"; }
+read_() { IFS=$SEPARATOR read "$@"; }
+write_() { (IFS=$SEPARATOR; printf '%s\n' "$*"); }
+sort_() { sort -t "$SEPARATOR" "$@"; }
+awk_() { awk -v FS="$SEPARATOR" -v OFS="$SEPARATOR" "$@"; }
+
+synopsis()
+{
+    cat <<END
+usage: $SELF [OPTIONS]
+   or: $SELF [OPTIONS] --batch CONFIG_FILE PROJECTS_DIR [--status]
+END
+}
+
+brief_usage()
+{
+    cat <<END
+$(synopsis)
+
+Try '$SELF --help' for more information.
+END
+}
+
+usage()
+{
+    less <<END
+$(synopsis)
+
+Due to the way it works, running qmlplugindump in build environment is not
+always possible. In general it is necessary to deploy binaries to a target and
+invoke qmlplugindump there in order to update qmltypes files.
+
+This tool makes this task less cumbersome, using Sailfish OS Emulator as the
+target environment.
+
+
+THE CONVENTION
+
+sdk-make-qmltypes relies on the following convention:
+
+    In every directory containing one or more '*.qmltypes' files known to Git
+    it is possible to invoke qmlplugindump with arguments appropriate for
+    updating these files just by runing \`make qmltypes\`.
+
+This makefile target is supposed to invoke qmlplugindump in the same way as if
+the respective QML modules were already installed system-wide. The recipe will
+be executed inside emulator after installing the respective packages. File
+system mapping will be set up so that files inside working directory can be
+accessed with equal absolute paths.
+
+Example how to achieve this with qmake-base projects:
+
+    qmltypes.commands = qmlplugindump -nonrelocatable org.example 1.0 \\
+        > \$\$PWD/plugins.qmltypes
+    QMAKE_EXTRA_TARGETS += qmltypes
+
+
+MODES OF OPERATION
+
+Two modes of operation are supported.
+
+Both modes need a Scratchbox2 target suitable for use with the emulator. Pass
+the '--target' option unless you have an apropriate default target configured
+with 'sb2-config'.
+
+1. In-place execution on a single package
+
+   It will build the package under the current working directory with \`mb2\`
+   and operate on the packages found in the "RPMS" directory, directly updating
+   '.qmltypes' files inside the working directory and/or its subdirectories
+   (see also '--no-build' and '--rpms-dir').
+
+   If you are adding a new .qmltypes file, start by creating and empty file and
+   adding it to Git index. Only files known to Git are recognized by this tool.
+
+2. Batch operation on multiple packages
+
+   The list of packages is read from CONFIG_FILE.  See CONFIGURATION FILE below
+   for description of the format.
+
+   In this mode packages will not be built locally - binaries available from
+   online repositories available on emulator will be used.
+
+   The working directory will be set up as a Git superproject with each package
+   cloned as a submodule under this superproject. PROJECTS_DIR will be searched
+   for existing local clones to use them as a reference to speed up operation.
+   No changes will be done to the repositories under PROJECTS_DIR except for
+   refreshing them with git-fetch. After successful completion the cloned
+   repositories under the working directory can be used to commit updated
+   .qmltypes files if changes exist.
+
+   It is possible to resume failed operation just by re-executing with the same
+   arguments. State is preserved under the working directory and it can be
+   queried with the '--status' option. See OVERVIEW OF BATCH OPERATION for
+   details.
+
+
+MAIN OPTIONS
+    --app-sdk PATH
+        Path to the Application SDK installation. Defaults to "~/SailfishOS"
+
+    --target SB2_TARGET
+        The Scratchbox2 target from Platform SDK to use. Defaults to the
+        default target.
+
+    --status
+        Print the detailed status and exit. Only valid in batch mode.
+
+    --restore-emulator
+        Restore the original state of the emulator. Undo any modifications done
+        by this tool. This is done automatically when exiting successfully. See
+        also '--no-restore-emulator'.
+
+
+OTHER OPTIONS
+    --csv
+        Accept configuration file for batch operation in CSV format instead of
+        the default blanks-separated format.
+
+    --no-build
+        Valid for in-place execution mode. Do not build the package with
+        \`mb2\`, use existing build artefacts.
+
+    --no-restore-emulator
+        Keep the emulator running to spead up subsequent executions. Normally
+        emulator state would be restored when exiting successfuly.
+
+    --rpms-dir PATH
+        Where to look for RPM binaries. Cannot be used in batch mode.
+        Defaults to "./RPMS"
+
+    --spec PATH
+        Valid for in-place execution mode. RPM .spec file to use with \`mb2\`.
+
+    -v, --verbose
+        Be verbose
+
+
+CONFIGURATION FILE
+    Each package is described on a separate line with fields separated by tabs
+    or spaces. Blanks and anything following '#' up to the end of line is
+    ignored.
+
+    The fields are
+
+        Source Package Name
+            This must match the "Name:" tag inside package's spec file. When
+            multiple spec files exist in a package, the one with matching
+            "Name:" tag is selected.
+
+        Normalized Git URL
+            This must be in the form
+                SERVICE ':' PATH
+            E.g. "git.merproject.org:mer-core/ssu". The PATH must be relative.
+
+        Git Branch
+            The Git branch to check out
+
+        Binary Packages
+            A comma separated list of the binary packages which provide the QML
+            modules to dump type information for. Each package can be listed
+            ether with (a) full name, (b) name starting with "-" which will be
+            treated as a suffix to the Package Name or (c) just "-" which
+            stands for name equal to the Package Name.
+
+    Example configuration file
+
+        # PACKAGE  REPOSITORY                       BRANCH  BINARIES
+        ssu        git.merproject.org:mer-core/ssu  master  -declarative
+        mpris-qt5  github.com:nemomobile/qtmpris    master  -qml-plugin
+
+    A remote configuration file may be specified with an HTTP(S)/FTP(S) URL in
+    which case curl(1) will be used for download. Note that curl does not
+    enable netrc(5) based authentication by default - add '--netrc' to your
+    ~/.curlrc if you wish to use netrc authentication.
+
+    Alternatively the configuration file can use the CSV format. See '--csv'.
+    This is useful e.g. for keeping the configuration in an Ethercalc
+    spreadsheet:
+
+        sdk-make-qmltypes --batch --csv
+            https://ethercalc.example.com/_/<SPREADSHEET-ID>/csv \
+            ~/projects
+
+
+OVERVIEW OF BATCH OPERATION
+    Each package is processed gradually, with these possible states:
+
+    TODO
+        Processing not started yet
+
+    CLONED
+        Reference repository was located under PROJECTS_DIR and it was cloned
+        under the working directory
+
+    MAKEFILES-READY
+        Depending on the project either qmake or CMake was run to produce
+        Makefiles
+
+    INSTALLED
+        Binary packages were installed to the emulator
+
+    DONE
+        The qmltypes files were updated by running \`make qmltypes\` in every
+        directory that contains at least one '*.qmltypes' file tracked by Git
+
+    FAIL
+        Package was marked as failed and will be excluded from processing
+
+LIMITATIONS
+    Only qmake- and CMake-based projects are supported.
+END
+}
+
+info()
+{
+    echo "$SELF: $*" >&2
+}
+
+warning()
+{
+    echo "$SELF: Warning: $*" >&2
+}
+
+fatal()
+{
+    echo "$SELF: Fatal: $*" >&2
+}
+
+configure()
+{
+    if [[ -f /etc/mer-sdk-vbox ]]; then
+        fatal "This tool can be used in Platform SDK only."
+        return 1
+    fi
+
+    if ! which sdk-host-shell &>/dev/null; then
+        export PATH=/usr/libexec/sdk-setup:$PATH
+        if ! which sdk-host-shell &>/dev/null; then
+            fatal "sdk-host-shell executable not found"
+            return 1
+        fi
+    fi
+
+    if [[ $OPT_BATCH ]]; then
+        if ! python3 -c 'import giturlparse' &>/dev/null; then
+            fatal "It is necessary to manually install python 3 module 'giturlparse' inside the SDK." \
+                "Please run 'pip3 install --user git-url-parse' to do so."
+            return 1
+        fi
+    fi
+}
+
+# Suppress command's output unless it exits with non-zero
+silent() {
+    if [[ $OPT_VERBOSE ]]; then
+        "$@"
+        return
+    else
+        local out=
+        out=$("$@" 2>&1)
+        local rc=$?
+        [[ $rc -eq 0 ]] || printf >&2 "%s\n" "$out"
+        return $rc
+    fi
+}
+
+with_tmp_file()
+{
+    local file=$1 cmd=("${@:2}")
+    local tmp_file=
+
+    with_tmp_file_cleanup()
+    (
+        trap 'echo cleaning up...' INT TERM HUP
+        if [[ $tmp_file ]]; then
+            rm -f "$tmp_file"
+        fi
+    )
+    trap 'with_tmp_file_cleanup; trap - RETURN' RETURN
+    trap 'return 1' INT TERM HUP
+
+    tmp_file=$(mktemp "$file.XXX") || return
+
+    if "${cmd[@]}" <&3 >"$tmp_file"; then
+        cat <"$tmp_file" >"$file" || return
+    else
+        return $?
+    fi
+} 3<&0 <&-
+
+parse_devices_xml()
+{
+    local sshkeypath=
+    sshkeypath=$(xmllint --xpath "//device[@name='$OPT_EMULATOR']/sshkeypath/text()" \
+        "$OPT_DEVICES_XML") || return
+    OPT_SSH_KEY=$OPT_VMSHARE/$sshkeypath/$OPT_EMULATOR_USER
+}
+
+trim_comments()
+{
+    sed '/^\s*$/d; /^\s*#/d; s/\s\+#.*//'
+}
+
+csv_to_space_separated()
+{
+    local python=
+    read -d '' -r python <<'END'
+import sys
+import csv
+
+reader = csv.reader(sys.stdin, delimiter=',')
+for row in reader:
+    print(' '.join(row).strip())
+END
+
+    python3 -c "$python"
+}
+
+is_remote() [[ $1 == @(http|ftp)?(s)://* ]]
+
+read_config()
+{
+    if is_remote "$OPT_CONFIG"; then
+        curl --silent --fail "$OPT_CONFIG"
+        local rc=$?
+        if [[ $rc -ne 0 ]]; then
+            fatal "Failed to download configuration file at '$OPT_CONFIG'. curl exited with code '$rc'"
+            return 1
+        fi
+    else
+        cat <"$OPT_CONFIG"
+    fi \
+    |if [[ $OPT_CSV ]]; then
+        csv_to_space_separated
+    else
+        cat
+    fi \
+    |trim_comments
+}
+
+ssh_emulator()
+{
+    ssh -i "$OPT_SSH_KEY" -o StrictHostKeyChecking=no -o UserKnownHostsFile="$KNOWN_HOSTS_FILE" \
+        -p "$OPT_EMULATOR_PORT" "$OPT_EMULATOR_USER@localhost" "$@"
+}
+
+mb2_()
+{
+    mb2 ${OPT_TARGET:+-t "$OPT_TARGET"} "$@"
+}
+
+vboxmanage_()
+{
+    sdk-host-shell "vboxmanage ${*@Q}"
+}
+
+is_vm_off()
+{
+    local info= state=
+    info=$(vboxmanage_ showvminfo --machinereadable "$OPT_EMULATOR") || return
+    ! grep -q '^SessionName=' <<<"$info"
+}
+
+start_emulator()
+{
+    local ok=
+    local vm_started=
+    start_emulator_cleanup()
+    (
+        [[ $ok ]] && return
+        trap 'echo cleaning up...' INT TERM HUP
+        if [[ $vm_started ]]; then
+            stop_emulator
+        fi
+    )
+    trap 'start_emulator_cleanup; trap - RETURN' RETURN
+    trap 'return 1' INT TERM HUP
+
+    vboxmanage_ startvm --type headless "$OPT_EMULATOR" || return
+    vm_started=1
+
+    local limit=10
+    for ((; limit>0; --limit)); do
+        sleep 1
+        if ssh_emulator "true" &>/dev/null; then
+            ok=1
+            return
+        fi
+    done
+
+    # Be verbose on the very last try
+    if ! ssh_emulator "true"; then
+        fatal "Could not connect to the emulator"
+        return 1
+    fi
+}
+
+stop_emulator()
+{
+    vboxmanage_ controlvm "$OPT_EMULATOR" acpipowerbutton
+    local limit=
+    for ((limit=10; limit>0; --limit)); do
+        sleep 1
+        is_vm_off "$OPT_EMULATOR" && return
+    done
+
+    vboxmanage_ controlvm "$OPT_EMULATOR" poweroff
+    for ((limit=10; limit>0; --limit)); do
+        sleep 1
+        is_vm_off "$OPT_EMULATOR" && return
+    done
+
+    warning "Failed to stop emulator"
+    return 1
+}
+
+set_up_emulator()
+{
+    info "Setting up emulator..."
+
+    local snapshot_taken= emulator_started= tree_created= ok=
+    setup_emulator_cleanup()
+    (
+        [[ $ok ]] && return
+        trap 'echo cleaning up...' INT TERM HUP
+        if [[ $tree_created ]]; then
+            ssh_emulator "sudo rmdir --parents ${OPT_WORK_DIR@Q}" 2>/dev/null
+        fi
+        if [[ $emulator_started ]]; then
+            stop_emulator
+        fi
+        if [[ $snapshot_taken ]]; then
+            vboxmanage_ snapshot "$OPT_EMULATOR" restore "$OPT_SNAPSHOT" \
+                && vboxmanage_ snapshot "$OPT_EMULATOR" delete "$OPT_SNAPSHOT"
+        fi
+    )
+    trap 'setup_emulator_cleanup; trap - RETURN' RETURN
+    trap 'return 1' INT TERM HUP
+
+    # Cleaned up in main
+    KNOWN_HOSTS_FILE=$(mktemp "${OPT_WORK_DIR}/.known_hosts.XXXXXX") || return
+
+    if ! vboxmanage_ snapshot "$OPT_EMULATOR" showvminfo "$OPT_SNAPSHOT" &>/dev/null; then
+        if ! is_vm_off "$OPT_EMULATOR"; then
+            fatal "Shut down the emulator first"
+            return 1
+        fi
+
+        vboxmanage_ snapshot "$OPT_EMULATOR" take "$OPT_SNAPSHOT" || return
+        snapshot_taken=1
+
+        start_emulator || return
+        emulator_started=1
+
+        vboxmanage_ sharedfolder add "$OPT_EMULATOR" --name "$OPT_SF_NAME" --hostpath "$OPT_WORK_DIR" --transient \
+            || return
+
+        ssh_emulator "sudo mkdir -p ${OPT_WORK_DIR@Q}" || return
+        tree_created=1
+
+        ssh_emulator "sudo mount ${OPT_SF_NAME@Q} ${OPT_WORK_DIR@Q} -t vboxsf \
+            -o uid=${OPT_EMULATOR_USER@Q},gid=${OPT_EMULATOR_USER@Q}" || return
+
+        ssh_emulator "$(declare -f silent); silent sudo pkcon --noninteractive install ${OPT_EMULATOR_DEPS[@]@Q}" \
+            || return
+
+        if ! ssh_emulator "sudo systemctl stop packagekit && ! ps -C packagekitd &>/dev/null"; then
+            fatal "Failed to stop PackageKit daemon inside emulator"
+            return 1
+        fi
+    fi
+
+    # Catch "Warning: Permanently added ... to the list of known hosts." on first connection
+    ssh_emulator "true" &>/dev/null
+
+    local stamp=
+    if ! stamp=$(ssh_emulator "mktemp ${OPT_WORK_DIR@Q}/.test.XXXXXX") || [[ ! -e "$stamp" ]]; then
+        fatal "Failed to set up the emulator. Try to repeat after using '--restore-emulator'."
+        return 1
+    fi
+    rm -f "$stamp"
+
+    ok=1
+}
+
+restore_emulator()
+{
+    if vboxmanage_ snapshot "$OPT_EMULATOR" showvminfo "$OPT_SNAPSHOT" &>/dev/null; then
+        info "Restoring original state of emulator..."
+
+        if ! is_vm_off "$OPT_EMULATOR"; then
+            stop_emulator || return
+        fi
+        vboxmanage_ snapshot "$OPT_EMULATOR" restore "$OPT_SNAPSHOT" \
+            && vboxmanage_ snapshot "$OPT_EMULATOR" delete "$OPT_SNAPSHOT" || return
+    else
+        info "Nothing to restore"
+        return 1
+    fi
+}
+
+normalize_repo_url()
+{
+    local parse_url=
+    read -d '' -r parse_url <<'END'
+import sys, os, giturlparse
+while True:
+    url = sys.stdin.readline()
+    if not url:
+        break
+    try:
+        parsed = giturlparse.parse(url.rstrip(os.linesep))
+        print(parsed.resource, parsed.pathname)
+    except giturlparse.parser.ParserError as e:
+        print()
+        print(e, file=sys.stderr)
+    sys.stdout.flush()
+END
+
+    local host= path=
+    python3 -c "$parse_url"| while read host path; do
+        path=${path%.git}
+        path=${path#/}
+        printf '%s:%s\n' "$host" "$path"
+    done
+}
+
+list_all_local_packages()
+{
+    info "Listing all local packages..."
+
+    local git_dirs=
+    git_dirs=$(find "$OPT_PROJECTS_DIR" -type d -name .git -printf '%P\n') || return
+    if ! [[ $git_dirs ]]; then
+        warning "No git repository found under '$OPT_PROJECTS_DIR'"
+        return
+    fi
+
+    info "Parsing information from $(wc -l <<<"$git_dirs") git repositories..."
+
+    coproc REPO_URL_NORMALIZER { normalize_repo_url; }
+
+    local git_dir=
+    while read git_dir <&3; do
+        local remotes=
+        remotes=$(git --git-dir "$OPT_PROJECTS_DIR/$git_dir" remote -v) || return
+        [[ $remotes ]] || continue
+
+        local remote_name= remote_url= rest=
+        while read remote_name remote_url rest <&4; do
+            if [[ $remote_url == @(.*|/*) ]]; then
+                continue
+            fi
+            local parsed_remote_url=
+            printf '%s\n' "$remote_url" >&${REPO_URL_NORMALIZER[1]}
+            read -r normalized_remote_url <&${REPO_URL_NORMALIZER[0]}
+            if [[ ! $normalized_remote_url ]] ; then
+                warning "Failed to parse URL '$remote_url' in '${git_dir%/.git}'"
+                continue
+            fi
+            write_ "${git_dir%/.git}" "$remote_name" "$normalized_remote_url"
+        done 4<<<"$remotes"
+    done 3<<<"$git_dirs"
+}
+
+find_spec_for_name()
+{
+    local name=$1
+
+    local specs=
+    if ! specs=$(grep -e '^Name:[[:space:]]*'"$name"'[[:space:]]*$' --files-with-matches rpm/*.spec); then
+        fatal "No .spec file matching name '$name'"
+        return 1
+    fi
+
+    if [[ $(wc -l <<<"$specs") -ne 1 ]]; then
+        fatal "More than one .spec file matching name '$name'"
+        return 1
+    fi
+
+    printf '%s\n' "$specs"
+}
+
+find_subdirs_with_qmltypes()
+{
+    git ls-files '*.qmltypes' |xargs -n1 -d'\n' --no-run-if-empty dirname |sort -u
+}
+
+make_qmltypes()
+{
+    local wrappers_dir=$1 dir=$2 subdirs=$3
+
+    export PATH=$wrappers_dir:$PATH
+
+    local subdir=
+    while read subdir; do
+        (
+            cd "$dir/$subdir" || return
+            if [[ -e CMakeLists.txt ]]; then
+                make qmltypes/fast -f - <Makefile || return
+            else
+                make qmltypes -f - <Makefile || return
+            fi
+        ) || return
+    done <<<"$subdirs"
+}
+
+init_wrappers()
+{
+    mkdir "$WRAPPERS_DIR" || return
+    cat <<'EOF' >"$WRAPPERS_DIR/qmlplugindump" || return
+#!/bin/bash
+# This fixes qmlplugindump segfaulting when executed for
+# nemo-qml-plugin-messages-internal-qt5 inside emulator with stdout redirected
+# to a file on the vboxsf filesystem.
+
+real=$(which --all qmlplugindump |sed -n 2p)
+if [[ ! $real ]]; then
+    # Be verbose
+    PATH=''
+    real=qmlplugindump
+fi
+
+"$real" "$@" |cat
+EOF
+    chmod +x "$WRAPPERS_DIR/qmlplugindump" || return
+}
+
+ensure_batch_work_dir_initialized()
+{
+    if [[ ! -e $OPT_WORK_DIR/.git ]]; then
+        git init --quiet "$OPT_WORK_DIR" || return
+        echo '.*' > "$OPT_WORK_DIR/.gitignore" || return
+        git -C "$OPT_WORK_DIR" add --force .gitignore || return
+        git -C "$OPT_WORK_DIR" commit -m init --quiet || return
+    fi
+    if [[ ! -e $STATE_FILE ]]; then
+        touch "$STATE_FILE" || return
+    fi
+    if [[ ! -e $WRAPPERS_DIR ]]; then
+        init_wrappers || return
+    fi
+}
+
+job_do_clone()
+{
+    [[ $1 = self ]] || local -n self=$1
+
+    if [[ ! $LOCAL_PACKAGES_CACHE ]]; then
+        # Clean up in main
+        LOCAL_PACKAGES_CACHE=$(mktemp -t $SELF.all-local-packages.XXX) || return
+        list_all_local_packages |awk_ '{print $3, $1, $2}' |sort_ -k 1,1 -u |sort \
+            > "$LOCAL_PACKAGES_CACHE" || return
+    fi
+
+    local local_packages=
+    if ! local_packages=$(look "${self[url]}$SEPARATOR" "$LOCAL_PACKAGES_CACHE"); then
+        fatal "Local package not found for '${self[url]}'"
+        return 1
+    fi
+
+    if [[ $(wc -l <<<"$local_packages") -gt 1 ]]; then
+        warning "Multiple local packages for '${self[url]}' found, picking the first one:"
+        warning "$(sed 's/^/ - /' <<<"$local_packages")"
+    fi
+
+    read_ -r _ self[local_path] self[remote] <<<"$local_packages"
+
+    local original=$OPT_PROJECTS_DIR/${self[local_path]}
+    if ! git -C "$original" fetch "${self[remote]}"; then
+        fatal "Failed to fetch '${self[remote]}'"
+        return 1
+    fi
+
+    local clone=$OPT_WORK_DIR/${self[local_path]:?}
+    git -C "$OPT_WORK_DIR" rm --force --quiet --ignore-unmatch -- "${self[local_path]}" || return
+    rm -rf "$OPT_WORK_DIR/.git/modules/${self[local_path]}" || return
+    rm -rf "$clone" || return
+
+    local ok=
+    job_do_clone_cleanup()
+    (
+        [[ $ok ]] && return
+        trap 'echo cleaning up...' INT TERM HUP
+        git -C "$OPT_WORK_DIR" rm --force --quiet --ignore-unmatch "${self[local_path]}" || return
+        git -C "$OPT_WORK_DIR" commit -m init --quiet --amend || return
+        rm -rf "$OPT_WORK_DIR/.git/modules/${self[local_path]}" || return
+        rm -rf "$clone"
+    )
+    trap 'job_do_clone_cleanup; trap - RETURN' RETURN
+    trap 'return 1' INT TERM HUP
+
+    local ref=refs/remotes/${self[remote]}/${self[branch]}
+    local commit=
+    commit=$(git -C "$original" rev-parse "$ref" --) || return
+
+    git -C "$OPT_WORK_DIR" submodule --quiet add -- "$original" "${self[local_path]}" || return
+    git -C "$OPT_WORK_DIR" submodule --quiet init -- "${self[local_path]}" || return
+
+    git -C "$clone" fetch --quiet origin "$ref:$ref" || return
+    git -C "$clone" checkout --quiet --detach "$ref" -- || return
+    git -C "$OPT_WORK_DIR" add -- "${self[local_path]}" || return
+    git -C "$OPT_WORK_DIR" commit -m init --quiet --amend || return
+
+    local remote_url=
+    remote_url=$(git -C "$original" remote get-url "${self[remote]}") || return
+    git -C "$clone" remote remove origin || return
+    git -C "$clone" remote add "${self[remote]}" "$remote_url" || return
+
+    ok=1
+}
+
+job_do_prepare_makefiles()
+{
+    [[ $1 = self ]] || local -n self=$1
+
+    local subdirs=
+    subdirs=$(find_subdirs_with_qmltypes) || return
+    if [[ ! $subdirs ]]; then
+        fatal "No *.qmltypes file found in '${self[local_path]}', branch '${self[branch]}'"
+        return 1
+    fi
+
+    local spec=
+    spec=$(find_spec_for_name "${self[name]}") || return
+
+    # TODO: slow - this executes `zypper ref` everytime. Better would be to fix
+    # mb2 to install deps also for projects not using qtc_* macros
+    if ! silent mb2_ --specfile "$spec" installdeps; then
+        fatal "Failed to run mb2 installdeps"
+        return 1
+    fi
+
+    if [[ $(find -maxdepth 2 -name '*.pro') ]]; then
+        if ! silent mb2_ --specfile "$spec" --pedantic qmake -recursive; then
+            fatal "Failed to run mb2 qmake"
+            return 1
+        fi
+    elif [[ $(find -maxdepth 2 -name CMakeLists.txt) ]]; then
+        local tmpspec=
+        job_do_prepare_makefiles_cleanup()
+        (
+            trap 'echo cleaning up...' INT TERM HUP
+            if [[ -e $tmpspec ]]; then
+                rm -f "$tmpspec"
+            fi
+        )
+        trap 'job_do_prepare_makefiles_cleanup; trap - RETURN' RETURN
+        trap 'return 1' INT TERM HUP
+
+        tmpspec=$(mktemp "${spec%.spec}.XXX.spec") || return
+        cat <<EOF >"$tmpspec"
+$(sed '/^%prep\>/,$d' <"$spec")
+%prep
+alias make=true
+$(sed -n '/^%build\>/,/^%install\>/p' <"$spec" |sed '1d; $d')
+EOF
+        if ! silent mb2_ -s "$tmpspec" prep; then
+            fatal "Failed to run cmake"
+            return 1
+        fi
+    else
+        fatal "Unable to determine how to generate Makefiles"
+        return 1
+    fi
+}
+
+job_do_install()
+{
+    [[ $1 = self ]] || local -n self=$1
+
+    if ssh_emulator "$(declare -f silent); silent sudo zypper --no-gpg-checks --non-interactive in $(job_expand_binaries self)"; then
+        return
+    fi
+
+    info "Installation inside emulator failed. Trying if refreshing repositories fixes it."
+
+    if ! ssh_emulator "$(declare -f silent); silent sudo zypper --no-gpg-checks --non-interactive refresh"; then
+        fatal "Failed to refresh repositories inside emulator"
+        return 1
+    fi
+
+    if ! ssh_emulator "$(declare -f silent); silent sudo zypper --no-gpg-checks --non-interactive in $(job_expand_binaries self)"; then
+        fatal "Failed to install '$(job_expand_binaries self)' inside emulator"
+        return 1
+    fi
+}
+
+job_do_make_qmltypes()
+{
+    [[ $1 = self ]] || local -n self=$1
+
+    local subdirs=
+    subdirs=$(find_subdirs_with_qmltypes) || return
+    if [[ ! $subdirs ]]; then
+        fatal "No *.qmltypes file found in '${self[local_path]}', branch '${self[branch]}'"
+        return 1
+    fi
+
+    if ! ssh_emulator "$(declare -f make_qmltypes); make_qmltypes ${WRAPPERS_DIR@Q} ${PWD@Q} ${subdirs@Q}"; then
+        fatal "Failed to run qmlplugindump inside emulator"
+        return 1
+    fi
+}
+
+S_TODO='todo'
+S_CLONED='cloned'
+S_MAKEFILES_READY='makefiles-ready'
+S_INSTALLED='installed'
+S_DONE='done'
+S_FAIL='fail'
+
+job_read()
+{
+    [[ $1 = self ]] || local -n self=$1
+    read_ \
+        self[name] \
+        self[url] \
+        self[branch] \
+        self[binaries] \
+        self[local_path] \
+        self[remote] \
+        self[state]
+}
+
+job_write()
+{
+    [[ $1 = self ]] || local -n self=$1
+    write_ \
+        "${self[name]}" \
+        "${self[url]}" \
+        "${self[branch]}" \
+        "${self[binaries]}" \
+        "${self[local_path]}" \
+        "${self[remote]}" \
+        "${self[state]}"
+}
+
+job_init()
+{
+    [[ $1 = self ]] || local -n self=$1
+    job_read self <<<''
+    self[state]=$S_TODO
+}
+
+job_expand_binaries()
+{
+    [[ $1 = self ]] || local -n self=$1
+
+    local binary= expanded=()
+    for binary in ${self[binaries]//,/ }; do
+        case $binary in
+            -)
+                expanded+=(${self[name]})
+                ;;
+            -*)
+                expanded+=(${self[name]}$binary)
+                ;;
+            *)
+                expanded+=($binary)
+                ;;
+        esac
+    done
+
+    printf '%s\n' "${expanded[*]}"
+}
+
+state_update()
+{
+    [[ $1 = job ]] || local -n job=$1
+    job_write job |sort_ -k 1,1 --merge --stable --unique - /dev/fd/3
+} 3<&0 <&-
+
+main_batch()
+{
+    ensure_batch_work_dir_initialized || return
+
+    if [[ $OPT_STATUS ]]; then
+        show_status
+        return
+    fi
+
+    local emulator_set_up= ok=
+    LOCAL_PACKAGES_CACHE=
+    main_batch_cleanup()
+    (
+        trap 'echo cleaning up...' INT TERM HUP
+        if [[ $LOCAL_PACKAGES_CACHE ]]; then
+            rm -f "$LOCAL_PACKAGES_CACHE"
+        fi
+        if [[ $emulator_set_up ]]; then
+            if [[ $ok ]]; then
+                if [[ ! $OPT_NO_RESTORE_EMULATOR ]]; then
+                    restore_emulator
+                fi
+            else
+                info "Not all jobs done, leaving the emulator modified for later use." \
+                    "Use '--restore-emulator' to undo modifications."
+            fi
+        fi
+    )
+    trap 'main_batch_cleanup; trap - RETURN' RETURN
+    trap 'return 1' INT TERM HUP
+
+    parse_devices_xml || return
+    set_up_emulator || return
+    emulator_set_up=1
+
+    local config=
+    config=$(read_config) || return
+
+    local -A job=
+
+    while job_init job && read job[name] job[url] job[branch] job[binaries] <&3; do
+        local job_data=
+        if [[ -s $STATE_FILE ]] && job_data=$(look "${job[name]}$SEPARATOR" "$STATE_FILE"); then
+            local -A saved_job
+            job_read saved_job <<<"$job_data" || return
+            if [[ ${saved_job[url]} == ${job[url]}
+                && ${saved_job[branch]} == ${job[branch]}
+                && ${saved_job[binaries]} == ${job[binaries]} ]]; then
+                job_read job < <(job_write saved_job)
+                case ${job[state]} in
+                    $S_DONE)
+                        info "Nothing to do for package '${job[name]}'"
+                        continue
+                        ;;
+                    $S_FAIL)
+                        info "Nothing to do for package previously marked as failed '${job[name]}'"
+                        continue
+                        ;;
+                    *)
+                        info "Continuing with '${job[name]}' from saved state '${saved_job[state]}'"
+                        ;;
+                esac
+            else
+                info "Configuration for '${job[name]}' changed - discarding saved state"
+            fi
+        else
+            info "New package from configuration '${job[name]}'"
+        fi
+
+        while [[ ${job[state]} != $S_DONE ]]; do
+
+            local next_task= next_state=
+            case ${job[state]} in
+                $S_TODO)
+                    next_task=job_do_clone
+                    next_state=$S_CLONED
+                    ;;
+                $S_CLONED)
+                    next_task=job_do_prepare_makefiles
+                    next_state=$S_MAKEFILES_READY
+                    ;;
+                $S_MAKEFILES_READY)
+                    next_task=job_do_install
+                    next_state=$S_INSTALLED
+                    ;;
+                $S_INSTALLED)
+                    next_task=job_do_make_qmltypes
+                    next_state=$S_DONE
+                    ;;
+                *)
+                    fatal "Unrecognized state keyword in state file: '${job[state]}'"
+                    return 1
+                    ;;
+            esac
+
+            info "Executing transition ${job[state]}->${next_state} for '${job[name]}'"
+
+            # Let the more progressed tasks work inside the cloned working directory.
+            # Avoid spawning a subshell as the functions use some global state.
+            local should_popd=
+            if [[ ${job[local_path]} ]]; then
+                pushd "$OPT_WORK_DIR/${job[local_path]}" >/dev/null || exit
+                should_popd=1
+            fi
+
+            local rc=
+            "$next_task" job
+            rc=$?
+
+            [[ $should_popd ]] && popd >/dev/null
+
+            if [[ $rc -ne 0 ]]; then
+                fatal "Transition ${job[state]}->${next_state} failed for '${job[name]}'"
+                false
+                return 1
+            fi
+
+            job[state]=$next_state
+            with_tmp_file "$STATE_FILE" state_update job <"$STATE_FILE" || return
+        done
+    done 3<<<"$config"
+
+    info "All done"
+
+    ok=1
+}
+
+show_status()
+{
+    local bold=$'\033[01m'
+    local red_color=$'\033[01;31m'
+    local orange_color=$'\033[01;33m'
+    local green_color=$'\033[01;32m'
+    local reset_font=$'\033[00m'
+
+    local colorful=
+    if tty --quiet <&1; then
+        colorful=1
+        pager() { less -R --quit-if-one-screen; }
+    else
+        pager() { cat; }
+    fi
+
+    local config=
+    config=$(read_config) || return
+
+    local -A job=
+    while job_init job && read job[name] job[url] job[branch] job[binaries] <&3; do
+        local job_data=
+        if [[ -s $STATE_FILE ]] && job_data=$(look "${job[name]}$SEPARATOR" "$STATE_FILE"); then
+            local -A saved_job
+            job_read saved_job <<<"$job_data" || return
+            if [[ ${saved_job[url]} == ${job[url]}
+                && ${saved_job[branch]} == ${job[branch]}
+                && ${saved_job[binaries]} == ${job[binaries]} ]]; then
+                job_read job < <(job_write saved_job)
+            fi
+        fi
+
+        local brief_state= color=
+        case ${job[state]} in
+            $S_TODO|$S_FAIL)
+                brief_state=${job[state]^^}
+                color=$red_color
+                ;;
+            $S_DONE)
+                brief_state=${job[state]^^}
+                color=$green_color
+                ;;
+            *)
+                brief_state=PROG
+                color=$orange_color
+                ;;
+        esac
+
+        local name=${job[name]}
+
+        if [[ $colorful ]]; then
+            brief_state=${color}${brief_state}${reset_font}
+            name=${bold}${name}${reset_font}
+        fi
+
+        printf '%s %-60s  state: %s\n' "$brief_state" "$name" "${job[state]}"
+        printf '     local path:    %q\n' "${job[local_path]}"
+        printf '     remote/branch: %s / %s\n' "${job[remote]}" "${job[branch]}"
+        printf '     binaries:      %s\n' "$(job_expand_binaries job)"
+
+        if [[ ${job[state]} == $S_DONE ]]; then
+            git -C "$OPT_WORK_DIR/${job[local_path]}" --no-pager diff ${colorful:+--color} |sed 's/^/     /'
+        fi
+    done 3<<<"$config" |pager
+}
+
+main_single()
+{
+    local emulator_set_up= ok=
+    main_single_cleanup()
+    (
+        trap 'echo cleaning up...' INT TERM HUP
+        if [[ $emulator_set_up ]]; then
+            if [[ $ok ]]; then
+                if [[ ! $OPT_NO_RESTORE_EMULATOR ]]; then
+                    restore_emulator
+                fi
+            else
+                info "Something failed, leaving the emulator modified for later use." \
+                    "Use '--restore-emulator' to undo modifications."
+            fi
+        fi
+        if [[ -d $WRAPPERS_DIR ]]; then
+            rm -rf "$WRAPPERS_DIR"
+        fi
+    )
+    trap 'main_single_cleanup; trap - RETURN' RETURN
+    trap 'return 1' INT TERM HUP
+
+    init_wrappers || return
+
+    parse_devices_xml || return
+    set_up_emulator || return
+    emulator_set_up=1
+
+    local subdirs=
+    subdirs=$(find_subdirs_with_qmltypes) || return
+    if [[ ! $subdirs ]]; then
+        fatal "No *.qmltypes file found"
+        return 1
+    fi
+
+    if [[ ! $OPT_NO_BUILD ]]; then
+        mb2_ ${OPT_SPEC:+-s "$OPT_SPEC"} build || return
+    fi
+
+    local packages=
+    packages=$(find "$OPT_RPMS_DIR" -maxdepth 1 -name '*.rpm') || return
+    if [[ ! $packages ]]; then
+        fatal "No RPM packages found"
+        return 1
+    fi
+
+    local package= files= installables=()
+    while read package; do
+        files=$(rpm -qlp "$package") || return
+        if grep -q '\.qmltypes$' <<<"$files"; then
+            package=$(rpm -qp "$package" --queryformat '%{NAME}-%{VERSION}') || return
+            installables+=("$package")
+        fi
+    done <<<"$packages"
+
+    if [[ ${#installables[@]} -eq 0 ]]; then
+        fatal "Found no RPM package with '*.qmltypes' file(s)"
+        return 1
+    fi
+
+    if ! tar -C "$OPT_RPMS_DIR" -c . |ssh_emulator "rm -rf RPMS && mkdir RPMS && tar -C RPMS -x"; then
+        fatal "Failed to copy RPM packages to emulator"
+        return 1
+    fi
+
+    if ! ssh_emulator "$(declare -f silent); \
+            silent sudo zypper --no-gpg-checks --non-interactive -p RPMS in --force-resolution ${installables[@]@Q}"; then
+        fatal "Failed to install RPM packages inside emulator"
+        return 1
+    fi
+
+    if ! ssh_emulator "$(declare -f make_qmltypes); make_qmltypes ${WRAPPERS_DIR@Q} ${PWD@Q} ${subdirs@Q}"; then
+        fatal "Failed to run qmlplugindump inside emulator"
+        return 1
+    fi
+
+    ok=1
+}
+
+parse_options()
+{
+    OPT_WORK_DIR=$PWD
+    OPT_APP_SDK_DIR=$HOME/SailfishOS
+    OPT_BATCH=
+    OPT_CSV=
+    OPT_NO_BUILD=
+    OPT_NO_RESTORE_EMULATOR=
+    OPT_RESTORE_EMULATOR=
+    OPT_RPMS_DIR=$OPT_WORK_DIR/RPMS
+    OPT_SPEC=
+    OPT_STATUS=
+    OPT_TARGET=
+    OPT_VERBOSE=
+
+    local positional_args=()
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -h)
+                brief_usage
+                return
+                ;;
+            --help)
+                usage
+                return
+                ;;
+            --app-sdk)
+                [[ $# -ge 2 ]] || { fatal "Argument expected: '$1'"; return 1; }
+                [[ -d $2 ]] || { fatal "No such directory: '$2'"; return 1; }
+                OPT_APP_SDK_DIR=$(readlink -f "$2")
+                shift
+                ;;
+            --batch)
+                OPT_BATCH=1
+                ;;
+            --csv)
+                OPT_CSV=1
+                ;;
+            --no-build)
+                OPT_NO_BUILD=1
+                ;;
+            --no-restore-emulator)
+                OPT_NO_RESTORE_EMULATOR=1
+                ;;
+            --restore-emulator)
+                OPT_RESTORE_EMULATOR=1
+                ;;
+            --spec)
+                [[ $# -ge 2 ]] || { fatal "Argument expected: '$1'"; return 1; }
+                [[ -f $2 ]] || { fatal "No such file: '$2'"; return 1; }
+                OPT_SPEC=$2
+                shift
+                ;;
+            --status)
+                OPT_STATUS=1
+                ;;
+            --rpms-dir)
+                [[ $# -ge 2 ]] || { fatal "Argument expected: '$1'"; return 1; }
+                [[ -d $2 ]] || { fatal "No such directory: '$2'"; return 1; }
+                OPT_RPMS_DIR=$2
+                shift
+                ;;
+            --target)
+                [[ $# -ge 2 ]] || { fatal "Argument expected: '$1'"; return 1; }
+                OPT_TARGET=$2
+                shift
+                ;;
+            -v|--verbose)
+                OPT_VERBOSE=1
+                ;;
+            -*)
+                fatal "Unrecognized option: '$1'"
+                return 1
+                ;;
+            *)
+                positional_args+=("$1")
+                ;;
+        esac
+        shift
+    done
+
+    OPT_VMSHARE=$OPT_APP_SDK_DIR/vmshare
+    OPT_DEVICES_XML=$OPT_VMSHARE/devices.xml
+    OPT_EMULATOR='Sailfish OS Emulator'
+    OPT_EMULATOR_USER=nemo
+    OPT_EMULATOR_PORT=2223
+    OPT_EMULATOR_DEPS=(make qt5-qtdeclarative-devel-tools qtchooser zypper)
+    OPT_SF_NAME=qmltypes
+    OPT_SNAPSHOT=qmltypes
+
+    set -- "${positional_args[@]}"
+
+    configure || return
+
+    if [[ $OPT_RESTORE_EMULATOR ]]; then
+        return
+    fi
+
+    if [[ ! $OPT_BATCH ]]; then
+        if [[ $# -gt 0 ]]; then
+            fatal "Unexpected positional arguments"
+            return 1
+        fi
+        if [[ $OPT_STATUS ]]; then
+            fatal "'--status' can only be used in batch mode"
+            return 1
+        fi
+        if [[ $OPT_CSV ]]; then
+            fatal "'--csv' can only be used in batch mode"
+            return 1
+        fi
+        # TODO check if exactly one $OPT_WORK_DIR/rpm/*.spec exists or --spec is given
+    else
+        if [[ $# -ne 2 ]]; then
+            fatal "Invalid number of positional arguments"
+            return 1
+        fi
+
+        OPT_CONFIG=$1
+        OPT_PROJECTS_DIR=$(readlink -f "$2")
+
+        if ! is_remote "$OPT_CONFIG"; then
+            if [[ ! -e $OPT_CONFIG ]]; then
+                fatal "No such file: '$OPT_CONFIG'"
+                return 1
+            fi
+            # Only canonicalize relative names - do not break use with config file
+            # passed via process substitution.
+            if [[ $OPT_CONFIG != /* ]]; then
+                OPT_CONFIG=$(readlink -f "$OPT_CONFIG") || return
+            fi
+        fi
+
+        if [[ ! -d $OPT_PROJECTS_DIR ]]; then
+            fatal "No such directory: '$OPT_PROJECTS_DIR'"
+            return 1
+        fi
+        OPT_PROJECTS_DIR=$(readlink -f "$OPT_PROJECTS_DIR") || return
+
+        if [[ $OPT_NO_BUILD ]]; then
+            fatal "'--no-build' can not be used in batch mode"
+            return 1
+        fi
+
+        if [[ $OPT_SPEC ]]; then
+            fatal "'--spec' can not be used in batch mode"
+            return 1
+        fi
+
+        if [[ $OPT_WORK_DIR/ = ${OPT_PROJECTS_DIR}/* ]]; then
+            fatal "Working directory cannot be a subdirectory of PROJECTS_DIR"
+            return 1
+        fi
+
+        STATE_FILE=$OPT_WORK_DIR/.$SELF.state
+
+        # "test -s" does not work as expected on ext4
+        if [[ $(ls -A "$OPT_WORK_DIR") && ! -e $STATE_FILE ]]; then
+            fatal "Working directory is not empty but it does not look like a $SELF working directory." \
+                "Do \`touch ${STATE_FILE##*/}\` to confirm you want to use this directory"
+            return 1
+        fi
+    fi
+
+    WRAPPERS_DIR=$OPT_WORK_DIR/.$SELF.wrappers
+}
+
+main()
+{
+    parse_options "$@" || return
+
+    if [[ $OPT_RESTORE_EMULATOR ]]; then
+        restore_emulator
+        return
+    fi
+
+    KNOWN_HOSTS_FILE=
+    local ok=
+    main_cleanup()
+    (
+        trap 'echo cleaning up...' INT TERM HUP
+        if [[ $KNOWN_HOSTS_FILE ]]; then
+            rm -f "$KNOWN_HOSTS_FILE"
+        fi
+        [[ $ok ]] || info "Failed"
+    )
+    trap 'main_cleanup; trap - RETURN' RETURN
+    trap 'return 1' INT TERM HUP
+
+    if [[ ! $OPT_BATCH ]]; then
+        main_single || return
+    else
+        main_batch || return
+    fi
+
+    ok=1
+}
+
+main "$@"
