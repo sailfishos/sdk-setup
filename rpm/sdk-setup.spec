@@ -76,6 +76,7 @@ Requires:   scratchbox2 >= 2.3.90+git2
 Requires:   sdk-register
 Requires:   ssu >= 0.43.2
 Requires:   git
+Requires:   tar
 
 %description -n sdk-utils
 Contains some utility scripts to support Mer SDK development
