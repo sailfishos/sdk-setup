@@ -3,7 +3,7 @@
 # sdk-assitant is a helper script for simple scratchbox2 management tasks
 # in MerSDK
 #
-# Copyright (C) 2014-2017 Jolla Ltd.
+# Copyright (C) 2014-2018 Jolla Ltd.
 # Contact: Martin Kampas <martin.kampas@jolla.com>
 # All rights reserved.
 #
@@ -51,6 +51,11 @@ SDK assistant script
 Usage:
     $(basename $0) [tooling|target] create [OPTION] <name> <URL>
                             : create a new sb2 tooling or target.
+
+    $(basename $0) [tooling|target] update <name>
+                            : update the given sb2 tooling or target.
+                              When updating a target the tooling used
+                              by the target will be updated first.
 
     $(basename $0) [tooling|target] remove <name>
                             : remove the given sb2 tooling or target
@@ -107,7 +112,9 @@ OPT_DRY_RUN=
 OPT_LIST=
 OPT_NAME=
 OPT_REMOVE=
+OPT_TOOLING_NAME=
 OPT_TYPE=
+OPT_UPDATE=
 OPT_URL=
 OPT_YES=
 
@@ -151,6 +158,12 @@ case $1 in
         OPT_NAME=$2
         OPT_URL=$3
         shift 3
+        ;;
+    update )
+        OPT_UPDATE=1
+        [[ $# -ge 2 && $2 ]] || fail "update: ${OPT_TYPE:+$OPT_TYPE }name required"
+        OPT_NAME=$2
+        shift 2
         ;;
     remove )
         OPT_REMOVE=1
@@ -204,7 +217,7 @@ Using tarball [$OPT_URL]
 EOF
 fi
 
-if [[ $OPT_REMOVE ]]; then
+if [[ $OPT_UPDATE || $OPT_REMOVE ]]; then
     if [[ ! $OPT_TYPE ]]; then
         if have tooling "$OPT_NAME"; then
             OPT_TYPE=tooling
@@ -219,7 +232,24 @@ if [[ $OPT_REMOVE ]]; then
             fail "$OPT_NAME: No such tooling or target"
         fi
     fi
+fi
 
+if [[ $OPT_UPDATE ]]; then
+    if [[ $OPT_TYPE == target ]]; then
+        OPT_TOOLING_NAME=$(sdk-manage target list --long \
+            |awk -v target="$OPT_NAME" '($1 == target) { print $2 };')
+        if [[ $OPT_TOOLING_NAME == - ]]; then
+            echo "Going to update the target [$OPT_NAME]"
+            OPT_TOOLING_NAME=
+        else
+            echo "Going to update the tooling [$OPT_TOOLING_NAME], then the target [$OPT_NAME]"
+        fi
+    else
+        echo "Going to update the tooling [$OPT_NAME]"
+    fi
+fi
+
+if [[ $OPT_REMOVE ]]; then
     echo "Going to remove the $OPT_TYPE [$OPT_NAME]"
 fi
 
@@ -245,6 +275,16 @@ fi
 
 if [[ $OPT_CREATE ]]; then
     _ sdk-manage "$OPT_TYPE" install "$OPT_NAME" "$OPT_URL"
+    exit
+fi
+
+if [[ $OPT_UPDATE ]]; then
+    if [[ $OPT_TYPE == target ]]; then
+        _ sdk-manage tooling refresh "$OPT_TOOLING_NAME" || exit
+        _ sdk-manage tooling update "$OPT_TOOLING_NAME" || exit
+    fi
+    _ sdk-manage "$OPT_TYPE" refresh "$OPT_NAME" || exit
+    _ sdk-manage "$OPT_TYPE" update "$OPT_NAME"
     exit
 fi
 
