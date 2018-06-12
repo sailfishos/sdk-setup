@@ -415,7 +415,12 @@ upgrade_object() {
         assert_object_exists "$type:$object" || return
     fi
 
-    object_zypper "$type:$object" dup
+    object_zypper "$type:$object" dup || return
+
+    if [[ $type == target ]]; then
+        # Prevent "Database environment version mismatch" errors e.g. after upgrading RPM
+        enter_target "$object" rpm --rebuilddb || return
+    fi
 }
 
 ################################################################'
