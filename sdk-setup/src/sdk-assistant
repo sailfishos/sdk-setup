@@ -85,13 +85,13 @@ guess_type() (
 list() {
     local type=${1:-}
     if [[ $type ]]; then
-        sdk-manage --"$type" --list
+        sdk-manage "$type" list
     else
         echo "Toolings:"
-        sdk-manage --tooling --list |sed 's/^/ /'
+        sdk-manage tooling list |sed 's/^/ /'
         echo "Targets:"
         # FIXME: targets are listed all on one line
-        sdk-manage --target --list |tr ' ' '\n' |sed 's/^/ /'
+        sdk-manage target list |tr ' ' '\n' |sed 's/^/ /'
     fi
 }
 
@@ -99,7 +99,7 @@ have() {
     local type=$1
     local name=$2
     # FIXME: targets are listed all on one line
-    sdk-manage --"$type" --list |tr ' ' '\n' |grep -q -F --line-regexp "$name"
+    sdk-manage "$type" list |tr ' ' '\n' |grep -q -F --line-regexp "$name"
 }
 
 OPT_CREATE=
@@ -133,7 +133,7 @@ while [[ ${1:-} ]]; do
     shift
 done
 
-set -- "${positional_args[@]}"
+set -- ${positional_args[@]:+"${positional_args[@]}"}
 
 case ${1:-} in
     tooling|target)
@@ -176,7 +176,7 @@ fi
 if [[ $OPT_LIST ]]; then
     # list requested, just do it
     list "$OPT_TYPE"
-    exit $?
+    exit
 fi
 
 if [[ $OPT_CREATE ]]; then
@@ -244,15 +244,14 @@ if [[ -z $OPT_YES ]]; then
 fi
 
 if [[ $OPT_CREATE ]]; then
-    _ sdk-manage --"$OPT_TYPE" --install "$OPT_NAME" "$OPT_URL"
-    exit $?
+    _ sdk-manage "$OPT_TYPE" install "$OPT_NAME" "$OPT_URL"
+    exit
 fi
 
 if [[ $OPT_REMOVE ]]; then
-    _ sdk-manage --"$OPT_TYPE" --remove "$OPT_NAME"
-    exit $?
+    _ sdk-manage "$OPT_TYPE" remove "$OPT_NAME"
+    exit
 fi
-
 
 # For Emacs:
 # Local Variables:
