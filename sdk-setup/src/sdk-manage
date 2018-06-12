@@ -27,7 +27,7 @@ usage:
     $SELF tooling remove <name>
     $SELF tooling refresh {--all | <name>...}
     $SELF tooling update <name>
-    $SELF tooling register --user <user> --password <password> [--force]
+    $SELF tooling register [--user <user> [--password <password>]] [--force]
     $____                  {--all | <name>...}
 
     $SELF target list [-l|--long] [--tooling <name>]
@@ -39,7 +39,7 @@ usage:
     $SELF target update <name>
     $SELF target sync <name>
     $SELF target import <name>
-    $SELF target register --user <user> --password <password> [--force]
+    $SELF target register [--user <user> [--password <password>]] [--force]
     $____                 {--all | <name>...}
 
     $SELF toolchain list <tooling>
@@ -55,11 +55,11 @@ usage:
     $SELF sdk upgradable
     $SELF sdk upgrade
     $SELF sdk status
-    $SELF sdk register --user <user> --password <password> [--force]
+    $SELF sdk register [--user <user> [--password <password>]] [--force]
 
     $SELF refresh-all
 
-    $SELF register-all --user <user> --password <password> [--force]
+    $SELF register-all [--user <user> [--password <password>]] [--force]
 
     $SELF --version
 
@@ -350,6 +350,35 @@ register_object() {
         echo >&2 -n "$(print_object "$object"): "
         enter "$object" sdk-register -u "$username" -p "$password" || return
     done
+}
+
+register_all() {
+    local credentials= username= password= other=()
+    credentials=$(get_register_credentials "$@") || return
+    unpack "$credentials" username password other
+
+    set -- ${other[@]:+"${other[@]}"}
+
+    local force=
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --force)
+                force=1
+                ;;
+            *)
+                echo >&2 "unrecognized option '$1'"
+                usage
+                return 1
+                ;;
+        esac
+        shift
+    done
+
+    set -- --user "$username" --password "$password" ${force:+--force}
+
+    manage_sdk register "$@" || return
+    manage_toolings register "$@" --all || return
+    manage_targets register "$@" --all
 }
 
 refresh_objects() {
@@ -1233,11 +1262,19 @@ get_register_credentials() {
 	esac
     done
 
-    if [[ -z $username || -z $password ]]; then
+    if [[ ! $username || ! $password ]] && ! tty --quiet; then
         echo >&2 "Missing --user and/or --password option"
         usage
         return 1
     fi
+
+    while [[ ! $username ]]; do
+        read -p "Username: " username
+    done
+    while [[ ! $password ]]; do
+        read -p "Password: " -s password
+        echo >&2
+    done
 
     print_array "$username" "$password" "$(print_array ${other[@]:+"${other[@]}"})"
 }
@@ -1310,10 +1347,7 @@ case $1 in
 	manage_sdk refresh
 	;;
     ?(--)register-all ) shift
-	# expects to get --user and --password too
-        manage_sdk register "$@" || exit
-        manage_toolings register "$@" --all || exit
-	manage_targets register "$@" --all
+        register_all "$@"
 	;;
     --version)
 	echo "$0, version VERSION_FROM_SPEC"
