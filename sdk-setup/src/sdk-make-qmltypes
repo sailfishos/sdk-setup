@@ -139,6 +139,26 @@ with 'sb2-config'.
    details.
 
 
+DEALING WITH INCOMPLETE RESULTS
+
+For some modules qmlplugindump may produce incomplete (or otherwise corrupted)
+results. Unfortunately the '-merge' option of qmlplugindump does not support
+merging of component declarations - components found in the other file as
+simply appended to the output - so adding missing properties, methods or
+signals to components is not possible using this option.
+
+It is necessary to keep manual additions in the .qmltypes file, ideally with
+comments that the particular bits were missing from qmlplugindump output, were
+added manually and should be preserved.  This approach implies the need to deal
+with unwanted deletion of these statements every time qmlplugindump is invoked.
+
+It is possible to avoid this with the help of sdk-make-qmltypes. Each manually
+added statement can be marked using the "$OPT_KEEP_DIRECTIVE" directive in a
+comment immediately preceding the statement.  If the difference introduced by
+running qmlplugindump consists just of removal of statements marked this way,
+sdk-make-qmltypes will revert such changes for your convenience.
+
+
 MAIN OPTIONS
     --app-sdk PATH
         Path to the Application SDK installation. Defaults to "~/SailfishOS"
@@ -160,6 +180,10 @@ OTHER OPTIONS
     --csv
         Accept configuration file for batch operation in CSV format instead of
         the default blanks-separated format.
+
+    --no-keep
+        Disobey any "$OPT_KEEP_DIRECTIVE" directive. See DEALING WITH
+        INCOMPLETE RESULTS above.
 
     --no-build
         Valid for in-place execution mode. Do not build the package with
@@ -254,6 +278,11 @@ OVERVIEW OF BATCH OPERATION
 LIMITATIONS
     Only qmake- and CMake-based projects are supported.
 END
+}
+
+debug()
+{
+    :
 }
 
 info()
@@ -687,6 +716,73 @@ ensure_batch_work_dir_initialized()
     fi
 }
 
+# Read a patch to a single .qmltypes file and check that all it does is
+# deletion of statements that are marked as manual additions. A statement can
+# be marked as a manual addition with a directive used in a comment
+# immediatelly preceding the statement.
+patch_removes_just_manual_additions()
+{
+    local patch=
+    patch=$(cat)
+
+    if [[ ! $patch ]]; then
+        debug "Patch is empty"
+        return 0
+    fi
+
+    local without_context=
+    without_context=$(sed -e '0,/^@@ /d' -e '/^@@ /d' -e '/^ /d' <<<"$patch")
+
+    if grep -q '^+' <<<"$without_context"; then
+        debug "Patch contains line additions"
+        return 1
+    fi
+
+    local keep_seen= multiline=
+    while read line <&3; do
+        if [[ $line =~ ^-[[:space:]]*//[[:space:]]*"$OPT_KEEP_DIRECTIVE" ]]; then
+            debug "Keep directive used"
+            keep_seen=1
+        elif [[ $keep_seen ]]; then
+            if [[ $line =~ ^-[[:space:]]*//.* ]]; then
+                debug "Additional comment"
+            elif [[ $line == *{ ]]; then
+                let multiline+=1
+                debug "Multi-line BEGIN level '$multiline'"
+            elif [[ $line =~ ^-[[:space:]]*}$ ]]; then
+                debug "Multi-line END level '$multiline'"
+                let multiline-=1
+                if [[ $multiline -eq 0 ]]; then
+                    multiline=
+                    keep_seen=
+                fi
+            elif [[ $multiline ]]; then
+                debug "Multi-line BODY level '$multiline'"
+            else
+                debug "One-line statement"
+                keep_seen=
+            fi
+        else
+            debug "Unexpected line removal"
+            return 1
+        fi
+
+    done 3<<<"$without_context"
+}
+
+revert_removal_of_manual_additions()
+{
+    local modified= all_modified=
+    all_modified=$(git ls-files --modified '*.qmltypes') || return
+    [[ $all_modified ]] || return 0
+
+    while read modified; do
+        if git diff "$modified" |patch_removes_just_manual_additions; then
+            git checkout "$modified" || return
+        fi
+    done <<<"$all_modified"
+}
+
 job_do_clone()
 {
     [[ $1 = self ]] || local -n self=$1
@@ -845,6 +941,10 @@ job_do_make_qmltypes()
     if ! ssh_emulator "$(declare -f make_qmltypes); make_qmltypes ${WRAPPERS_DIR@Q} ${PWD@Q} ${subdirs@Q}"; then
         fatal "Failed to run qmlplugindump inside emulator"
         return 1
+    fi
+
+    if [[ ! $OPT_NO_KEEP ]]; then
+        revert_removal_of_manual_additions || return
     fi
 }
 
@@ -1186,6 +1286,10 @@ main_single()
         return 1
     fi
 
+    if [[ ! $OPT_NO_KEEP ]]; then
+        revert_removal_of_manual_additions || return
+    fi
+
     ok=1
 }
 
@@ -1195,6 +1299,9 @@ parse_options()
     OPT_APP_SDK_DIR=$HOME/SailfishOS
     OPT_BATCH=
     OPT_CSV=
+    OPT_H=
+    OPT_HELP=
+    OPT_NO_KEEP=
     OPT_NO_BUILD=
     OPT_NO_RESTORE_EMULATOR=
     OPT_RESTORE_EMULATOR=
@@ -1208,12 +1315,12 @@ parse_options()
     while [[ $# -gt 0 ]]; do
         case $1 in
             -h)
-                brief_usage
-                return
+                OPT_H=1
+                break
                 ;;
             --help)
-                usage
-                return
+                OPT_HELP=1
+                break
                 ;;
             --app-sdk)
                 [[ $# -ge 2 ]] || { fatal "Argument expected: '$1'"; return 1; }
@@ -1226,6 +1333,9 @@ parse_options()
                 ;;
             --csv)
                 OPT_CSV=1
+                ;;
+            --no-keep)
+                OPT_NO_KEEP=1
                 ;;
             --no-build)
                 OPT_NO_BUILD=1
@@ -1278,6 +1388,11 @@ parse_options()
     OPT_EMULATOR_DEPS=(make qt5-qtdeclarative-devel-tools qtchooser zypper)
     OPT_SF_NAME=qmltypes
     OPT_SNAPSHOT=qmltypes
+    OPT_KEEP_DIRECTIVE=sdk-make-qmltypes:keep
+
+    if [[ $OPT_H || $OPT_HELP ]]; then
+        return
+    fi
 
     set -- "${positional_args[@]}"
 
@@ -1359,6 +1474,16 @@ parse_options()
 main()
 {
     parse_options "$@" || return
+
+    if [[ $OPT_H ]]; then
+        brief_usage
+        return
+    fi
+
+    if [[ $OPT_HELP ]]; then
+        usage
+        return
+    fi
 
     if [[ $OPT_RESTORE_EMULATOR ]]; then
         restore_emulator
