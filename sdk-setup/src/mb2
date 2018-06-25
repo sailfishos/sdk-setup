@@ -776,10 +776,6 @@ inside_git_worktree() { git_ status &>/dev/null; }
 # this is same as basename $0
 ME=${0/#*\//}
 
-################################################################################
-if [[ $1 != --self-test ]]; then  ###  M A I N  EXECUTION BEGINS HERE  #########
-################################################################################
-
 # option variables
 OPT_SPEC=
 OPT_TARGET=
@@ -805,6 +801,10 @@ if inside_build_engine; then
 else
     buildroot="$PWD/installroot"
 fi
+
+################################################################################
+if [[ $1 != --self-test ]]; then  ###  M A I N  EXECUTION BEGINS HERE  #########
+################################################################################
 
 while [[ "$1" ]]; do
     # only set variables in this loop
