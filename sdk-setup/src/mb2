@@ -328,7 +328,7 @@ fix_package_version() {
         version=$version+$branch.$timestamp.$sha1sum$modified_submodules
     fi
 
-    version=${version//-/+} # '-' is not an allowed character in the version field
+    version=${version//[^+_[:alnum:]]/.} # replace characters not allowed in the version field
 
     echo "Setting version: ${version}"
     sed -i "s,^Version:.*,Version: ${version}," "$spec_file"
