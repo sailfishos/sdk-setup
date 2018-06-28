@@ -403,7 +403,7 @@ cd_to_spec_setup_dir() {
     _basedir="$PWD"
 
     # avoid spawning another process for | cut -s -f2 -d '/'
-    local setup_dir=$(grep -Po '%setup.*-n.*' "$OPT_SPEC")
+    local setup_dir=$(grep -Po '%setup.*-n[[:space:]]+[^[:space:]]+' "$OPT_SPEC")
     # if setup_dir has '/' return the part after it
     setup_dir=${setup_dir/#*\//}
     # if it did not have a '/' then we got the original match => erase it
