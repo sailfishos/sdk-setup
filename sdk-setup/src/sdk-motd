@@ -1,0 +1,595 @@
+#!/bin/bash
+#
+# Display an SDK related message of the day (MOTD).
+#
+# Copyright (C) 2018 Jolla Ltd.
+# Contact: Martin Kampas <martin.kampas@jolla.com>
+# All rights reserved.
+#
+# You may use this file under the terms of BSD license as follows:
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+#   * Redistributions of source code must retain the above copyright
+#     notice, this list of conditions and the following disclaimer.
+#   * Redistributions in binary form must reproduce the above copyright
+#     notice, this list of conditions and the following disclaimer in the
+#     documentation and/or other materials provided with the distribution.
+#   * Neither the name of the Jolla Ltd nor the
+#     names of its contributors may be used to endorse or promote products
+#     derived from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+# ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+# WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+# DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS OR CONTRIBUTORS BE LIABLE FOR
+# ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+# (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+# LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+# ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+# SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+#
+
+set -o nounset
+set -o pipefail
+shopt -s extglob
+
+SELF=$(basename "$0")
+
+: ${XDG_CACHE_HOME:=$HOME/.cache}
+: ${XDG_DATA_HOME:=$HOME/.local/share}
+: ${XDG_RUNTIME_DIR:=/tmp}
+
+synopsis()
+{
+    cat <<END
+usage: sdk-motd [-a|--all] [-<num>|--recent[=<num>]] [--daily]
+                [-N|--no-record] [--no-refresh] [--refresh[=<url>]]
+END
+}
+
+short_usage()
+{
+    cat <<END
+$(synopsis)
+
+Try 'sdk-motd --help' for more information.
+END
+}
+
+usage()
+{
+    less --quit-if-one-screen <<END
+$(synopsis)
+
+Display an SDK related message of the day (MOTD).
+
+OPTIONS
+    -a, --all
+        Display all available MOTDs and exit
+
+    -<number>, --recent[=<number>]
+        Display the (number-th) previously displayed MOTD and exit
+
+    --daily
+        Only display a MOTD if none was displayed within last 24 hours
+
+    -N, --no-record
+        Keep the unread mark
+
+    --no-refresh
+        Normally the MOTDs are refreshed from an online Wiki page once a day.
+        Prevent this
+
+    --refresh[=<url>]
+        Just refresh the MOTDs now, do not display anything. Optionally the
+        default Wiki page[1] can be overriden with <url>. See MOTD FILE FORMAT
+        below for more details.
+
+MOTD FILE FORMAT
+    sdk-motd accepts a MediaWiki page source. Every paragraph immediately
+    following a level 3 heading will be treated as a single MOTD. The only
+    allowed markup in these paragraphs is:
+
+        - Internal, non-piped links[2]
+        - <code/> HTML tag
+        - amp, lt, gt HTML entities
+
+REFERENCES
+    1. $DEFAULT_PAGE
+       Default Wiki page to use as a source of MOTDs
+
+    2. https://meta.wikimedia.org/wiki/Help:Piped_link
+       MediaWiki's Piped links
+END
+}
+
+fatal()
+{
+    printf 'sdk-motd: fatal: %s\n' "$*" >&2
+}
+
+bad_usage()
+{
+    fatal "$*"
+    short_usage >&2
+}
+
+download_page()
+{
+    local url=$1
+
+    curl --silent --fail "$url?action=raw"
+}
+
+with_tmp_file()
+{
+    local file=$1 cmd=("${@:2}")
+    local tmp_file=
+
+    with_tmp_file_cleanup()
+    (
+        trap 'echo cleaning up...' INT TERM HUP
+        if [[ $tmp_file ]]; then
+            rm -f "$tmp_file"
+        fi
+    )
+    trap 'with_tmp_file_cleanup; trap - RETURN' RETURN
+    trap 'return 1' INT TERM HUP
+
+    tmp_file=$(mktemp "$file.XXX") || return
+
+    if "${cmd[@]}" <&3 >"$tmp_file"; then
+        cat <"$tmp_file" >"$file" || return
+    else
+        return $?
+    fi
+} 3<&0 <&-
+
+refresh()
+{
+    if ! [[ -e "$CACHE_FILE" ]]; then
+        mkdir -p "$(dirname "$CACHE_FILE")" || return
+    fi
+
+    # Update the timestamp unconditionally to avoid refreshing repeatedly on
+    # failure
+    touch "$CACHE_FILE" || return
+
+    with_tmp_file "$CACHE_FILE" download_page "$OPT_PAGE"
+}
+
+maybe_refresh()
+{
+    if [[ ! -e $CACHE_FILE || $(find "$CACHE_FILE" -mmin +$((60*24))) ]]; then
+        refresh
+    fi
+}
+
+list_motds()
+{
+    sed -n 's/^[[:space:]]*===[[:space:]]*\([^=[:space:]].*[^[:space:]]\)[[:space:]]*===[[:space:]]*$/\1/p' "$CACHE_FILE"
+}
+
+print_motd()
+{
+    local title=$1
+
+    [[ -e $CACHE_FILE ]] || return 0
+
+    read -d '' -r awk <<'END'
+        BEGIN {
+            found_motd=0
+            body=""
+        }
+        /^[[:space:]]*===[^=]+===[[:space:]]*$/ {
+            gsub(/^[[:space:]]*===[[:space:]]*/, "")
+            gsub(/[[:space:]]*===[[:space:]]*$/, "")
+            if ($0 == title) {
+                found_motd=1
+                next
+            }
+        }
+        (found_motd && /^[[:space:]]*[^[:space:]]/) {
+            if (body)
+                body = body " " $0
+            else
+                body = $0
+        }
+        (body && /^[[:space:]]*$/) { exit }
+        END {
+            gsub(/\[\[/, "", body)
+            gsub(/\]\]/, "", body)
+            gsub(/<\/?code>/, "`", body)
+            gsub(/&amp;/, "\\&", body)
+            gsub(/&lt;/, "<", body)
+            gsub(/&gt;/, ">", body)
+            print body
+        }
+END
+    local body=
+    body=$(awk -v title="$title" "$awk" <"$CACHE_FILE") || return
+    if [[ ! $body ]]; then
+        fatal "The '$title' MOTD is not available (anymore)"
+        return 1
+    fi
+
+    fmt --width "$FMT_WIDTH" <<END
+$body
+
+Learn more on <$OPT_PAGE#${title// /_}>.
+END
+}
+
+print_recent_motd()
+{
+    local n=$1
+    local all=
+    all=$(list_recent) || return
+    local title=
+    title=$(sed -n "${n}p" <<<"$all")
+
+    if [[ ! $title ]]; then
+        if (( n > 1 )); then
+            fatal "No $n-th recent MOTD"
+        else
+            fatal "No recent MOTD"
+        fi
+        return 1
+    fi
+
+    print_motd "$title"
+}
+
+print_all()
+{
+    local all_motds=
+    all_motds=$(list_motds) || return
+
+    if [[ ! $all_motds ]]; then
+        fatal "No MOTD found"
+        return 1
+    fi
+
+    local motd=
+    while read motd <&3; do
+        printf '* %s\n' "$motd"
+        printf '\n'
+        print_motd "$motd" |sed 's/^./  &/' |fmt --width "$FMT_WIDTH" || return
+        printf '\n'
+    done 3<<<"$all_motds"
+}
+
+select_random()
+{
+    local unread_only=${1:-}
+
+    local all_motds=
+    all_motds=$(list_motds) || return
+
+    if [[ ! $all_motds ]]; then
+        fatal "No MOTD found"
+        return 1
+    fi
+
+    local read_motds=
+    read_motds=$(list_recent) || return
+    read_motds=$(grep -F --file <(printf '%s' "$all_motds") --line-regexp <<<"$read_motds")
+
+    local unread_motds=
+    unread_motds=$(grep -v -F --file <(printf '%s' "$read_motds") --line-regexp <<<"$all_motds")
+
+    if [[ $unread_motds ]]; then
+        shuf <<<"$unread_motds"
+    elif [[ $unread_only ]]; then
+        :
+    elif (( $(wc -l <<<"$read_motds") > 1)); then
+        # if more then one motd is available, avoid displaying the most recently
+        # displayed one
+        sed 1d <<<"$read_motds" |shuf
+    else
+        shuf <<<"$read_motds"
+    fi |head -n1
+}
+
+list_recent()
+{
+    [[ -e $RECENT_FILE ]] || return 0
+    cat "$RECENT_FILE"
+}
+
+add_recent_()
+{
+    local title=$1
+    printf '%s\n' "$title"
+    grep -v -F -e "$title"
+    return 0
+}
+
+add_recent()
+{
+    local title=$1
+    if ! [[ -e "$RECENT_FILE" ]]; then
+        mkdir -p "$(dirname "$RECENT_FILE")" || return
+        touch "$RECENT_FILE" || return
+    fi
+    with_tmp_file "$RECENT_FILE" add_recent_ "$title" <"$RECENT_FILE"
+}
+
+set_defaults()
+{
+    DEFAULT_PAGE="https://sailfishos.org/wiki/SDK_Tips"
+    CACHE_FILE=$XDG_CACHE_HOME/$SELF
+    RECENT_FILE=$XDG_DATA_HOME/$SELF
+    # When --daily is used and no unread messages are available, prolong the
+    # "daily" period to this number of days
+    READ_AGAIN_MIN_DAYS=4
+    FMT_WIDTH=80
+
+    OPT_ALL=
+    OPT_DAILY=
+    OPT_NO_RECORD=
+    OPT_NO_REFRESH=
+    OPT_PAGE=$DEFAULT_PAGE
+    OPT_RECENT=
+    OPT_REFRESH=
+    OPT_SHORT_USAGE=
+    OPT_USAGE=
+}
+
+parse_opts()
+{
+    while (( $# > 0 )); do
+        case $1 in
+            -h)
+                OPT_SHORT_USAGE=1
+                return
+                ;;
+            --help)
+                OPT_USAGE=1
+                return
+                ;;
+            -a|--all)
+                OPT_ALL=1
+                ;;
+            --daily)
+                OPT_DAILY=1
+                ;;
+            -N|--no-record)
+                OPT_NO_RECORD=1
+                ;;
+            --no-refresh)
+                OPT_NO_REFRESH=1
+                ;;
+            -+([0-9]))
+                OPT_RECENT=${1#-}
+                ;;
+            --recent)
+                OPT_RECENT=1
+                ;;
+            --recent=*)
+                OPT_RECENT=${1#*=}
+                if ! [[ $OPT_RECENT =~ ^[0-9]+$ ]]; then
+                    bad_usage "Invalid argument to '--recent': $OPT_RECENT"
+                    return 1
+                fi
+                ;;
+            --refresh)
+                OPT_REFRESH=1
+                ;;
+            --refresh=*)
+                OPT_REFRESH=1
+                OPT_PAGE=${1#*=}
+                if [[ ! $OPT_PAGE ]]; then
+                    bad_usage "Empty URL passed with '--refresh'"
+                    return 1
+                fi
+                ;;
+            *)
+                bad_usage "Unrecognized argument: '$1'"
+                return 1
+                ;;
+        esac
+        shift
+    done
+}
+
+main()
+{
+    set_defaults || return
+    parse_opts "$@" || return
+
+    if [[ $OPT_SHORT_USAGE ]]; then
+        short_usage
+        return
+    fi
+
+    if [[ $OPT_USAGE ]]; then
+        usage
+        return
+    fi
+
+    if [[ $OPT_RECENT ]]; then
+        print_recent_motd "$OPT_RECENT"
+        return
+    fi
+
+    if [[ $OPT_REFRESH ]]; then
+        refresh
+        return
+    fi
+
+    if [[ ! $OPT_NO_REFRESH ]]; then
+        maybe_refresh
+    fi
+
+    if [[ $OPT_ALL ]]; then
+        print_all |less --quit-if-one-screen
+        return
+    fi
+
+    if [[ $OPT_DAILY && $(find "$RECENT_FILE" -mmin -$((60*24))) ]]; then
+        return
+    fi
+
+    local unread_only=
+    if [[ $OPT_DAILY && $(find "$RECENT_FILE" -mmin -$((60*24*READ_AGAIN_MIN_DAYS))) ]]; then
+        unread_only=1
+    fi
+
+    local motd=
+    motd=$(select_random $unread_only) || return
+
+    [[ $motd ]] || return 0
+
+    print_motd "$motd" || return
+
+    if [[ ! $OPT_NO_RECORD ]]; then
+        add_recent "$motd" || return
+    fi
+}
+
+if [[ ${1:-} != --self-test ]]; then
+    flock 9
+    main "$@"
+    exit
+fi 9>"$XDG_RUNTIME_DIR/$USER-$SELF.lock"
+
+##############################################################################
+# S E L F - T E S T  EXECUTION BEGINS HERE
+
+set_defaults || exit
+CACHE_FILE=
+RECENT_FILE=
+
+self_test_cleanup()
+(
+    trap 'echo cleaning up...' INT TERM HUP
+    [[ $CACHE_FILE ]] && rm -f "$CACHE_FILE"
+)
+trap 'self_test_cleanup; trap - EXIT' EXIT
+
+CACHE_FILE=$(mktemp $SELF.cache.XXX) || exit
+
+some_failed=
+verify()
+{
+    local command=("$@") expected=$(cat)
+    local command_quoted=$(printf '%q ' "${command[@]}")
+
+    local actual=
+    if ! actual=$("${command[@]}" 2>&1); then
+        cat <<END
+*** FAIL Command exited with non zero:
+  Command: \`$command_quoted\`
+  Output: {{{
+$actual
+}}}
+
+END
+        some_failed=1
+        return
+    fi
+
+    if [[ $actual != "$expected" ]]; then
+        cat <<END
+*** FAIL Command produced unexpected output:
+  Command: \`$command_quoted\`
+  Expected: {{{
+$expected
+}}}
+  Actual: {{{
+$actual
+}}}
+
+END
+        some_failed=1
+        return
+    fi
+}
+
+cat >"$CACHE_FILE" <<'END' || exit
+Everything prior the first 3rd level headline will be ignored
+
+Including this paragraph
+
+== Basic tips ==
+
+And also this section
+
+=== Tip 1 ===
+
+This is the very first tip how to use <code>foo</code> or <code>bar
+&lt;baz&gt;</code>
+within the [[SDK]] right after the [[Installation]].
+
+More details will be hidden.
+
+==== Even more details ====
+
+Even more details for the 1st tip.
+
+ === Tip 2   ===  
+
+This is the second tip.
+
+And more details not to be shown
+
+=== Tip 3 ===
+
+The third &amp; last tip.
+END
+
+verify list_motds <<'END'
+Tip 1
+Tip 2
+Tip 3
+END
+
+verify print_motd "Tip 1" <<'END'
+This is the very first tip how to use `foo` or `bar <baz>` within the SDK
+right after the Installation.
+
+Learn more on <https://sailfishos.org/wiki/SDK_Tips#Tip_1>.
+END
+
+verify print_motd "Tip 2" <<'END'
+This is the second tip.
+
+Learn more on <https://sailfishos.org/wiki/SDK_Tips#Tip_2>.
+END
+
+verify print_motd "Tip 3" <<'END'
+The third & last tip.
+
+Learn more on <https://sailfishos.org/wiki/SDK_Tips#Tip_3>.
+END
+
+verify print_all <<'END'
+* Tip 1
+
+  This is the very first tip how to use `foo` or `bar <baz>` within the SDK
+  right after the Installation.
+
+  Learn more on <https://sailfishos.org/wiki/SDK_Tips#Tip_1>.
+
+* Tip 2
+
+  This is the second tip.
+
+  Learn more on <https://sailfishos.org/wiki/SDK_Tips#Tip_2>.
+
+* Tip 3
+
+  The third & last tip.
+
+  Learn more on <https://sailfishos.org/wiki/SDK_Tips#Tip_3>.
+END
+
+if [[ $some_failed ]]; then
+    echo "Some tests failed"
+    exit 1
+else
+    echo "All tests passed"
+fi
