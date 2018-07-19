@@ -735,9 +735,10 @@ run_deploy() {
                 rpms=$(find $OPT_OUTPUTDIR -name '*.rpm' -a ! -name '*-debug*.rpm')
                 rsync_as $deviceuser -av ${rpms} $device_ip:/home/$deviceuser/RPMS/
                 [[ $? -ne 0 ]] && return 1
-                ssh_as $deviceuser $method ${rpms}
+                device_rpms=$(sed "s,^$OPT_OUTPUTDIR/,RPMS/," <<<"$rpms")
+                ssh_as $deviceuser $method ${device_rpms}
                 retcode=$?
-                ssh_as $deviceuser rm -f ${rpms}
+                ssh_as $deviceuser rm -f ${device_rpms}
                 ;;
             "--zypper" ) shift
                 run_rpm
@@ -745,9 +746,10 @@ run_deploy() {
                 rpms=$(find $OPT_OUTPUTDIR -name '*.rpm' -a ! -name '*-debug*.rpm')
                 rsync_as root -av ${rpms} $device_ip:/root/RPMS/
                 [[ $? -ne 0 ]] && return 1
-                ssh_as root zypper --non-interactive --quiet in -f ${rpms}
+                device_rpms=$(sed "s,^$OPT_OUTPUTDIR/,RPMS/," <<<"$rpms")
+                ssh_as root zypper --non-interactive --quiet in -f ${device_rpms}
                 retcode=$?
-                ssh_as root rm -f ${rpms}
+                ssh_as root rm -f ${device_rpms}
                 ;;
             "--rsync" ) shift
                 run_install
