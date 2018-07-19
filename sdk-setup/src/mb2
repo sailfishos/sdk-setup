@@ -1916,6 +1916,7 @@ rpmbuild_phases_ts_tear_down() {
     rmdir rpm || return
     rm -f RPMS/test-0.1-1.i486.rpm || return
     ! [[ -d RPMS ]] || rmdir RPMS || return
+    rm -f "$buildroot/foo" || return
 }
 
 rpmbuild_phases_tc() {
