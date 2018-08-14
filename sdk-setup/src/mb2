@@ -328,7 +328,7 @@ fix_package_version() {
         version=$version+$branch.$timestamp.$sha1sum$modified_submodules
     fi
 
-    version=${version//-/+} # '-' is not an allowed character in the version field
+    version=${version//[^+_[:alnum:]]/.} # replace characters not allowed in the version field
 
     echo "Setting version: ${version}"
     sed -i "s,^Version:.*,Version: ${version}," "$spec_file"
@@ -776,10 +776,6 @@ inside_git_worktree() { git_ status &>/dev/null; }
 # this is same as basename $0
 ME=${0/#*\//}
 
-################################################################################
-if [[ $1 != --self-test ]]; then  ###  M A I N  EXECUTION BEGINS HERE  #########
-################################################################################
-
 # option variables
 OPT_SPEC=
 OPT_TARGET=
@@ -805,6 +801,10 @@ if inside_build_engine; then
 else
     buildroot="$PWD/installroot"
 fi
+
+################################################################################
+if [[ $1 != --self-test ]]; then  ###  M A I N  EXECUTION BEGINS HERE  #########
+################################################################################
 
 while [[ "$1" ]]; do
     # only set variables in this loop
@@ -1916,6 +1916,7 @@ rpmbuild_phases_ts_tear_down() {
     rmdir rpm || return
     rm -f RPMS/test-0.1-1.i486.rpm || return
     ! [[ -d RPMS ]] || rmdir RPMS || return
+    rm -f "$buildroot/foo" || return
 }
 
 rpmbuild_phases_tc() {
