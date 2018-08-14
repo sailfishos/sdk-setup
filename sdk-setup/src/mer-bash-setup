@@ -18,3 +18,10 @@ for mer_check_locale in LC_COLLATE LC_NUMERIC; do
     fi
 done
 unset mer_check_locale
+
+(
+    motd=$(sdk-motd --daily) || exit
+    if [[ $motd ]]; then
+        printf '\nDid you know…?\n\n%s\n' "$motd"
+    fi
+)
