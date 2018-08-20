@@ -265,7 +265,16 @@ verify_target_dependencies() {
     local deps=()
     readarray -t deps < <(sb2 -t "$OPT_TARGET" rpmspec --query --buildrequires "$OPT_SPEC" |sed 's/\s*$//')
     if [[ $deps ]]; then
+        if inside_build_engine; then
+            local oldpkgs=$(sb2 -t "$OPT_TARGET" -m sdk-install rpm -qa)
+        fi
         sb2 -t "$OPT_TARGET" -m sdk-install -R zypper --quiet --non-interactive in "${deps[@]}"
+        if inside_build_engine; then
+            local newpkgs=$(sb2 -t "$OPT_TARGET" -m sdk-install rpm -qa)
+            if [[ $newpkgs != $oldpkgs ]]; then
+                sdk-manage target sync "$OPT_TARGET"
+            fi
+        fi
     fi
 }
 
