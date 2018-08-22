@@ -72,6 +72,7 @@ usage() {
   the actual changelog.
 
   $ME prep           : runs rpmbuild for %prep phase of the spec file.
+                     : can use -n
 
   $ME build [-p|--doprep] [-d|--enable-debug] [-j <n>] [<args>]
                      : runs rpmbuild for the given spec file in the
@@ -79,12 +80,12 @@ usage() {
                      : -p     run %prep phase as well when building
                      : -d     enable debug build
                      : -j <n> use only 'n' CPUs to build
-                     : can use -s -t -p -i -x -X -c
+                     : can use -s -t -p -i -x -X -c -n
 
   $ME qmake [<args>] : runs qmake in the 'build' phase
                        Note that this also verifies target
                        build dependencies are up to date
-                     : can use -s -t -p  
+                     : can use -s -t -p -n
 
   $ME make [<args>]  : run make in the 'build' phase
                      : can use -s -t -p
@@ -139,6 +140,7 @@ usage() {
                          instead of HEAD.
   -X | --no-fix-version
                        : override --fix-version option.
+  -n | --no-deps       : don't update target dependencies
   -c[=<args>] | --git-change-log[=<args>]
                        : include change log generated from Git history with
                          'git-change-log' command, forwarding any <args>.
@@ -257,6 +259,8 @@ ensure_spec_newer_than_yaml() {
 }
 
 verify_target_dependencies() {
+    [[ $OPT_NO_DEPS ]] && return
+
     local deps=()
     readarray -t deps < <(sb2 -t "$OPT_TARGET" rpmspec --query --buildrequires "$OPT_SPEC" |sed 's/\s*$//')
     if [[ $deps ]]; then
@@ -792,6 +796,7 @@ OPT_GIT_CHANGE_LOG=
 OPT_GIT_CHANGE_LOG_ARGS=
 OPT_SHARED_DIR=/etc/mersdk/share
 OPT_INC_BUILD_NUMBER=0
+OPT_NO_DEPS=
 OPT_SUBMODULE=""
 deviceuser=nemo
 
@@ -851,6 +856,9 @@ while [[ "$1" ]]; do
             OPT_FIX_VERSION=
             OPT_FIX_VERSION_HINT=
             OPT_NO_FIX_VERSION=1
+            ;;
+        "-n" | "--no-deps") shift
+            OPT_NO_DEPS=1
             ;;
         "-c" | "--git-change-log" ) shift
             OPT_GIT_CHANGE_LOG=1
