@@ -61,7 +61,9 @@ Usage:
                             : remove the given sb2 tooling or target
 
     $(basename $0) [tooling|target] list
-                            : list available sb2 toolings and/or targets
+                            : list available sb2 toolings and/or targets.
+                              In the combined listing targets are grouped
+                              by toolings they use
 
 Options:
     <name>                  : name of the sb2 tooling or target
@@ -92,11 +94,17 @@ list() {
     if [[ $type ]]; then
         sdk-manage "$type" list
     else
-        echo "Toolings:"
-        sdk-manage tooling list |sed 's/^/ /'
-        echo "Targets:"
-        # FIXME: targets are listed all on one line
-        sdk-manage target list |tr ' ' '\n' |sed 's/^/ /'
+        sdk-manage target list --long |tr -s ' ' |sort -k 2,2 |awk '
+            BEGIN {
+                tooling=""
+            }
+            {
+                if ($2 != tooling) {
+                    tooling=$2
+                    print tooling
+                }
+                print "  ", $1
+            }'
     fi
 }
 
