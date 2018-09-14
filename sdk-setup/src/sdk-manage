@@ -21,7 +21,7 @@ EOF
 help() {
     cat >&2 <<EOF
 usage:
-    $SELF tooling list
+    $SELF tooling list [-l|--long]
     $SELF tooling upgradable <name>
     $SELF tooling install <name> <url>
     $SELF tooling remove <name>
@@ -69,6 +69,13 @@ Usage notes
         '--tooling-url', the selected tooling MUST exist.  If '--tooling-url' is
         passed as well, the tooling MAY NOT exist, in which case it will be
         installed automatically prior to target installation.
+
+Global options
+    -m, --mode <mode>
+        Accepts one of 'user' or 'installer'. By default the user mode is
+        active. Targets and toolings installed in the installer mode cannot be
+        removed in the user mode. This option is not meant to be used by
+        regular users.
 
 For more information see https://sailfishos.org/wiki/Platform_SDK
 
@@ -428,6 +435,18 @@ upgrade_object() {
 
 tooling_exists() [[ -e $MER_TOOLINGS/$1 ]]
 
+get_tooling_mode()
+{
+    local tooling=$1
+    cat "$MER_TOOLINGS/$tooling/$MODE_FILE" 2>/dev/null || echo "$MODE_USER"
+}
+
+set_tooling_mode()
+{
+    local tooling=$1 mode=$2
+    echo "$mode" |sudo tee >/dev/null "$MER_TOOLINGS/$tooling/$MODE_FILE"
+}
+
 # specialization of assert_object_exists()
 assert_tooling_exists() {
     local tooling=$1
@@ -457,6 +476,33 @@ get_all_of_type_tooling() {
         fi
         echo "$tooling"
     done < <(ls --literal "$MER_TOOLINGS")
+}
+
+list_toolings() {
+    local long=
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -l|--long)
+                long=1
+                ;;
+            *)
+                echo >&2 "unrecognized option '$1'"
+                usage
+                return 1
+                ;;
+        esac
+        shift
+    done
+
+    if [[ ! $long ]]; then
+        get_all_of_type_tooling
+        return
+    fi
+
+    local tooling=
+    for tooling in $(get_all_of_type_tooling); do
+        echo "$tooling" "$(get_tooling_mode "$tooling")"
+    done |column -t
 }
 
 # Our toolchains are available through patterns-sailfish-sb2-* meta-packages
@@ -536,6 +582,10 @@ install_tooling() {
         return 1
     fi
 
+    if [[ $MODE != $MODE_USER ]]; then
+        set_tooling_mode "$name" "$MODE"
+    fi
+
     echo >&2 "Tooling '$name' now setup"
     succeeded=1
 }
@@ -544,6 +594,12 @@ remove_tooling() {
     local name=$1
 
     assert_name_valid "$name" || return
+
+    local mode=$(get_tooling_mode "$name")
+    if [[ $MODE != "$mode" ]]; then
+        echo >&2 "The tooling '$name' can only be removed in the '$mode' mode."
+        return 1
+    fi
 
     local targets=$(get_targets_using_tooling "$name")
     if [[ $targets ]]; then
@@ -562,8 +618,8 @@ manage_toolings() {
     fi
 
     case $1 in
-        ?(--)list )
-            get_all_of_type_tooling
+        ?(--)list ) shift
+            list_toolings "$@"
             ;;
         ?(--)upgradable ) shift
             object_upgradable tooling "$@"
@@ -700,6 +756,18 @@ manage_develpkgs() {
 ################################################################
 # Targets
 
+get_target_mode()
+{
+    local target=$1
+    cat "$MER_TARGETS/$target/$MODE_FILE" 2>/dev/null || echo "$MODE_USER"
+}
+
+set_target_mode()
+{
+    local target=$1 mode=$2
+    echo "$mode" >"$MER_TARGETS/$target/$MODE_FILE"
+}
+
 target_exists() {
     local target=$1
     # sb2-config is verbose when no target exists
@@ -778,7 +846,7 @@ list_targets() {
     local target=
     for target in $targets; do
         tooling=$(get_tooling_used_by_target "$target") # may fail
-        echo "$target" "${tooling:--}"
+        echo "$target" "${tooling:--}" "$(get_target_mode "$target")"
     done |column -t
     return ${PIPESTATUS[0]}
 }
@@ -1099,6 +1167,10 @@ install_target() {
         updateQtCreatorTargets --name "$target" --target-xml "$TARGETS_XML" || return
     fi
 
+    if [[ $MODE != $MODE_USER ]]; then
+        set_target_mode "$target" "$MODE"
+    fi
+
     echo >&2 "Target '$target' now setup"
     succeeded=1
 }
@@ -1107,6 +1179,12 @@ remove_target() {
     local target=$1
     assert_name_valid "$target" || return
     if [[ -d $SBOX2DIR/$target ]]; then
+        local mode=$(get_target_mode "$target")
+        if [[ $MODE != "$mode" ]]; then
+            echo >&2 "The target '$target' can only be removed in the '$mode' mode."
+            return 1
+        fi
+
         rm -r "$SBOX2DIR/$target"
         sudo rm -rf "$MER_TARGETS/$target"
 	if [[ $INSIDE_VBOX ]]; then
@@ -1305,6 +1383,11 @@ HOST_TARGETS=/host_targets
 SBOX2DIR=${HOME}/.scratchbox2
 TARGETS_XML=${HOST_TARGETS}/targets.xml
 
+MODE_FILE=.sdk-manage.mode
+MODE_USER=user
+MODE_INSTALLER=installer
+MODE=$MODE_USER
+
 TMPDIR_DOWNLOADS=/var/tmp
 
 ################################################################
@@ -1334,6 +1417,41 @@ if ! [[ ${1:-} ]]; then
     exit 1
 fi
 
+while (( $# > 0)); do
+    case $1 in
+        -m|--mode)
+            case ${2:-} in
+                "$MODE_USER"|"$MODE_INSTALLER")
+                    MODE=$2
+                    ;;
+                '')
+                    echo >&2 "argument expected: '$1'"
+                    usage
+                    exit 1
+                    ;;
+                *)
+                    echo >&2 "not a valid mode: '$2'"
+                    usage
+                    exit 1
+                    ;;
+            esac
+            shift
+            ;;
+        --version)
+            echo "$0, version VERSION_FROM_SPEC"
+            exit 0
+            ;;
+        -h|?(--)help)
+            help
+            exit 0
+            ;;
+        * )
+            break
+            ;;
+    esac
+    shift
+done
+
 case $1 in
     ?(--)tooling ) shift
         manage_toolings "$@"
@@ -1357,14 +1475,6 @@ case $1 in
 	;;
     ?(--)register-all ) shift
         register_all "$@"
-	;;
-    --version)
-	echo "$0, version VERSION_FROM_SPEC"
-	exit 0
-	;;
-    -h|?(--)help)
-        help
-        exit 0
         ;;
     * )
         echo >&2 "unrecognized option '$1'"
