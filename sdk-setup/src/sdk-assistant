@@ -94,15 +94,18 @@ list() {
     if [[ $type ]]; then
         sdk-manage "$type" list
     else
-        sdk-manage target list --long |tr -s ' ' |sort -k 2,2 |awk '
+        {
+            sdk-manage tooling list |sed 's/^/- /'
+            sdk-manage target list --long
+        } |tr -s ' ' |sort -k 2,2 |awk '
             BEGIN {
                 tooling=""
             }
-            {
-                if ($2 != tooling) {
-                    tooling=$2
-                    print tooling
-                }
+            $2 != tooling {
+                tooling=$2
+                print tooling
+            }
+            $1 != "-" {
                 print "  ", $1
             }'
     fi
