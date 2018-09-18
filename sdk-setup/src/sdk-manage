@@ -819,6 +819,10 @@ EOF
     touch "$HOST_TARGETS/$target/usr/bin/stopCreatorSegfaulting" || return
     # For Qt5, QtCreator needs to see this dir or it thinks Qt version is not properly installed
     mkdir -p "$HOST_TARGETS/$target/usr/lib/qt5/bin/" || return
+    # Qt Creator needs to know where to search for Linguist and Designer binaries
+    cat <<EOF > "$HOST_TARGETS/$target/usr/share/qt5/mkspecs/modules/qt_lib_sailfishsdk.pri" || return
+QT.designer.bins = \$\$absolute_path(../../../../../../../../bin/)
+EOF
 
     echo >&2 "Sync completed"
 }
