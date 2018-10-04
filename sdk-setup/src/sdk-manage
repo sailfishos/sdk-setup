@@ -255,6 +255,10 @@ fix_shell() {
     cut -d: -f1-6 |sed 's,$,:/bin/bash,'
 }
 
+manage_user_targets_repository() {
+    $USER_TARGETS_REPOSITORY/manage.sh --repository "$USER_TARGETS_REPOSITORY" "$@"
+}
+
 ################################################################'
 # Polymorphic utilities for common operations on targets, toolings and the SDK itself.
 #
@@ -582,7 +586,12 @@ install_tooling() {
         return 1
     fi
 
-    if [[ $MODE != $MODE_USER ]]; then
+    if [[ $MODE == "$MODE_USER" ]]; then
+        if [[ $INSIDE_VBOX ]]; then
+            local size=$(sudo du --summarize --bytes "$MER_TOOLINGS/$name" |cut -f1)
+            manage_user_targets_repository touch tooling "$name" "${size:-0}"
+        fi
+    else
         set_tooling_mode "$name" "$MODE"
     fi
 
@@ -609,6 +618,10 @@ remove_tooling() {
     fi
 
     sudo rm -rf "$MER_TOOLINGS/$name"
+
+    if [[ $INSIDE_VBOX && $mode == "$MODE_USER" ]]; then
+        manage_user_targets_repository rm tooling "$name"
+    fi
 }
 
 manage_toolings() {
@@ -1167,7 +1180,12 @@ install_target() {
         updateQtCreatorTargets --name "$target" --target-xml "$TARGETS_XML" || return
     fi
 
-    if [[ $MODE != $MODE_USER ]]; then
+    if [[ $MODE == "$MODE_USER" ]]; then
+        if [[ $INSIDE_VBOX ]]; then
+            local size=$(sudo du --summarize --bytes "$MER_TARGETS/$target" |cut -f1)
+            manage_user_targets_repository touch target "$target" "${size:-0}"
+        fi
+    else
         set_target_mode "$target" "$MODE"
     fi
 
@@ -1199,6 +1217,9 @@ remove_target() {
         # Notify Qt Creator always when we're in the VM to keep the
         # target information in sync
         updateQtCreatorTargets --delete --name "$target" --target-xml "$TARGETS_XML" || return
+        if [[ $MODE == "$MODE_USER" ]]; then
+            manage_user_targets_repository rm target "$target"
+        fi
     fi
 }
 
@@ -1382,6 +1403,7 @@ MER_TOOLINGS=/srv/mer/toolings
 HOST_TARGETS=/host_targets
 SBOX2DIR=${HOME}/.scratchbox2
 TARGETS_XML=${HOST_TARGETS}/targets.xml
+USER_TARGETS_REPOSITORY=${HOST_TARGETS}/targets.repository
 
 MODE_FILE=.sdk-manage.mode
 MODE_USER=user
