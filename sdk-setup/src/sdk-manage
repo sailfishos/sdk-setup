@@ -1432,7 +1432,12 @@ if [[ ${SDK_MANAGE_DEBUG:-} ]]; then
     trap check_leaked_local_vars EXIT
 fi
 
-[[ ${FLOCKER:-} != $0 ]] && exec env FLOCKER="$0" flock -en "$0" "$0" "$@" || :
+if [[ ${FLOCKER:-} != $0 ]]; then
+    if ! flock -en "$0" true; then
+        echo >&2 "sdk-manage: acquiring lock..."
+    fi
+    exec env FLOCKER="$0" flock -e "$0" "$0" "$@" || :
+fi
 
 if ! [[ ${1:-} ]]; then
     usage
