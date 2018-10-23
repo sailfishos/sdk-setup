@@ -165,6 +165,8 @@ download() {
 
     url=${url#file://}
 
+    local_file_hint+=.tar.${url##*.}
+
     if ! [[ $url =~ ^(http|ftp)s?:// ]]; then
         local_file=$(readlink -f "$url") || return
         print_array "$local_file" "$downloaded"
@@ -570,14 +572,14 @@ install_tooling() {
     trap 'install_tooling_cleanup; trap - RETURN' RETURN
     trap 'return 1' INT TERM HUP
 
-    download_result=$(download "$url" "$TMPDIR_DOWNLOADS" "$name.tar.bz2") || return
+    download_result=$(download "$url" "$TMPDIR_DOWNLOADS" "$name") || return
     unpack "$download_result" local_file downloaded
 
     sudo rm -rf "$MER_TOOLINGS/$name" || return
     sudo mkdir -p "$MER_TOOLINGS/$name" || return
 
     echo >&2 "Unpacking tooling ..."
-    if ! sudo tar -C "$MER_TOOLINGS/$name" -xf "$local_file"; then
+    if ! 7z x -so "$local_file" | sudo tar -C "$MER_TOOLINGS/$name" -x; then
         if disk_full "$MER_TOOLINGS"; then
             echo >&2 "Not enough disk space to unpack tooling image"
         else
@@ -1068,7 +1070,7 @@ install_target() {
         fi
     fi
 
-    download_result=$(download "$url" "$TMPDIR_DOWNLOADS" "$target.tar.bz2") || return
+    download_result=$(download "$url" "$TMPDIR_DOWNLOADS" "$target") || return
     unpack "$download_result" local_file downloaded
 
     # Virtualbox shared folders don't work too well at the moment
@@ -1083,7 +1085,7 @@ install_target() {
 
     echo >&2
     echo >&2 "Unpacking target ..."
-    if ! sudo tar -C "$MER_TARGETS/$target" -xf "$local_file"; then
+    if ! 7z x -so "$local_file" | sudo tar -C "$MER_TARGETS/$target" -x; then
         if disk_full "$MER_TARGETS"; then
 	    echo >&2 "Not enough disk space to unpack target image"
 	else
