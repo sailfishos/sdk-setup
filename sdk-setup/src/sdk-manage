@@ -227,6 +227,17 @@ download() {
     succeeded=1
 }
 
+maybe_decompress_tarball() {
+    local file=$1
+    local mime=
+    mime=$(file --brief --mime-type "$file")
+    if [[ $mime == application/x-tar ]]; then
+        cat "$file"
+    else
+        7z x -so "$file"
+    fi
+}
+
 # Extends standard ssu CLI with '--root <dir>' option and 'arch' command
 ssu() (
     while [[ $# -gt 0 ]]; do
@@ -579,7 +590,7 @@ install_tooling() {
     sudo mkdir -p "$MER_TOOLINGS/$name" || return
 
     echo >&2 "Unpacking tooling ..."
-    if ! 7z x -so "$local_file" | sudo tar -C "$MER_TOOLINGS/$name" -x; then
+    if ! maybe_decompress_tarball "$local_file" | sudo tar -C "$MER_TOOLINGS/$name" -x; then
         if disk_full "$MER_TOOLINGS"; then
             echo >&2 "Not enough disk space to unpack tooling image"
         else
@@ -1085,7 +1096,7 @@ install_target() {
 
     echo >&2
     echo >&2 "Unpacking target ..."
-    if ! 7z x -so "$local_file" | sudo tar -C "$MER_TARGETS/$target" -x; then
+    if ! maybe_decompress_tarball "$local_file" | sudo tar -C "$MER_TARGETS/$target" -x; then
         if disk_full "$MER_TARGETS"; then
 	    echo >&2 "Not enough disk space to unpack target image"
 	else
