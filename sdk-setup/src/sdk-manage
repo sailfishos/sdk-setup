@@ -332,7 +332,7 @@ enter() {
 object_zypper() {
     local object=$1 args=("${@:2}")
 
-    enter "$object" zypper --quiet --non-interactive "${args[@]}"
+    enter "$object" zypper --non-interactive "${args[@]}"
 }
 
 register_object() {
@@ -429,7 +429,7 @@ object_upgradable() {
         assert_object_exists "$type:$object" || return
     fi
 
-    object_zypper "$type:$object" --no-refresh list-updates
+    object_zypper "$type:$object" --quiet --no-refresh list-updates
 }
 
 upgrade_object() {

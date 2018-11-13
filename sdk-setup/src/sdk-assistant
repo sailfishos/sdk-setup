@@ -291,9 +291,11 @@ fi
 
 if [[ $OPT_UPDATE ]]; then
     if [[ $OPT_TYPE == target ]]; then
+        echo "Updating the tooling '$OPT_TOOLING_NAME'..."
         _ sdk-manage tooling refresh "$OPT_TOOLING_NAME" || exit
         _ sdk-manage tooling update "$OPT_TOOLING_NAME" || exit
     fi
+    echo "Updating the $OPT_TYPE '$OPT_NAME'..."
     _ sdk-manage "$OPT_TYPE" refresh "$OPT_NAME" || exit
     _ sdk-manage "$OPT_TYPE" update "$OPT_NAME"
     exit
