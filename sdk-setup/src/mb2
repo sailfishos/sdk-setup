@@ -319,13 +319,18 @@ fix_package_version() {
     version=${version#*/}   # allow tags to have a prefix to allow vendor marking
     version=${version#v}    # some people like to prefix versions with a v
 
-    local stash=$(git_ stash create)
+    local stash=
+    if ! stash=$(git_ stash create); then
+        fatal "Cannot save state of Git working tree: git-stash failed."
+    fi
     local head=${stash:-$(git_ rev-parse HEAD)}
 
-    local modified_submodules=$(
+    local modified_submodules=
+    modified_submodules=$(
         describe_if_modified()
         {
-            local stash=$(git stash create)
+            local stash=
+            stash=$(git stash create) || return
             local head=${stash:-$(git rev-parse HEAD)}
             if [[ $head != $sha1 ]]; then
                 local short=$(git rev-list --max-count=1 --abbrev-commit "$head")
@@ -334,6 +339,9 @@ fix_package_version() {
         }
         git_ submodule --quiet foreach --recursive \
             "$(declare -f describe_if_modified); describe_if_modified")
+    if [[ $? -ne 0 ]]; then
+        fatal "Cannot save state of Git submodules: git-stash failed for some."
+    fi
 
     if [[ $(git_ rev-parse "$tag^{}") != "$head" || $modified_submodules ]]; then
         local branch=$(git_ rev-parse --abbrev-ref HEAD)
