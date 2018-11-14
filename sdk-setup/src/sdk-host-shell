@@ -121,9 +121,14 @@ server()
 
     cd
 
-    export -f shs-handler
+    # TODO exported functions do not pass through some versions of ncat. Most
+    # likely it is the percent sign in variable name that breaks it.
+    #export -f shs-handler
+    SHS_HANDLER=$(declare -f shs-handler)
+    export SHS_HANDLER
+
     export ${!SHS_PROTO_*}
-    ncat -l -U "$OPT_SOCKET" --keep-open --sh-exec "bash -c shs-handler" || return
+    ncat -l -U "$OPT_SOCKET" --keep-open --sh-exec "bash -c 'eval \"\$SHS_HANDLER\"; shs-handler;'" || return
     rm -f "$OPT_SOCKET" || return
 } 3>"$OPT_LOCK"
 
