@@ -90,6 +90,18 @@ fatal()
 
 shs-handler()
 {
+    # Do not let the spawned process inherit the sockets. If it spawns another
+    # background process, it may cause troubles.
+    for fd in $(ls /proc/$$/fd); do
+        case "$fd" in
+            0|1|2|255)
+                ;;
+            *)
+                exec {fd}>&-
+                ;;
+        esac
+    done
+
     local options= command=
     read -r options
     if [[ $options != "$SHS_PROTO_OPTIONS_START"*"$SHS_PROTO_OPTIONS_END" ]]; then
@@ -129,9 +141,12 @@ server()
 
     export ${!SHS_PROTO_*}
 
+    # Close fd 3 - do not let the spawned process inherit the lock. If it spawns
+    # another background process, it may cause troubles.
+    #
     # Run on background and setup traps to ensure it is killed. When run as
     # a foreground job it was not always killed (on some systems)
-    ncat -l -U "$OPT_SOCKET" --keep-open --sh-exec "bash -c 'eval \"\$SHS_HANDLER\"; shs-handler;'" &
+    ncat -l -U "$OPT_SOCKET" --keep-open --sh-exec "bash -c 'eval \"\$SHS_HANDLER\"; shs-handler;'" 3>&- &
     trap "kill $!" TERM INT
     trap "" HUP
     wait || return
