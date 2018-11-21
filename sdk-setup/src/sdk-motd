@@ -429,12 +429,12 @@ main()
         return
     fi
 
-    if [[ $OPT_DAILY && $(find "$RECENT_FILE" -mmin -$((60*24))) ]]; then
+    if [[ $OPT_DAILY && $(find "$RECENT_FILE" -mmin -$((60*24)) 2>/dev/null) ]]; then
         return
     fi
 
     local unread_only=
-    if [[ $OPT_DAILY && $(find "$RECENT_FILE" -mmin -$((60*24*READ_AGAIN_MIN_DAYS))) ]]; then
+    if [[ $OPT_DAILY && $(find "$RECENT_FILE" -mmin -$((60*24*READ_AGAIN_MIN_DAYS)) 2>/dev/null) ]]; then
         unread_only=1
     fi
 
