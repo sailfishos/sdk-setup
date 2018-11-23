@@ -144,9 +144,6 @@ GLOBAL OPTIONS
         The folder where QtCreator shares devices.xml and ssh keys this option
         is useful if deploy option is used outside of virtual machine
 
-    -P, --pedantic
-        Do extra checks
-
     -x, --fix-version[=<tag>]
         This option is implied when used inside a Git working tree (use -X to
         override). Within Application SDK it is only implied if the version
@@ -217,16 +214,6 @@ git_() (
 
     git "$@"
 )
-
-check_spec_supports_qtc_silent() {
-    grep "define qtc_qmake" "$OPT_SPEC" >/dev/null 2>&1
-}
-
-check_spec_supports_qtc() {
-    if ! check_spec_supports_qtc_silent; then
-        notice "This specfile does not have the qtc_* macros defined"
-    fi
-}
 
 try_to_make_spec() { # Tries to create a missing spec
     [[ -f "$1" ]] && return # It's not missing
@@ -511,6 +498,51 @@ rpm_quote() {
     quote "$@" |sed 's/\\/&&/g'
 }
 
+init_wrapper() {
+    local wrapper=$1
+    local extra_args=("${@:2}")
+
+    mkdir -p "${wrapper%/*}"
+    {
+        cat <<'END'
+#!/bin/bash
+self=${0#$PWD/}
+command=${0##*/}
+
+path=${0%/*}
+PATH=${PATH/$path:/}
+
+real=$(which "$command")
+if [[ ! $real || $real == "$0" ]]; then
+    echo "$self: Cannot find real $command" >&2
+    exit 1
+fi
+
+echo "$self: Executing real $command:" >&2
+
+set -x
+
+"$real" "$@" \
+END
+        quote "${extra_args[@]}"
+        echo
+    } >"$wrapper"
+    chmod +x "$wrapper"
+}
+
+init_noop_wrapper() {
+    local wrapper=$1
+
+    mkdir -p "${wrapper%/*}"
+    cat <<'END' >"$wrapper"
+#!/bin/bash
+self=${0#$PWD/}
+command=${0##*/}
+echo "$self: Ignoring $command" >&2
+END
+    chmod +x "$wrapper"
+}
+
 run_installdeps() {
     # Refresh repos before installing dependencies
     sb2 -t "$target" -m sdk-install -R zypper --non-interactive ref
@@ -631,7 +663,7 @@ run_prep() {
 }
 
 run_qmake() {
-    if [[ "$OPT_SPEC" ]] && check_spec_supports_qtc_silent; then
+    if [[ "$OPT_SPEC" ]]; then
         local build_tgt=$(sb2 -t $OPT_TARGET gcc -dumpmachine)
         build_tgt=${build_tgt%-gnueabi}
 
@@ -645,14 +677,16 @@ run_qmake() {
 
         # This is a good time to verify the target dependencies as per mb
         verify_target_dependencies
+
+        init_wrapper $STATEDIR/wrappers/qmake "$@"
+        init_noop_wrapper $STATEDIR/wrappers/make
+
         (
             cd_to_spec_setup_dir;
-            sb2 -t $OPT_TARGET rpmbuild --build-in-place --target=$build_tgt \
+            sb2 -t $OPT_TARGET env PATH="$STATEDIR/wrappers:$PATH" rpmbuild \
+                --build-in-place --target=$build_tgt \
                 --define "noecho 1" \
                 --define "qtc_builddir $_basedir" \
-                --define "qtc_make true ignoring make" \
-                --define "qtc_qmake5 %qmake5 $(rpm_quote "$@")" \
-                --define "qtc_qmake %qmake $(rpm_quote "$@")" \
                 -bc --short-circuit \
                 "$tmp_spec"
         )
@@ -665,7 +699,7 @@ run_qmake() {
 }
 
 run_make() {
-    if [[ "$OPT_SPEC" ]] && check_spec_supports_qtc_silent; then
+    if [[ "$OPT_SPEC" ]]; then
 
         local tmp_spec="$OPT_SPEC.$$"
         cp -a "$OPT_SPEC" "$tmp_spec"
@@ -677,14 +711,16 @@ run_make() {
 
         local build_tgt=$(sb2 -t $OPT_TARGET gcc -dumpmachine)
         build_tgt=${build_tgt%-gnueabi}
+
+        init_noop_wrapper $STATEDIR/wrappers/qmake
+        init_wrapper $STATEDIR/wrappers/make "$@"
+
         (
             cd_to_spec_setup_dir;
-            sb2 -t $OPT_TARGET rpmbuild --build-in-place --target=$build_tgt \
+            sb2 -t $OPT_TARGET env PATH="$STATEDIR/wrappers:$PATH" rpmbuild \
+                --build-in-place --target=$build_tgt \
                 --define "noecho 1" \
                 --define "qtc_builddir $_basedir" \
-                --define "qtc_qmake5 true ignoring qmake" \
-                --define "qtc_qmake true ignoring qmake" \
-                --define "qtc_make make %{?_smp_mflags} $(rpm_quote "$@")" \
                 -bc --short-circuit \
                 "$tmp_spec"
         )
@@ -830,7 +866,6 @@ OPT_CLEAN_OUTPUTDIR=1
 OPT_PKGDIR="./rpm"
 OPT_PROJDIR=
 OPT_NEEDSPEC=
-OPT_PEDANTIC=0
 OPT_FIX_VERSION=
 OPT_FIX_VERSION_HINT=
 OPT_NO_FIX_VERSION=
@@ -841,6 +876,8 @@ OPT_INC_BUILD_NUMBER=0
 OPT_NO_DEPS=
 OPT_SUBMODULE=""
 deviceuser=nemo
+
+STATEDIR=$PWD/.mb2
 
 # Virtualbox environment will install in this hardcoded location
 if inside_build_engine; then
@@ -881,8 +918,9 @@ while [[ "$1" ]]; do
         "-i" | "--increment" ) shift
             OPT_INC_BUILD_NUMBER=1
             ;;
-        "-P" | "--pedantic" ) shift
-            OPT_PEDANTIC=1
+        "-P" | "--pedantic" )
+            notice "The '$1' option is deprecated and does nothing currently"
+            shift
             ;;
         "-x" | "--fix-version" ) shift
             OPT_FIX_VERSION=1
@@ -1015,9 +1053,6 @@ fi
 case "$1" in
     qmake | make | install | rpm | deploy | prep )
         cmd=run_$1
-        if [[ "$OPT_PEDANTIC" -eq 1 && "$OPT_SPEC" ]]; then
-            check_spec_supports_qtc
-        fi
         shift
         ;;
     apply )
@@ -1077,6 +1112,8 @@ case "$1" in
         short_usage quit
         ;;
 esac
+
+rm -rf "$STATEDIR/wrappers"
 
 $cmd "$@"
 
@@ -1277,9 +1314,7 @@ sb2_arg_pass_ts_set_up() {
 
     # Create an empty spec file
     mkdir rpm || return
-    cat >rpm/test.spec <<END || return
-# Just say 'define qtc_qmake' to make check_spec_supports_qtc_silent happy
-END
+    : >rpm/test.spec || return
 }
 
 sb2_arg_pass_ts_tear_down() {
@@ -1366,24 +1401,20 @@ run_tc sb2_arg_pass "build with debug" \
 
 run_tc sb2_arg_pass "qmake" \
     "$(expect_args \
-        -t "$DEFAULT_TARGET" rpmbuild --build-in-place --target= \
+        -t "$DEFAULT_TARGET" env PATH="/tmp/@TMPDIR@/.mb2/wrappers:$PATH" rpmbuild \
+        --build-in-place --target= \
         --define 'noecho 1' \
         --define 'qtc_builddir /tmp/@TMPDIR@' \
-        --define 'qtc_make true ignoring make' \
-        --define "qtc_qmake5 %qmake5 $(rpm_quote "a b" "c  d" e f)" \
-        --define "qtc_qmake %qmake $(rpm_quote "a b" "c  d" e f)" \
         -bc --short-circuit \
         /tmp/@TMPDIR@/rpm/@TEST_SPEC@)" \
     qmake "a b" "c  d" e f
 
 run_tc sb2_arg_pass "make" \
     "$(expect_args \
-        -t "$DEFAULT_TARGET" rpmbuild --build-in-place --target= \
+        -t "$DEFAULT_TARGET" env PATH="/tmp/@TMPDIR@/.mb2/wrappers:$PATH" rpmbuild \
+        --build-in-place --target= \
         --define 'noecho 1' \
         --define 'qtc_builddir /tmp/@TMPDIR@' \
-        --define 'qtc_qmake5 true ignoring qmake' \
-        --define 'qtc_qmake true ignoring qmake' \
-        --define "qtc_make make %{?_smp_mflags} $(rpm_quote "a b" "c  d" e f)" \
         -bc --short-circuit \
         /tmp/@TMPDIR@/rpm/@TEST_SPEC@)" \
     make "a b" "c  d" e f
@@ -1435,6 +1466,15 @@ rpmbuild_arg_pass_sb2_stub() {
 
     shift 2
 
+    env=(env)
+    if [[ $1 == env ]]; then
+        shift
+        while [[ $1 == -* || $1 =~ ^[[:alnum:]_]+= ]]; do
+            env+=("$1")
+            shift
+        done
+    fi
+
     case $1 in
         gcc)
             case $2 in
@@ -1449,10 +1489,10 @@ rpmbuild_arg_pass_sb2_stub() {
             ;;
         rpmbuild)
             # rpmbuild writes some progress messages to stdout
-            exec "$@" >&2
+            exec "${env[@]}" "$@" >&2
             ;;
         rpmspec)
-            exec "$@"
+            exec "${env[@]}" "$@"
             ;;
         *)
             bad_args
@@ -1485,9 +1525,6 @@ Name:       test
 # This is to not require meego-rpm-config installed for self-test execution
 %global __os_install_post %{nil}
 
-%{!?qtc_qmake:%define qtc_qmake %qmake}
-%{!?qtc_qmake5:%define qtc_qmake5 %qmake5}
-%{!?qtc_make:%define qtc_make make}
 %{?qtc_builddir:%define _builddir %qtc_builddir}
 Summary:    Test
 Version:    0.1
@@ -1504,8 +1541,8 @@ Test
 %setup -q -n %{name}-%{version}
 
 %build
-%qtc_qmake5 
-%qtc_make %{?_smp_mflags}
+%qmake5
+make %{?_smp_mflags}
 
 %install
 mkdir -p %{buildroot}
@@ -1570,11 +1607,10 @@ run_tc rpmbuild_arg_pass "qmake" \
     "$(expect_args )" \
     qmake "a b" "c  d" e f
 
-KNOWN_ISSUE "Passes extra -j to make"
 if [[ $DEFAULT_JOBS -ne 1 ]]; then
     run_tc rpmbuild_arg_pass "make" \
         "$(expect_args )" \
-        "$(expect_args -j"$DEFAULT_JOBS" "a b" "c  d" e f -j"$DEFAULT_JOBS")" \
+        "$(expect_args -j"$DEFAULT_JOBS" "a b" "c  d" e f)" \
         make "a b" "c  d" e f
 else
     run_tc rpmbuild_arg_pass "make" \
@@ -1876,6 +1912,15 @@ rpmbuild_phases_sb2_stub() {
 
     shift 2
 
+    env=(env)
+    if [[ $1 == env ]]; then
+        shift
+        while [[ $1 == -* || $1 =~ ^[[:alnum:]_]+= ]]; do
+            env+=("$1")
+            shift
+        done
+    fi
+
     case $1 in
         gcc)
             case $2 in
@@ -1890,10 +1935,10 @@ rpmbuild_phases_sb2_stub() {
             ;;
         rpmbuild)
             # rpmbuild writes some progress messages to stdout
-            exec "$@" >&2
+            exec "${env[@]}" "$@" >&2
             ;;
         rpmspec)
-            exec "$@"
+            exec "${env[@]}" "$@"
             ;;
         *)
             bad_args
@@ -1926,9 +1971,6 @@ Name:       test
 # This is to not require meego-rpm-config installed for self-test execution
 %global __os_install_post %{nil}
 
-%{!?qtc_qmake:%define qtc_qmake %qmake}
-%{!?qtc_qmake5:%define qtc_qmake5 %qmake5}
-%{!?qtc_make:%define qtc_make make}
 %{?qtc_builddir:%define _builddir %qtc_builddir}
 Summary:    Test
 Version:    0.1
@@ -1945,8 +1987,8 @@ Test
 my_setup
 
 %build
-%qtc_qmake5
-%qtc_make %{?_smp_mflags}
+%qmake5
+make %{?_smp_mflags}
 
 %install
 mkdir -p %{buildroot}
