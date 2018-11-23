@@ -29,11 +29,7 @@
 
 synopsis() {
     cat <<EOF
-usage: $ME [-t <target>] [-s <specfile>] [-d <device>] [-o <outputdir>] [-p <projectdir>]
-           [-f <folder>] [-i] [-P] [-x[=<tag>] | -X] [-c[=<args>]]
-           build [-p] [-d] [-j <n>] [<args>] | qmake [<args>] | make [<args>] | ssh <args>
-           install [<args>] | installdeps <args> | rpm [<args>] | deploy <args>
-           prep | apply [-R] | run <args>
+usage: $ME [global-opts] <command> [command-opts]
        $ME --version
 EOF
 }
@@ -49,107 +45,134 @@ EOF
 }
 
 usage() {
-    synopsis
-    cat <<EOF
+    less --quit-if-one-screen <<EOF
+$(synopsis)
 
-  Executes a subset of build commands in the context of an rpmbuild.
-  Typically called from QtCreator to perform qmake/make phases of a project.
-  Note that any other build steps in the .spec file will also be run.
+Executes a subset of build commands in the context of an rpmbuild.
+Typically called from QtCreator to perform qmake/make phases of a project.
+Note that any other build steps in the .spec file will also be run.
 
-  <specfile> will be looked for in the current rpm/ dir. If there is
-  more than one it must be provided.
+<specfile> will be looked for in the current rpm/ dir. If there is more than
+one it must be provided.  $ME is aware of spectacle and will update the spec
+file if there is an obvious yaml file which is newer.
 
-  CWD is used as a base dir for installroot/ and RPMS/ to allow for
-  shadowbuilds
+CWD is used as a base dir for installroot/ and RPMS/ to allow for
+shadow builds.
 
-  $ME is aware of spectacle and will update the spec file if there is
-  an obvious yaml file which is newer.
+If a file exists with '.changes' extension, otherwise matching the
+spec file name, the effect will be the same as having a %changelog
+section in the spec file.  If a file with '.changes.run' extension is
+found instead, this file will be executed and its output treated as
+the actual changelog.
 
-  If a file exists with '.changes' extension, otherwise matching the
-  spec file name, the effect will be the same as having a %changelog
-  section in the spec file.  If a file with '.changes.run' extension is
-  found instead, this file will be executed and its output treated as
-  the actual changelog.
+COMMANDS
+    installdeps
+        Install the missing build-time dependencies as is done implicitly by
+        the "prep", "build" and "qmake" commands but refresh the package cache
+        first.
+        Compatible global options: -s -t -p
 
-  $ME prep           : runs rpmbuild for %prep phase of the spec file.
-                     : can use -n
+    prep
+        Run rpmbuild. Execute just the %prep section of the .spec file.
+        Compatible global options: -n.
 
-  $ME build [-p|--doprep] [-d|--enable-debug] [-j <n>] [<args>]
-                     : runs rpmbuild for the given spec file in the
-                       given sb2 target. Produces an rpm package.
-                     : -p     run %prep phase as well when building
-                     : -d     enable debug build
-                     : -j <n> use only 'n' CPUs to build
-                     : can use -s -t -p -i -x -X -c -n
+    apply [-R]
+        Apply all patches defined in the .spec file to the source tree. If
+        a git submodue is detected (or the global option -m is used), patches
+        are applied to the source tree under the submodule.
+        -R    reverse apply patches (patch -R)
+        Compatible global options: -m
 
-  $ME qmake [<args>] : runs qmake in the 'build' phase
-                       Note that this also verifies target
-                       build dependencies are up to date
-                     : can use -s -t -p -n
+    build [-p|--doprep] [-d|--enable-debug] [-j <n>] [<rpmbuild-extra-args>]
+        Run rpmbuild. Execute all sections of the .spec file except for %prep
+        unless told otherwise.
+        -p    run %prep phase as well
+        -d    enable debug build
+        -j <n> use only 'n' CPUs to build
+        Compatible global options: -s -t -p -i -x -X -c -n
 
-  $ME make [<args>]  : run make in the 'build' phase
-                     : can use -s -t -p
+    qmake [<qmake-extra-args>]
+        Run rpmbuild. Execute just the %build section of the .spec file,
+        suppressing any "make" invocation figuring in that section.
+        Compatible global options: -s -t -p -n
 
-  $ME deploy --zypper|--pkcon|--rsync|--sdk
-                     : runs the install or rpm-creation phase and then
-                       copies/installs the relevant files to the device
-                     : can use -s -t -p -d -i -f -x -X -c
+    make [<make-extra-args>]
+        Run rpmbuild. Execute just the %build section of the .spec file,
+        suppressing any "qmake" invocation figuring in that section.
+        Compatible global options: -s -t -p
 
-  $ME run|ssh [<args>] : runs a command (on device if --device given);
-                         intended for running gdb and a gdb server
-                     : can use -s -t -p -d
+    install
+        Run rpmbuild. Execute just the %install section of the .spec file.
+        Compatible global options: -s -t -p
 
-  $ME install [<args>] : runs the 'install' phase to install to $buildroot
-                     : can use -s -t -p
+    rpm
+        Run rpmbuild. Execute just the %install section of the .spec file, then
+        build binary packages.
+        Compatible global options: -s -t -p -i -x -X -c
 
-  $ME installdeps [<args>] : refresh the zypper cache of the given target and
-                             if required installs build-dependencies
-                     : can use -s -t -p
+    deploy --zypper|--pkcon|--rsync|--sdk
+        Deploy build results to a device. This implies also the "install" step
+        and except for the --rsync method it will include also the "rpm" step.
+        Compatible global options: -s -t -p -d -i -f -x -X -c
 
-  $ME rpm [<args>]   : runs the install & rpm-creation phases
-                     : can use -s -t -p -i -x -X -c
+    run|ssh [<command> [<args>]]
+        Run the given command (on device if --device given).  Can be used for
+        running gdb and a gdb server.
+        Compatible global options: -s -t -p -d
 
-  $ME apply [-R]     : applies all patches defined in spec from rpm directory
-                     : to the source tree, or if detected, submodule
-                     : source tree
-                     : -R    reverse apply patches (patch -R)
-                     : can use -m
+GLOBAL OPTIONS
+    -i, --increment
+        Increment release number in .spec file
 
-  -i | --increment     : increment release number in spec file
-  -t | --target        : specify the sb2 target to use
-  -d | --device        : specify the device
-  -o | --outputdir     : where to place produced RPM files. Defaults to ./RPMS directory.
-                         With this option existing files in the output directory are preserved
-  -p | --projectdir    : when running shadow build/deploy from another dir
-  -s | --specfile      : if the specfile is not in rpm/*.spec and cannot be found using -p
-  -f | --shared-folder : the folder where QtCreator shares devices.xml and ssh keys
-                         this option is useful if deploy option is used outside of virtual
-                         machine
-  -P | --pedantic      : do extra checks
-  -x[=<tag>] | --fix-version[=<tag>]
-                       : this option is implied when used inside a Git working
-                         tree (use -X to override). Within Application SDK it is
-                         only implied if the version recorded in the spec file
-                         is exactly "0".
-                         Use the latest tag from the current git branch as
-                         package version or the given <tag>.  If the current
-                         HEAD, index or working tree differs from the tree
-                         denoted by the tag, a suffix composed from the current
-                         branch name, time stamp and a commit SHA1 will be added
-                         to the package version.  If git-state is not clean
-                         a git-stash will be created and its SHA1 will be used
-                         instead of HEAD.
-  -X | --no-fix-version
-                       : override --fix-version option.
-  -n | --no-deps       : don't update target dependencies
-  -c[=<args>] | --git-change-log[=<args>]
-                       : include change log generated from Git history with
-                         'git-change-log' command, forwarding any <args>.
-                         This option is not intended for regular use - create a
-                         script file named after the spec file but with
-                         '.changes.run' extension to instruct $ME to generate
-                         changelog with 'git-change-log <args>' instead.
-  -m | --submodule     : use specified directory as submodule when applying patches
+    -t, --target <name>
+        Specify the sb2 target to use
+
+    -d, --device <name>
+        Specify the device
+
+    -o, --outputdir <dir>
+        Where to place produced RPM files. Defaults to ./RPMS directory.  With
+        this option existing files in the output directory are preserved
+
+    -p, --projectdir <dir>
+        When running shadow build/deploy from another dir
+
+    -s, --specfile <file>
+        Specify the .spec file
+
+    -f, --shared-folder <dir>
+        The folder where QtCreator shares devices.xml and ssh keys this option
+        is useful if deploy option is used outside of virtual machine
+
+    -P, --pedantic
+        Do extra checks
+
+    -x, --fix-version[=<tag>]
+        This option is implied when used inside a Git working tree (use -X to
+        override). Within Application SDK it is only implied if the version
+        recorded in the .spec file is exactly "0".
+        Use the latest tag from the current git branch as package version or
+        the given <tag>.  If the current HEAD, index or working tree differs
+        from the tree denoted by the tag, a suffix composed from the current
+        branch name, time stamp and a commit SHA1 will be added to the package
+        version.  If git-state is not clean a git-stash will be created and its
+        SHA1 will be used instead of HEAD.
+
+    -X, --no-fix-version
+        Override --fix-version option.
+
+    -n, --no-deps
+        Do not update target dependencies
+
+    -c, --git-change-log[=<args>]
+        Include change log generated from Git history with 'git-change-log'
+        command, forwarding any <args>.  This option is not intended for
+        regular use - create a script file named after the .spec file but with
+        '.changes.run' extension to instruct $ME to generate changelog with
+        'git-change-log <args>' instead.
+
+    -m, --submodule <dir>
+        Use specified directory as submodule when applying patches
 
 EOF
 }
