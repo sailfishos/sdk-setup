@@ -993,59 +993,6 @@ if [[ $OPT_FIX_VERSION_HINT && ! $(git_ tag --list "$OPT_FIX_VERSION_HINT") ]]; 
     fatal "'$OPT_FIX_VERSION_HINT' no such Git tag"
 fi
 
-# spec rules are complex:
-#  a .spec is required for some but not all operations
-#  if -s is given then
-#    if it does not exist then specify tries to make it
-#    if it exists it will be used
-#  if there is a rpm/*.spec then that is used
-#  if there is a rpm/*.yaml then a spec is made and used
-
-if [[ ! "$OPT_SPEC" ]]; then
-    # set nullglob on so that the shell glob expansions will return
-    # empty if files are not found
-    shopt -s nullglob
-    spec_files=("$OPT_PKGDIR"/*.spec)
-    numspec=${#spec_files[@]}
-    if [[ $numspec -gt 1 ]]; then
-        [[ $OPT_NEEDSPEC ]] && fatal "Too many spec files - please use -s to identify which one to use"
-        echo "Too many spec files - not using any. Use -s to identify a specific one"
-        # OPT_SPEC is not set
-    fi
-
-    if [[ $numspec -eq 0 ]]; then
-        # No spec, try to find a yaml
-        yaml_files=("$OPT_PKGDIR"/*.yaml)
-        numyaml=${#yaml_files[@]}
-        if [[ $numyaml -eq 1 ]]; then
-            theyaml=("$OPT_PKGDIR"/*.yaml)
-            try_to_make_spec_from_yaml "${theyaml[0]}"
-            spec_files=("$OPT_PKGDIR"/*.spec)
-            numspec=${#spec_files[@]}
-        else
-            [[ $OPT_NEEDSPEC ]] && fatal "No spec file found in '$OPT_PKGDIR/' and couldn't make one from a yaml #1"
-        fi
-    fi
-
-    if [[ $numspec -eq 1 ]]; then
-        thespec=("$OPT_PKGDIR"/*.spec)
-        OPT_SPEC="${thespec[0]}"
-    else
-        # this is because we did try_to_make_spec_from_yaml and failed
-        [[ $OPT_NEEDSPEC ]] && fatal "No spec file found in '$OPT_PKGDIR/' and couldn't make one from a yaml #2"
-    fi
-
-    # unset nullglob so that any further globbing works normally
-    shopt -u nullglob
-fi
-
-# Now if there is a spec given, make sure it is up-to-date
-if [[ "$OPT_SPEC" ]]; then
-    # turn 'OPT_SPEC' into an absolute path
-    OPT_SPEC=$(readlink -f "$OPT_SPEC")
-    ensure_spec_newer_than_yaml
-fi
-
 case "$1" in
     qmake | make | install | installdeps | rpm | deploy | prep )
         cmd=run_$1
@@ -1108,6 +1055,59 @@ case "$1" in
         short_usage quit
         ;;
 esac
+
+# spec rules are complex:
+#  a .spec is required for some but not all operations
+#  if -s is given then
+#    if it does not exist then specify tries to make it
+#    if it exists it will be used
+#  if there is a rpm/*.spec then that is used
+#  if there is a rpm/*.yaml then a spec is made and used
+
+if [[ ! "$OPT_SPEC" ]]; then
+    # set nullglob on so that the shell glob expansions will return
+    # empty if files are not found
+    shopt -s nullglob
+    spec_files=("$OPT_PKGDIR"/*.spec)
+    numspec=${#spec_files[@]}
+    if [[ $numspec -gt 1 ]]; then
+        [[ $OPT_NEEDSPEC ]] && fatal "Too many spec files - please use -s to identify which one to use"
+        echo "Too many spec files - not using any. Use -s to identify a specific one"
+        # OPT_SPEC is not set
+    fi
+
+    if [[ $numspec -eq 0 ]]; then
+        # No spec, try to find a yaml
+        yaml_files=("$OPT_PKGDIR"/*.yaml)
+        numyaml=${#yaml_files[@]}
+        if [[ $numyaml -eq 1 ]]; then
+            theyaml=("$OPT_PKGDIR"/*.yaml)
+            try_to_make_spec_from_yaml "${theyaml[0]}"
+            spec_files=("$OPT_PKGDIR"/*.spec)
+            numspec=${#spec_files[@]}
+        else
+            [[ $OPT_NEEDSPEC ]] && fatal "No spec file found in '$OPT_PKGDIR/' and couldn't make one from a yaml #1"
+        fi
+    fi
+
+    if [[ $numspec -eq 1 ]]; then
+        thespec=("$OPT_PKGDIR"/*.spec)
+        OPT_SPEC="${thespec[0]}"
+    else
+        # this is because we did try_to_make_spec_from_yaml and failed
+        [[ $OPT_NEEDSPEC ]] && fatal "No spec file found in '$OPT_PKGDIR/' and couldn't make one from a yaml #2"
+    fi
+
+    # unset nullglob so that any further globbing works normally
+    shopt -u nullglob
+fi
+
+# Now if there is a spec given, make sure it is up-to-date
+if [[ "$OPT_SPEC" ]]; then
+    # turn 'OPT_SPEC' into an absolute path
+    OPT_SPEC=$(readlink -f "$OPT_SPEC")
+    ensure_spec_newer_than_yaml
+fi
 
 rm -rf "$STATEDIR/wrappers"
 
