@@ -686,7 +686,6 @@ run_qmake() {
             sb2 -t $OPT_TARGET env PATH="$STATEDIR/wrappers:$PATH" rpmbuild \
                 --build-in-place --target=$build_tgt \
                 --define "noecho 1" \
-                --define "qtc_builddir $_basedir" \
                 -bc --short-circuit \
                 "$tmp_spec"
         )
@@ -720,7 +719,6 @@ run_make() {
             sb2 -t $OPT_TARGET env PATH="$STATEDIR/wrappers:$PATH" rpmbuild \
                 --build-in-place --target=$build_tgt \
                 --define "noecho 1" \
-                --define "qtc_builddir $_basedir" \
                 -bc --short-circuit \
                 "$tmp_spec"
         )
@@ -749,7 +747,6 @@ run_install() {
         cd_to_spec_setup_dir;
         sb2 -t $OPT_TARGET rpmbuild --build-in-place --target=$build_tgt \
             --define "noecho 1" \
-            --define "qtc_builddir $_basedir" \
             --define "_sourcedir $_basedir/rpm" \
             --define "_skip_install_processing 1" \
             --buildroot="$buildroot" \
@@ -781,7 +778,6 @@ run_rpm() {
         [[ $OPT_CLEAN_OUTPUTDIR ]] && rm -f "$OPT_OUTPUTDIR/"*.rpm;
         sb2 -t $OPT_TARGET rpmbuild --build-in-place --target=$build_tgt \
             --define "noecho 1" \
-            --define "qtc_builddir $_basedir" \
             --define "_rpmdir $OPT_OUTPUTDIR" \
             --define "_sourcedir $_basedir/rpm" \
             --define "_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm" \
@@ -1404,7 +1400,6 @@ run_tc sb2_arg_pass "qmake" \
         -t "$DEFAULT_TARGET" env PATH="/tmp/@TMPDIR@/.mb2/wrappers:$PATH" rpmbuild \
         --build-in-place --target= \
         --define 'noecho 1' \
-        --define 'qtc_builddir /tmp/@TMPDIR@' \
         -bc --short-circuit \
         /tmp/@TMPDIR@/rpm/@TEST_SPEC@)" \
     qmake "a b" "c  d" e f
@@ -1414,7 +1409,6 @@ run_tc sb2_arg_pass "make" \
         -t "$DEFAULT_TARGET" env PATH="/tmp/@TMPDIR@/.mb2/wrappers:$PATH" rpmbuild \
         --build-in-place --target= \
         --define 'noecho 1' \
-        --define 'qtc_builddir /tmp/@TMPDIR@' \
         -bc --short-circuit \
         /tmp/@TMPDIR@/rpm/@TEST_SPEC@)" \
     make "a b" "c  d" e f
@@ -1424,7 +1418,6 @@ run_tc sb2_arg_pass "install" \
     "$(expect_args \
         -t "$DEFAULT_TARGET" rpmbuild --build-in-place --target= \
         --define 'noecho 1' \
-        --define 'qtc_builddir /tmp/@TMPDIR@' \
         --define '_sourcedir /tmp/@TMPDIR@/rpm' \
         --define '_skip_install_processing 1' \
         --buildroot='/tmp/@TMPDIR@/installroot' \
@@ -1437,7 +1430,6 @@ run_tc sb2_arg_pass "rpm" \
     "$(expect_args \
         -t "$DEFAULT_TARGET" rpmbuild --build-in-place --target= \
         --define 'noecho 1' \
-        --define 'qtc_builddir /tmp/@TMPDIR@' \
         --define '_rpmdir /tmp/@TMPDIR@/RPMS' \
         --define '_sourcedir /tmp/@TMPDIR@/rpm' \
         --define '_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm' \
@@ -1525,7 +1517,6 @@ Name:       test
 # This is to not require meego-rpm-config installed for self-test execution
 %global __os_install_post %{nil}
 
-%{?qtc_builddir:%define _builddir %qtc_builddir}
 Summary:    Test
 Version:    0.1
 Release:    1
@@ -1971,7 +1962,6 @@ Name:       test
 # This is to not require meego-rpm-config installed for self-test execution
 %global __os_install_post %{nil}
 
-%{?qtc_builddir:%define _builddir %qtc_builddir}
 Summary:    Test
 Version:    0.1
 Release:    1
