@@ -115,7 +115,7 @@ COMMANDS
         and except for the --rsync method it will include also the "rpm" step.
         Compatible global options: -s -t -p -d -i -f -x -X -c
 
-    run|ssh [<command> [<args>]]
+    run [<command> [<args>]]
         Run the given command (on device if --device given).  Can be used for
         running gdb and a gdb server.
         Compatible global options: -s -t -p -d
@@ -1062,7 +1062,11 @@ case "$1" in
         done
         [[ $BUILD_JOBS ]] || BUILD_JOBS=$(getconf _NPROCESSORS_ONLN)
         ;;
-    run | ssh ) shift
+    run | ssh )
+        if [[ $1 == ssh ]]; then
+            notice "The 'ssh' command is deprecated. Use 'run' instead."
+        fi
+        shift
         if [[ "$OPT_DEVICE" ]]; then
             cmd="ssh_as $deviceuser"
         else
