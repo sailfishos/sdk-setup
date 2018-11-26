@@ -1047,7 +1047,7 @@ if [[ "$OPT_SPEC" ]]; then
 fi
 
 case "$1" in
-    qmake | make | install | rpm | deploy | prep )
+    qmake | make | install | installdeps | rpm | deploy | prep )
         cmd=run_$1
         shift
         ;;
@@ -1064,7 +1064,7 @@ case "$1" in
             esac
         done
         ;;
-    build | installdeps )
+    build )
         cmd=run_$1; shift
         BUILD_DEBUG=(--define "debug_package %{nil}")
         BUILD_JOBS=
