@@ -1122,6 +1122,7 @@ set -o nounset
 SELF=$(readlink -f "$0")
 
 : ${MB2_SELF_TEST_VERBOSE:=}
+: ${MB2_SELF_TEST_TS:=}
 
 temp=$(mktemp -d) || exit
 trap "rm -rf '$temp'" EXIT
@@ -1140,6 +1141,11 @@ tc_failed_num=0
 set_up_ts() {
     local ts=$1
     TS_NAME=$2
+
+    if [[ $MB2_SELF_TEST_TS && $TS_NAME != "$MB2_SELF_TEST_TS" ]]; then
+        return
+    fi
+
     ${ts}_ts_set_up "${@:3}"
     if [[ $? -ne 0 ]]; then
         fatal "Test suite set-up failed: $ts"
@@ -1148,6 +1154,11 @@ set_up_ts() {
 
 tear_down_ts() {
     local ts=$1
+
+    if [[ $MB2_SELF_TEST_TS && $TS_NAME != "$MB2_SELF_TEST_TS" ]]; then
+        return
+    fi
+
     ${ts}_ts_tear_down
     if [[ $? -ne 0 ]]; then
         fatal "Test suite tear-down failed: $ts"
@@ -1164,6 +1175,11 @@ run_tc() {
     local tc=$1
     TC_NAME=$2
     local args=("${@:3}")
+
+    if [[ $MB2_SELF_TEST_TS && ${TS_NAME:-} != "$MB2_SELF_TEST_TS" ]]; then
+        KNOWN_ISSUES=()
+        return
+    fi
 
     let tc_num++
     echo "*** Executing test case: ${TS_NAME:+$TS_NAME - }$TC_NAME"
