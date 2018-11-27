@@ -1206,6 +1206,13 @@ $stderr
 END
     fi
 
+    if [[ $(type -t ${tc}_tc_tear_down) == function ]]; then
+        ${tc}_tc_tear_down
+        if [[ $? -ne 0 ]]; then
+            fatal "Test case tear-down failed: $tc"
+        fi
+    fi
+
     return $rc
 }
 
