@@ -77,11 +77,8 @@ COMMANDS
         Compatible global options: -n.
 
     apply [-R]
-        Apply all patches defined in the .spec file to the source tree. If
-        a git submodue is detected (or the global option -m is used), patches
-        are applied to the source tree under the submodule.
+        Apply all patches defined in the .spec file to the source tree.
         -R    reverse apply patches (patch -R)
-        Compatible global options: -m
 
     build [-p|--doprep] [-d|--enable-debug] [-j <n>] [<rpmbuild-extra-args>]
         Run rpmbuild. Execute all sections of the .spec file except for %prep
@@ -167,9 +164,6 @@ GLOBAL OPTIONS
         regular use - create a script file named after the .spec file but with
         '.changes.run' extension to instruct $ME to generate changelog with
         'git-change-log <args>' instead.
-
-    -m, --submodule <dir>
-        Use specified directory as submodule when applying patches
 
 EOF
 }
@@ -549,24 +543,9 @@ run_installdeps() {
     verify_target_dependencies
 }
 
-run_apply() {
+run_apply() (
     rpm_dir="$(dirname "$OPT_SPEC")"
-    submodule=""
-    if [ ! -z "$OPT_SUBMODULE" ]; then
-        submodule="$OPT_SUBMODULE"
-    else
-        # try to detect submodule
-        submodule="$(git submodule | awk '{print $2}')"
-    fi
-
-    if [ ! -z "$submodule" ]; then
-        if [ ! -d "$submodule" ]; then
-            echo "Submodule with directory $submodule not found. Define with -m"
-            exit 1
-        fi
-        pushd "$submodule" >/dev/null
-    fi
-
+    cd_to_spec_setup_dir
     reverse="cat"
     if [ "$APPLY_REVERSE" -eq 1 ]; then
         reverse="tac"
@@ -582,11 +561,7 @@ run_apply() {
             patch $op < "$rpm_dir/$patch_file"
         fi
     done
-
-    if [ ! -z "$submodule" ]; then
-        popd >/dev/null
-    fi
-}
+)
 
 run_build() {
     # intended to provide mb build behaviour
@@ -870,7 +845,6 @@ OPT_GIT_CHANGE_LOG_ARGS=
 OPT_SHARED_DIR=/etc/mersdk/share
 OPT_INC_BUILD_NUMBER=0
 OPT_NO_DEPS=
-OPT_SUBMODULE=""
 deviceuser=nemo
 
 STATEDIR=$PWD/.mb2
@@ -945,8 +919,9 @@ while [[ "$1" ]]; do
             OPT_GIT_CHANGE_LOG_ARGS="${1#*=}"
             shift
             ;;
-        "-m" | "--submodule" ) shift
-            OPT_SUBMODULE="$1"; shift
+        "-m" | "--submodule" )
+            notice "The '$1' option is deprecated and does nothing currently"
+            shift 2
             ;;
         install | rpm | deploy | build | installdeps | apply | prep )
             OPT_NEEDSPEC=1;
