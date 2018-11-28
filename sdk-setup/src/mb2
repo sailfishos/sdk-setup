@@ -426,8 +426,6 @@ ssh_as() {
 }
 
 cd_to_spec_setup_dir() {
-    _basedir="$PWD"
-
     # avoid spawning another process for | cut -s -f2 -d '/'
     local setup_dir=$(grep -Po '%setup.*-n[[:space:]]+[^[:space:]]+' "$OPT_SPEC")
     # if setup_dir has '/' return the part after it
@@ -591,7 +589,7 @@ run_build() {
             "${BUILD_DEBUG[@]}" \
             --define "_smp_mflags -j$(rpm_quote "$BUILD_JOBS")" \
             --define "_rpmdir $OPT_OUTPUTDIR" \
-            --define "_sourcedir $_basedir/rpm" \
+            --define "_sourcedir $(dirname $OPT_SPEC)" \
             --define "_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm" \
             --buildroot="$buildroot" \
             "${BUILD_NOPREP[@]}" \
@@ -626,7 +624,7 @@ run_prep() {
             "${BUILD_DEBUG[@]}" \
             --define "_smp_mflags -j$BUILD_JOBS" \
             --define "_rpmdir $OPT_OUTPUTDIR" \
-            --define "_sourcedir $_basedir/rpm" \
+            --define "_sourcedir $(dirname $OPT_SPEC)" \
             --define "_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm" \
             --buildroot="$buildroot" \
             -bp --short-circuit \
@@ -722,7 +720,7 @@ run_install() {
         cd_to_spec_setup_dir;
         sb2 -t $OPT_TARGET rpmbuild --build-in-place --target=$build_tgt \
             --define "noecho 1" \
-            --define "_sourcedir $_basedir/rpm" \
+            --define "_sourcedir $(dirname $OPT_SPEC)" \
             --define "_skip_install_processing 1" \
             --buildroot="$buildroot" \
             -bi --short-circuit --nocheck \
@@ -754,7 +752,7 @@ run_rpm() {
         sb2 -t $OPT_TARGET rpmbuild --build-in-place --target=$build_tgt \
             --define "noecho 1" \
             --define "_rpmdir $OPT_OUTPUTDIR" \
-            --define "_sourcedir $_basedir/rpm" \
+            --define "_sourcedir $(dirname $OPT_SPEC)" \
             --define "_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm" \
             --buildroot="$buildroot" \
             -bb --noprep --nobuildstage --noclean \
