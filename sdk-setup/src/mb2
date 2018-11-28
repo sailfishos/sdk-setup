@@ -554,11 +554,11 @@ run_apply() (
         op="$(grep "^%patch${p}" "$OPT_SPEC" | awk '{print $2}')"
         patch_file="$(grep "^Patch$p:" "$OPT_SPEC" | awk '{print $2}')"
         if [ "$APPLY_REVERSE" -eq 1 ]; then
-            echo "Reversing $patch_file"
-            patch -R $op < "$rpm_dir/$patch_file"
+            echo "Reversing $patch_file" >&2
+            patch -R $op < "$rpm_dir/$patch_file" >&2
         else
-            echo "Applying $patch_file"
-            patch $op < "$rpm_dir/$patch_file"
+            echo "Applying $patch_file" >&2
+            patch $op < "$rpm_dir/$patch_file" >&2
         fi
     done
 )
