@@ -4,13 +4,14 @@ import lxml.etree as et
 import argparse
 import os
 import subprocess
+import re
 
 def assert_valid_sb2_name(name):
     if not os.path.isdir(os.path.expanduser("~/.scratchbox2/%s" % name)):
         raise Exception("%s is not a valid scratchbox2 target name" % name)
 
 def sb2_command(sb2, *args):
-    data = subprocess.check_output(["sb2", "-t", sb2] + list(args))
+    data = subprocess.check_output(["sb2", "-t", sb2] + list(args), stderr=subprocess.STDOUT)
     if data:
         return data.strip()
     raise Exception("'%s' returned no data" % " ".join(args))
@@ -18,6 +19,31 @@ def sb2_command(sb2, *args):
 def rpmvalidation_list_suites(target):
     data = subprocess.check_output(["rpmvalidation", "-t", target, "--list-suites"])
     return data.strip()
+
+# GCC's system include paths are under the tooling. Map them to the respective
+# directories under the target.
+# See GccToolChain::gccHeaderPaths() in Qt Creator sources.
+def process_gcc_dump_includes(dump):
+    retv = []
+    inside_search_list = False
+    for line in dump.splitlines():
+        if line.startswith("#include"):
+            inside_search_list = True
+        if not inside_search_list:
+            continue
+        if line.startswith("End of search list."):
+            break
+
+        if line.startswith(" /srv/mer/toolings/"):
+            path = line.strip()
+            realpath = os.path.realpath(path)
+            replaced = re.sub(r"^/srv/mer/toolings/[^/]+/opt/cross/", "/usr/", realpath)
+            if replaced == realpath:
+                raise Exception("Unhandled path in GCC includes dump: '%s'" % path)
+            retv.append(" " + replaced)
+        else:
+            retv.append(line);
+    return "\n".join(retv)
 
 def get_xml(args):
     # http://lxml.de/FAQ.html#why-doesn-t-the-pretty-print-option-reformat-my-xml-output
@@ -61,6 +87,25 @@ def update(args, root):
     # Now build the target info
     et.SubElement(new, "output", name="GccDumpMachine"
                   ).text = sb2_command(args.name, "gcc", "-dumpmachine")
+
+    # Try to report the latest published standard this compiler version
+    # supports - the assumption here is that published standards use proper
+    # names.  Like c++11 vs c++0x or c++14 vs c++1y.
+    for std in ["gnu++17", "gnu++14", "gnu++11", "gnu++03"]:
+        try:
+            macros = sb2_command(args.name, "gcc", "-x", "c++", "-std=" + std,
+                    "-E", "-dM", "-D_REENTRANT", "-fPIC", "/dev/null")
+            break
+        except subprocess.CalledProcessError:
+            continue
+    if not macros:
+        raise Exception("All attempts to dump GCC macros failed")
+    et.SubElement(new, "output", name="GccDumpMacros").text = macros
+
+    et.SubElement(new, "output", name="GccDumpIncludes"
+                  ).text = process_gcc_dump_includes(
+                          sb2_command(args.name, "gcc", "-x", "c++", "-E", "-v", "/dev/null"))
+
     et.SubElement(new, "output", name="QmakeQuery"
                   ).text = sb2_command(args.name, "qmake", "-query")
     et.SubElement(new, "output", name="RpmValidationSuites"
