@@ -15,6 +15,10 @@ def sb2_command(sb2, *args):
         return data.strip()
     raise Exception("'%s' returned no data" % " ".join(args))
 
+def rpmvalidation_list_suites(target):
+    data = subprocess.check_output(["rpmvalidation", "-t", target, "--list-suites"])
+    return data.strip()
+
 def get_xml(args):
     # http://lxml.de/FAQ.html#why-doesn-t-the-pretty-print-option-reformat-my-xml-output
     parser = et.XMLParser(remove_blank_text=True)
@@ -23,7 +27,7 @@ def get_xml(args):
     except :
         print "Error loading %s, used new blank xml" % args.target_xml
         with open(args.target_xml, "w") as f:
-                f.write("""<targets version="2">
+                f.write("""<targets version="3">
 </targets>
 """)
         tree = et.parse(args.target_xml, parser)
@@ -32,8 +36,8 @@ def get_xml(args):
 
     if root.tag != "targets":
         raise Exception("xml must have <targets> as root element")
-    if int(root.get("version")) != 2:
-        raise Exception("Only version 2 of MerTarget XML is supported")
+    if int(root.get("version")) != 3:
+        raise Exception("Only version 3 of MerTarget XML is supported")
 
     return root
 
@@ -59,6 +63,8 @@ def update(args, root):
                   ).text = sb2_command(args.name, "gcc", "-dumpmachine")
     et.SubElement(new, "output", name="QmakeQuery"
                   ).text = sb2_command(args.name, "qmake", "-query")
+    et.SubElement(new, "output", name="RpmValidationSuites"
+                  ).text = rpmvalidation_list_suites(args.name)
 
 def delete(args, root):
     existing = root.find(".//target[@name='%s']" % args.name)
