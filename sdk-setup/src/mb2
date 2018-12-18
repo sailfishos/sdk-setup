@@ -517,6 +517,28 @@ rpm_quote() {
     quote "$@" |sed 's/\\/&&/g'
 }
 
+init_wrappers_dir() {
+    [[ -e $STATEDIR/wrappers ]] && return
+
+    # The working directory inside build engine is noexec
+    if inside_build_engine; then
+        mkdir -p ~/.mb2
+        local real=$(mktemp -d ~/.mb2/wrappers.XXXX) || return
+        ln -s --no-target-dir "$real" "$STATEDIR/wrappers" || return
+    else
+        mkdir -p "$STATEDIR/wrappers" || return
+    fi
+}
+
+remove_wrappers_dir() {
+    if inside_build_engine; then
+        rm -rf "$(readlink -f "$STATEDIR/wrappers")"
+        rm -f "$STATEDIR/wrappers"
+    else
+        rm -rf "$STATEDIR/wrappers"
+    fi
+}
+
 # 1. Allows to pass extra arguments to qmake
 # 2. Enables shadow build by adding path prefix to the project file, or
 # 2.1 passing project directory path if the project file was not passed
@@ -562,7 +584,7 @@ init_qmake_wrapper() (
         "$real" "$@"
     }
 
-    mkdir -p "${wrapper%/*}"
+    init_wrappers_dir
     cat <<END >"$wrapper"
 #!/bin/bash
 
@@ -581,7 +603,7 @@ init_simple_wrapper() {
     local wrapper=$1
     local extra_args=("${@:2}")
 
-    mkdir -p "${wrapper%/*}"
+    init_wrappers_dir
     {
         cat <<'END'
 #!/bin/bash
@@ -612,7 +634,7 @@ END
 init_noop_wrapper() {
     local wrapper=$1
 
-    mkdir -p "${wrapper%/*}"
+    init_wrappers_dir
     cat <<'END' >"$wrapper"
 #!/bin/bash
 self=${0#$PWD/}
@@ -1277,7 +1299,7 @@ if [[ "$OPT_SPEC" ]]; then
     ensure_spec_newer_than_yaml
 fi
 
-rm -rf "$STATEDIR/wrappers"
+remove_wrappers_dir
 
 $cmd "$@"
 
