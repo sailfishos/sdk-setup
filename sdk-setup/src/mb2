@@ -609,6 +609,7 @@ init_simple_wrapper() {
 #!/bin/bash
 self=${0#$PWD/}
 command=${0##*/}
+NBSP=$'\xC2\xA0'
 
 path=${0%/*}
 PATH=${PATH/$path:/}
@@ -619,7 +620,8 @@ if [[ ! $real || $real == "$0" ]]; then
     exit 1
 fi
 
-echo "$self: Executing real $command:" >&2
+# NBSP used to prevent Qt Creator treating this as an error when issued for 'make'
+echo "$self:${NBSP}Executing real $command:" >&2
 
 set -x
 
