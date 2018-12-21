@@ -7,7 +7,7 @@
 DEVICES_XML=/etc/mersdk/share/devices.xml
 
 DEF_SUBNET="10.220.220"
-MAC2=$(cat /sys/class/net/eth?/address | grep -iv 08:00:5A:11:F1:55)
+MAC2=$(cat /sys/class/net/eth?/address | grep -iv 08:00:5A:11:F1:55 | sed 's/://g')
 
 read_dom () {
     local IFS=\>
@@ -58,24 +58,17 @@ else
 fi
 
 echo "Setting up SDK Engine internal LAN to $subnet.254"
-cat <<EOF > /var/lib/connman/sdkengine.config
-[global]
-Name = SDK Engine
-Description = SDK Engine Configuration
 
-[service_sailfishsdk_ethernet]
-Type = ethernet
-# TODO: The desired effect here is to prevent connman setting gateway - how to do that properly?
-IPv4 = $subnet.254/24/$subnet.253
-IPv6 = off
-MAC = 08:00:5A:11:F1:55
+con_sailfishsdk="ethernet_08005a11f155_cable"
+con_nat="ethernet_${MAC2}_cable"
 
-[service_nat_ethernet]
-Type = ethernet
-IPv4 = dhcp
-IPv6 = off
-MAC = $MAC2
+connmanctl services
 
-EOF
+connmanctl config $con_sailfishsdk ipv4 manual $subnet.254 255.255.255.0 $subnet.253
+connmanctl config $con_sailfishsdk ipv6 off
+connmanctl connect $con_sailfishsdk
 
+connmanctl config $con_nat ipv4 dhcp
+connmanctl config $con_nat ipv6 off
+connmanctl connect $con_nat
 
