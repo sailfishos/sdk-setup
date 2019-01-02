@@ -78,6 +78,7 @@ Requires:   ssu >= 0.43.2
 Requires:   git
 Requires:   tar
 Requires:   p7zip-full
+Conflicts:  sdk-harbour-rpmvalidator < 1.49
 
 %description -n sdk-utils
 Contains some utility scripts to support Mer SDK development
@@ -173,6 +174,8 @@ cp src/sdk-manage %{buildroot}%{_bindir}/
 cp src/sdk-assistant %{buildroot}%{_bindir}/
 cp src/updateQtCreatorTargets %{buildroot}%{_bindir}/updateQtCreatorTargets
 cp src/sdk-motd %{buildroot}%{_bindir}/
+cp src/rpmvalidation %{buildroot}%{_bindir}/
+ln -sf rpmvalidation %{buildroot}%{_bindir}/rpmvalidation.sh
 
 # update version info to scripts
 sed -i "s/VERSION_FROM_SPEC/%{version}/" %{buildroot}%{_bindir}/mb2
@@ -280,6 +283,8 @@ fi
 %{_bindir}/sdk-assistant
 %{_bindir}/updateQtCreatorTargets
 %{_bindir}/sdk-motd
+%{_bindir}/rpmvalidation.sh
+%{_bindir}/rpmvalidation
 %config %{_sysconfdir}/ssh/ssh_config.sdk
 %config %{_sysconfdir}/bash_completion.d/mb2.bash
 %config %{_sysconfdir}/bash_completion.d/sdk-assistant.bash
