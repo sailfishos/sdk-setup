@@ -29,11 +29,7 @@
 
 synopsis() {
     cat <<EOF
-usage: $ME [-t <target>] [-s <specfile>] [-d <device>] [-o <outputdir>] [-p <projectdir>]
-           [-f <folder>] [-i] [-P] [-x[=<tag>] | -X] [-c[=<args>]]
-           build [-p] [-d] [-j <n>] [<args>] | qmake [<args>] | make [<args>] | ssh <args>
-           install [<args>] | installdeps <args> | rpm [<args>] | deploy <args>
-           prep | apply [-R] | run <args>
+usage: $ME [global-opts] <command> [command-opts]
        $ME --version
 EOF
 }
@@ -49,107 +45,151 @@ EOF
 }
 
 usage() {
-    synopsis
-    cat <<EOF
+    less --quit-if-one-screen <<EOF
+$(synopsis)
 
-  Executes a subset of build commands in the context of an rpmbuild.
-  Typically called from QtCreator to perform qmake/make phases of a project.
-  Note that any other build steps in the .spec file will also be run.
+Executes a subset of build commands in the context of an rpmbuild.
+Typically called from QtCreator to perform qmake/make phases of a project.
+Note that any other build steps in the .spec file will also be run.
 
-  <specfile> will be looked for in the current rpm/ dir. If there is
-  more than one it must be provided.
+<specfile> will be looked for in the current rpm/ dir. If there is more than
+one it must be provided.  $ME is aware of spectacle and will update the spec
+file if there is an obvious yaml file which is newer.
 
-  CWD is used as a base dir for installroot/ and RPMS/ to allow for
-  shadowbuilds
+CWD is used as a base dir for installroot/ and RPMS/ to allow for shadow
+builds. Shadow builds can be done by passing project file or directory path to
+the "build" or "qmake" command:
 
-  $ME is aware of spectacle and will update the spec file if there is
-  an obvious yaml file which is newer.
+    $ mkdir build && cd build
+    $ mb2 build ../path/to/sources
 
-  If a file exists with '.changes' extension, otherwise matching the
-  spec file name, the effect will be the same as having a %changelog
-  section in the spec file.  If a file with '.changes.run' extension is
-  found instead, this file will be executed and its output treated as
-  the actual changelog.
+    Or manually invoking each step:
 
-  $ME prep           : runs rpmbuild for %prep phase of the spec file.
-                     : can use -n
+    $ mkdir build && cd build
+    $ mb2 qmake ../path/to/sources
+    $ mb2 make
+    $ mb2 rpm
 
-  $ME build [-p|--doprep] [-d|--enable-debug] [-j <n>] [<args>]
-                     : runs rpmbuild for the given spec file in the
-                       given sb2 target. Produces an rpm package.
-                     : -p     run %prep phase as well when building
-                     : -d     enable debug build
-                     : -j <n> use only 'n' CPUs to build
-                     : can use -s -t -p -i -x -X -c -n
+Limitations related to shadow builds:
 
-  $ME qmake [<args>] : runs qmake in the 'build' phase
-                       Note that this also verifies target
-                       build dependencies are up to date
-                     : can use -s -t -p -n
+    1. Shadow build is only available for packages that use qmake.
+    2. The "--doprep" option to the "build" command cannot be used with shadow
+       builds.
+    3. If "prep" or "apply" is needed, it must be used directly on the source
+       tree prior to starting a shadow build (shadow builds for multiple
+       targets are still possible provided that the %prep section is
+       target-independent).
 
-  $ME make [<args>]  : run make in the 'build' phase
-                     : can use -s -t -p
+If a file exists with '.changes' extension, otherwise matching the
+spec file name, the effect will be the same as having a %changelog
+section in the spec file.  If a file with '.changes.run' extension is
+found instead, this file will be executed and its output treated as
+the actual changelog.
 
-  $ME deploy --zypper|--pkcon|--rsync|--sdk
-                     : runs the install or rpm-creation phase and then
-                       copies/installs the relevant files to the device
-                     : can use -s -t -p -d -i -f -x -X -c
+COMMANDS
+    installdeps
+        Install the missing build-time dependencies as is done implicitly by
+        the "prep", "build" and "qmake" commands but refresh the package cache
+        first.
+        Compatible global options: -s -t
 
-  $ME run|ssh [<args>] : runs a command (on device if --device given);
-                         intended for running gdb and a gdb server
-                     : can use -s -t -p -d
+    prep
+        Run rpmbuild. Execute just the %prep section of the .spec file.
+        Compatible global options: -n.
 
-  $ME install [<args>] : runs the 'install' phase to install to $buildroot
-                     : can use -s -t -p
+    apply [-R]
+        Apply all patches defined in the .spec file to the source tree.
+        -R    reverse apply patches (patch -R)
 
-  $ME installdeps [<args>] : refresh the zypper cache of the given target and
-                             if required installs build-dependencies
-                     : can use -s -t -p
+    build [-p|--doprep] [-d|--enable-debug] [-j <n>] [<project-dir-or-file>]
+          [[--] <rpmbuild-extra-args>]
+        Run rpmbuild. Execute all sections of the .spec file except for %prep
+        unless told otherwise. If path to a <project-dir-or-file> is passed,
+        shadow build will be done. Otherwise the current working directory is
+        treated as the project directory. (The file name part is ignored -
+        project file selection is done by qmake call inside the .spec file.)
+        -p    run %prep phase as well
+        -d    enable debug build
+        -j <n> use only 'n' CPUs to build
+        Compatible global options: -s -t -i -x -X -c -n
 
-  $ME rpm [<args>]   : runs the install & rpm-creation phases
-                     : can use -s -t -p -i -x -X -c
+    qmake [<project-dir-or-file>] [[--] <qmake-extra-args>]
+        Run rpmbuild. Execute just the %build section of the .spec file,
+        suppressing any "make" invocation figuring in that section. If path to
+        a <project-dir-or-file> is passed, shadow build will be done. Otherwise
+        the current working directory is treated as the project directory. (The
+        file name part is ignored - project file selection is done by qmake call
+        inside the .spec file.)
+        Compatible global options: -s -t -n
 
-  $ME apply [-R]     : applies all patches defined in spec from rpm directory
-                     : to the source tree, or if detected, submodule
-                     : source tree
-                     : -R    reverse apply patches (patch -R)
-                     : can use -m
+    make [<make-extra-args>]
+        Run rpmbuild. Execute just the %build section of the .spec file,
+        suppressing any "qmake" invocation figuring in that section.
+        Compatible global options: -s -t
 
-  -i | --increment     : increment release number in spec file
-  -t | --target        : specify the sb2 target to use
-  -d | --device        : specify the device
-  -o | --outputdir     : where to place produced RPM files. Defaults to ./RPMS directory.
-                         With this option existing files in the output directory are preserved
-  -p | --projectdir    : when running shadow build/deploy from another dir
-  -s | --specfile      : if the specfile is not in rpm/*.spec and cannot be found using -p
-  -f | --shared-folder : the folder where QtCreator shares devices.xml and ssh keys
-                         this option is useful if deploy option is used outside of virtual
-                         machine
-  -P | --pedantic      : do extra checks
-  -x[=<tag>] | --fix-version[=<tag>]
-                       : this option is implied when used inside a Git working
-                         tree (use -X to override). Within Application SDK it is
-                         only implied if the version recorded in the spec file
-                         is exactly "0".
-                         Use the latest tag from the current git branch as
-                         package version or the given <tag>.  If the current
-                         HEAD, index or working tree differs from the tree
-                         denoted by the tag, a suffix composed from the current
-                         branch name, time stamp and a commit SHA1 will be added
-                         to the package version.  If git-state is not clean
-                         a git-stash will be created and its SHA1 will be used
-                         instead of HEAD.
-  -X | --no-fix-version
-                       : override --fix-version option.
-  -n | --no-deps       : don't update target dependencies
-  -c[=<args>] | --git-change-log[=<args>]
-                       : include change log generated from Git history with
-                         'git-change-log' command, forwarding any <args>.
-                         This option is not intended for regular use - create a
-                         script file named after the spec file but with
-                         '.changes.run' extension to instruct $ME to generate
-                         changelog with 'git-change-log <args>' instead.
-  -m | --submodule     : use specified directory as submodule when applying patches
+    install
+        Run rpmbuild. Execute just the %install section of the .spec file.
+        Compatible global options: -s -t
+
+    rpm
+        Run rpmbuild. Execute just the %install section of the .spec file, then
+        build binary packages.
+        Compatible global options: -s -t -i -x -X -c
+
+    deploy --zypper|--pkcon|--rsync|--sdk
+        Deploy build results to a device. This implies also the "install" step
+        and except for the --rsync method it will include also the "rpm" step.
+        Compatible global options: -s -t -d -i -f -x -X -c
+
+    run [<command> [<args>]]
+        Run the given command (on device if --device given).  Can be used for
+        running gdb and a gdb server.
+        Compatible global options: -s -t -d
+
+GLOBAL OPTIONS
+    -i, --increment
+        Increment release number in .spec file
+
+    -t, --target <name>
+        Specify the sb2 target to use
+
+    -d, --device <name>
+        Specify the device
+
+    -o, --outputdir <dir>
+        Where to place produced RPM files. Defaults to ./RPMS directory.  With
+        this option existing files in the output directory are preserved
+
+    -s, --specfile <file>
+        Specify the .spec file
+
+    -f, --shared-folder <dir>
+        The folder where QtCreator shares devices.xml and ssh keys this option
+        is useful if deploy option is used outside of virtual machine
+
+    -x, --fix-version[=<tag>]
+        This option is implied when used inside a Git working tree (use -X to
+        override). Within Application SDK it is only implied if the version
+        recorded in the .spec file is exactly "0".
+        Use the latest tag from the current git branch as package version or
+        the given <tag>.  If the current HEAD, index or working tree differs
+        from the tree denoted by the tag, a suffix composed from the current
+        branch name, time stamp and a commit SHA1 will be added to the package
+        version.  If git-state is not clean a git-stash will be created and its
+        SHA1 will be used instead of HEAD.
+
+    -X, --no-fix-version
+        Override --fix-version option.
+
+    -n, --no-deps
+        Do not update target dependencies
+
+    -c, --git-change-log[=<args>]
+        Include change log generated from Git history with 'git-change-log'
+        command, forwarding any <args>.  This option is not intended for
+        regular use - create a script file named after the .spec file but with
+        '.changes.run' extension to instruct $ME to generate changelog with
+        'git-change-log <args>' instead.
 
 EOF
 }
@@ -181,8 +221,8 @@ fi
 git_() (
     # Cannot use the '-C' option - it requires newer Git.
     # Cannot use '--git-dir' + '--work-tree' options - they break at least git-stash.
-    if [[ $OPT_PROJDIR ]]; then
-        cd "$OPT_PROJDIR" || return
+    if [[ $OPT_SRC_DIR ]]; then
+        cd "$OPT_SRC_DIR" || return
     fi
     # At least git-stash requires an explicitly set user identity. Setting environment
     # variables compared to passing options with '-c' works also for subprocesses invoked via
@@ -194,16 +234,6 @@ git_() (
 
     git "$@"
 )
-
-check_spec_supports_qtc_silent() {
-    grep "define qtc_qmake" "$OPT_SPEC" >/dev/null 2>&1
-}
-
-check_spec_supports_qtc() {
-    if ! check_spec_supports_qtc_silent; then
-        notice "This specfile does not have the qtc_* macros defined"
-    fi
-}
 
 try_to_make_spec() { # Tries to create a missing spec
     [[ -f "$1" ]] && return # It's not missing
@@ -422,8 +452,6 @@ ssh_as() {
 }
 
 cd_to_spec_setup_dir() {
-    _basedir="$PWD"
-
     # avoid spawning another process for | cut -s -f2 -d '/'
     local setup_dir=$(grep -Po '%setup.*-n[[:space:]]+[^[:space:]]+' "$OPT_SPEC")
     # if setup_dir has '/' return the part after it
@@ -432,9 +460,10 @@ cd_to_spec_setup_dir() {
     setup_dir=${setup_dir/#%setup*/}
 
     if [[ -n "$setup_dir" ]]; then
-    # in case we got a spec %{tag} out of this, try to expand it
-    setup_dir=$(get_spec_tag "$setup_dir")
-    cd "$setup_dir"
+        # in case we got a spec %{tag} out of this, try to expand it
+        setup_dir=$(get_spec_tag "$setup_dir")
+        is_shadow_build && mkdir -p "$setup_dir"
+        cd "$setup_dir"
     fi
 }
 
@@ -488,30 +517,144 @@ rpm_quote() {
     quote "$@" |sed 's/\\/&&/g'
 }
 
+init_wrappers_dir() {
+    [[ -e $STATEDIR/wrappers ]] && return
+
+    # The working directory inside build engine is noexec
+    if inside_build_engine; then
+        mkdir -p ~/.mb2
+        local real=$(mktemp -d ~/.mb2/wrappers.XXXX) || return
+        ln -s --no-target-dir "$real" "$STATEDIR/wrappers" || return
+    else
+        mkdir -p "$STATEDIR/wrappers" || return
+    fi
+}
+
+remove_wrappers_dir() {
+    if inside_build_engine; then
+        rm -rf "$(readlink -f "$STATEDIR/wrappers")"
+        rm -f "$STATEDIR/wrappers"
+    else
+        rm -rf "$STATEDIR/wrappers"
+    fi
+}
+
+# 1. Allows to pass extra arguments to qmake
+# 2. Enables shadow build by adding path prefix to the project file, or
+# 2.1 passing project directory path if the project file was not passed
+init_qmake_wrapper() (
+    local wrapper=$1
+    local extra_args=("${@:2}")
+
+    main() {
+        self=${0#$PWD/}
+        command=${0##*/}
+
+        path=${0%/*}
+        PATH=${PATH/$path:/}
+
+        real=$(which "$command")
+        if [[ ! $real || $real == "$0" ]]; then
+            echo "$self: Cannot find real $command" >&2
+            exit 1
+        fi
+
+        if [[ $IS_SHADOW_BUILD ]]; then
+            subdir=${PWD#$BUILD_DIR}
+            src_dir=$SRC_DIR${subdir:+/$subdir}
+            args=()
+            pro_passed=
+            for arg in "$@"; do
+                if [[ $arg == *.pro && -f $src_dir/$arg ]]; then
+                    args+=("$src_dir/$arg")
+                    pro_passed=1
+                else
+                    args+=("$arg")
+                fi
+            done
+            if [[ ! $pro_passed ]]; then
+                args+=("$src_dir")
+            fi
+            set -- "${args[@]}"
+        fi
+
+        echo "$self: Executing real $command:" >&2
+
+        set -x
+        "$real" "$@"
+    }
+
+    init_wrappers_dir
+    cat <<END >"$wrapper"
+#!/bin/bash
+
+IS_SHADOW_BUILD=$(is_shadow_build && echo 1)
+BUILD_DIR=$(quote "$PWD")
+SRC_DIR=$(quote "${OPT_SRC_DIR:-$PWD}")
+
+$(declare -f main)
+
+main "\$@" $(quote "${extra_args[@]}")
+END
+    chmod +x "$wrapper"
+)
+
+init_simple_wrapper() {
+    local wrapper=$1
+    local extra_args=("${@:2}")
+
+    init_wrappers_dir
+    {
+        cat <<'END'
+#!/bin/bash
+self=${0#$PWD/}
+command=${0##*/}
+NBSP=$'\xC2\xA0'
+
+path=${0%/*}
+PATH=${PATH/$path:/}
+
+real=$(which "$command")
+if [[ ! $real || $real == "$0" ]]; then
+    echo "$self: Cannot find real $command" >&2
+    exit 1
+fi
+
+# NBSP used to prevent Qt Creator treating this as an error when issued for 'make'
+echo "$self:${NBSP}Executing real $command:" >&2
+
+set -x
+
+"$real" "$@" \
+END
+        quote "${extra_args[@]}"
+        echo
+    } >"$wrapper"
+    chmod +x "$wrapper"
+}
+
+init_noop_wrapper() {
+    local wrapper=$1
+
+    init_wrappers_dir
+    cat <<'END' >"$wrapper"
+#!/bin/bash
+self=${0#$PWD/}
+command=${0##*/}
+echo "$self: Ignoring $command" >&2
+END
+    chmod +x "$wrapper"
+}
+
 run_installdeps() {
     # Refresh repos before installing dependencies
     sb2 -t "$target" -m sdk-install -R zypper --non-interactive ref
     verify_target_dependencies
 }
 
-run_apply() {
+run_apply() (
     rpm_dir="$(dirname "$OPT_SPEC")"
-    submodule=""
-    if [ ! -z "$OPT_SUBMODULE" ]; then
-        submodule="$OPT_SUBMODULE"
-    else
-        # try to detect submodule
-        submodule="$(git submodule | awk '{print $2}')"
-    fi
-
-    if [ ! -z "$submodule" ]; then
-        if [ ! -d "$submodule" ]; then
-            echo "Submodule with directory $submodule not found. Define with -m"
-            exit 1
-        fi
-        pushd "$submodule" >/dev/null
-    fi
-
+    cd_to_spec_setup_dir
     reverse="cat"
     if [ "$APPLY_REVERSE" -eq 1 ]; then
         reverse="tac"
@@ -520,18 +663,14 @@ run_apply() {
         op="$(grep "^%patch${p}" "$OPT_SPEC" | awk '{print $2}')"
         patch_file="$(grep "^Patch$p:" "$OPT_SPEC" | awk '{print $2}')"
         if [ "$APPLY_REVERSE" -eq 1 ]; then
-            echo "Reversing $patch_file"
-            patch -R $op < "$rpm_dir/$patch_file"
+            echo "Reversing $patch_file" >&2
+            patch -R $op < "$rpm_dir/$patch_file" >&2
         else
-            echo "Applying $patch_file"
-            patch $op < "$rpm_dir/$patch_file"
+            echo "Applying $patch_file" >&2
+            patch $op < "$rpm_dir/$patch_file" >&2
         fi
     done
-
-    if [ ! -z "$submodule" ]; then
-        popd >/dev/null
-    fi
-}
+)
 
 run_build() {
     # intended to provide mb build behaviour
@@ -554,14 +693,20 @@ run_build() {
 
     local build_tgt=$(sb2 -t $OPT_TARGET gcc -dumpmachine)
     build_tgt=${build_tgt%-gnueabi}
+
+    if is_shadow_build; then
+        init_qmake_wrapper $STATEDIR/wrappers/qmake
+    fi
+
     (
         cd_to_spec_setup_dir;
         [[ $OPT_CLEAN_OUTPUTDIR ]] && rm -f "$OPT_OUTPUTDIR/"*.rpm;
-        sb2 -t $OPT_TARGET rpmbuild --build-in-place --target=$build_tgt \
+        sb2 -t $OPT_TARGET env PATH="$STATEDIR/wrappers:$PATH" rpmbuild \
+            --build-in-place --target=$build_tgt \
             "${BUILD_DEBUG[@]}" \
             --define "_smp_mflags -j$(rpm_quote "$BUILD_JOBS")" \
             --define "_rpmdir $OPT_OUTPUTDIR" \
-            --define "_sourcedir $_basedir/rpm" \
+            --define "_sourcedir $(dirname $OPT_SPEC)" \
             --define "_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm" \
             --buildroot="$buildroot" \
             "${BUILD_NOPREP[@]}" \
@@ -596,7 +741,7 @@ run_prep() {
             "${BUILD_DEBUG[@]}" \
             --define "_smp_mflags -j$BUILD_JOBS" \
             --define "_rpmdir $OPT_OUTPUTDIR" \
-            --define "_sourcedir $_basedir/rpm" \
+            --define "_sourcedir $(dirname $OPT_SPEC)" \
             --define "_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm" \
             --buildroot="$buildroot" \
             -bp --short-circuit \
@@ -608,7 +753,7 @@ run_prep() {
 }
 
 run_qmake() {
-    if [[ "$OPT_SPEC" ]] && check_spec_supports_qtc_silent; then
+    if [[ "$OPT_SPEC" ]]; then
         local build_tgt=$(sb2 -t $OPT_TARGET gcc -dumpmachine)
         build_tgt=${build_tgt%-gnueabi}
 
@@ -622,14 +767,16 @@ run_qmake() {
 
         # This is a good time to verify the target dependencies as per mb
         verify_target_dependencies
+
+        init_qmake_wrapper $STATEDIR/wrappers/qmake "$@"
+        init_noop_wrapper $STATEDIR/wrappers/make
+
         (
             cd_to_spec_setup_dir;
-            sb2 -t $OPT_TARGET rpmbuild --build-in-place --target=$build_tgt \
+            sb2 -t $OPT_TARGET env PATH="$STATEDIR/wrappers:$PATH" rpmbuild \
+                --build-in-place --target=$build_tgt \
                 --define "noecho 1" \
-                --define "qtc_builddir $_basedir" \
-                --define "qtc_make true ignoring make" \
-                --define "qtc_qmake5 %qmake5 $(rpm_quote "$@")" \
-                --define "qtc_qmake %qmake $(rpm_quote "$@")" \
+                --define "_sourcedir $(dirname $OPT_SPEC)" \
                 -bc --short-circuit \
                 "$tmp_spec"
         )
@@ -637,12 +784,12 @@ run_qmake() {
         rm -f "$tmp_spec"
         return $rc
     else
-        sb2 -t $OPT_TARGET qmake "$@"
+        sb2 -t $OPT_TARGET qmake "$@" ${OPT_PRO_FILE_OR_DIR:+"$OPT_PRO_FILE_OR_DIR"}
     fi
 }
 
 run_make() {
-    if [[ "$OPT_SPEC" ]] && check_spec_supports_qtc_silent; then
+    if [[ "$OPT_SPEC" ]]; then
 
         local tmp_spec="$OPT_SPEC.$$"
         cp -a "$OPT_SPEC" "$tmp_spec"
@@ -654,14 +801,16 @@ run_make() {
 
         local build_tgt=$(sb2 -t $OPT_TARGET gcc -dumpmachine)
         build_tgt=${build_tgt%-gnueabi}
+
+        init_noop_wrapper $STATEDIR/wrappers/qmake
+        init_simple_wrapper $STATEDIR/wrappers/make "$@"
+
         (
             cd_to_spec_setup_dir;
-            sb2 -t $OPT_TARGET rpmbuild --build-in-place --target=$build_tgt \
+            sb2 -t $OPT_TARGET env PATH="$STATEDIR/wrappers:$PATH" rpmbuild \
+                --build-in-place --target=$build_tgt \
                 --define "noecho 1" \
-                --define "qtc_builddir $_basedir" \
-                --define "qtc_qmake5 true ignoring qmake" \
-                --define "qtc_qmake true ignoring qmake" \
-                --define "qtc_make make %{?_smp_mflags} $(rpm_quote "$@")" \
+                --define "_sourcedir $(dirname $OPT_SPEC)" \
                 -bc --short-circuit \
                 "$tmp_spec"
         )
@@ -690,8 +839,7 @@ run_install() {
         cd_to_spec_setup_dir;
         sb2 -t $OPT_TARGET rpmbuild --build-in-place --target=$build_tgt \
             --define "noecho 1" \
-            --define "qtc_builddir $_basedir" \
-            --define "_sourcedir $_basedir/rpm" \
+            --define "_sourcedir $(dirname $OPT_SPEC)" \
             --define "_skip_install_processing 1" \
             --buildroot="$buildroot" \
             -bi --short-circuit --nocheck \
@@ -722,9 +870,8 @@ run_rpm() {
         [[ $OPT_CLEAN_OUTPUTDIR ]] && rm -f "$OPT_OUTPUTDIR/"*.rpm;
         sb2 -t $OPT_TARGET rpmbuild --build-in-place --target=$build_tgt \
             --define "noecho 1" \
-            --define "qtc_builddir $_basedir" \
             --define "_rpmdir $OPT_OUTPUTDIR" \
-            --define "_sourcedir $_basedir/rpm" \
+            --define "_sourcedir $(dirname $OPT_SPEC)" \
             --define "_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm" \
             --buildroot="$buildroot" \
             -bb --noprep --nobuildstage --noclean \
@@ -805,9 +952,9 @@ OPT_DEVICE=
 OPT_OUTPUTDIR=$(readlink -f ./RPMS)
 OPT_CLEAN_OUTPUTDIR=1
 OPT_PKGDIR="./rpm"
-OPT_PROJDIR=
+OPT_PRO_FILE_OR_DIR=
+OPT_SRC_DIR=
 OPT_NEEDSPEC=
-OPT_PEDANTIC=0
 OPT_FIX_VERSION=
 OPT_FIX_VERSION_HINT=
 OPT_NO_FIX_VERSION=
@@ -816,8 +963,9 @@ OPT_GIT_CHANGE_LOG_ARGS=
 OPT_SHARED_DIR=/etc/mersdk/share
 OPT_INC_BUILD_NUMBER=0
 OPT_NO_DEPS=
-OPT_SUBMODULE=""
 deviceuser=nemo
+
+STATEDIR=$PWD/.mb2
 
 # Virtualbox environment will install in this hardcoded location
 if inside_build_engine; then
@@ -829,6 +977,76 @@ fi
 ################################################################################
 if [[ $1 != --self-test ]]; then  ###  M A I N  EXECUTION BEGINS HERE  #########
 ################################################################################
+
+# The project-dir-or-file command line option serves just one purpose: to locate the source tree
+# when doing a shadow build.  Including the file name is optional and takes no effect. If multiple
+# .pro files exist in the directory, the selection is done inside the .spec file, mentioning one on
+# qmake command line.
+#
+# An exception applies if there is no .spec file. In this case the qmake and make commands behave as
+# plain qmake/make invocations, just wrapped with sb2, and the project-dir-or-file option is
+# forwarded to qmake without modifications.
+#
+# If this is called with an empty argument, the default settings is restored.
+handle_pro_file_or_dir_option() {
+    local pro_file_or_dir=$1
+
+    mkdir -p "$STATEDIR"
+    rm -f "$STATEDIR/src"
+
+    if [[ ! $pro_file_or_dir ]]; then
+        return
+    fi
+
+    local pro_dir=
+    if [[ -d $pro_file_or_dir ]]; then
+        pro_dir=$(readlink -f "$pro_file_or_dir")
+    else
+        pro_dir=$(dirname "$(readlink -f "$pro_file_or_dir")")
+    fi
+
+    local src_dir=
+    local dir=$pro_dir
+    while true; do
+        if [[ -d $dir/rpm && $(find "$dir/rpm" -maxdepth 1 -name '*.spec' -o -name '*.yaml') ]]; then
+            src_dir=$dir
+            break
+        fi
+        # Skip any "rpm" ancestor in path to avoid misintepreting it as THE rpm directory
+        while [[ $(basename "$dir") == rpm ]]; do
+            dir=$(dirname "$dir")
+        done
+        dir=$(dirname "$dir")
+        # For in-place builds do not search above the CWD, for shadow builds do not search above
+        # common prefix
+        if [[ $(readlink -f "$PWD") == "$dir"/* ]]; then
+            break
+        fi
+    done
+
+    # Silently fall back to the directory where the project file resides - some commands can be used
+    # without spec file
+    : ${src_dir:=$pro_dir}
+
+    # Remember that for the plain qmake/make usage
+    OPT_PRO_FILE_OR_DIR=$pro_file_or_dir
+
+    # The project file/directory might be specified explicitly for non-shadow builds as well
+    if [[ $src_dir != "$(readlink -f "$PWD")" ]]; then
+        ln -sfn "$src_dir" "$STATEDIR/src"
+    fi
+}
+
+maybe_restore_shadow_build() {
+    if [[ -L $STATEDIR/src ]]; then
+        OPT_SRC_DIR=$(readlink -f "$STATEDIR/src")
+        OPT_PKGDIR=$OPT_SRC_DIR/rpm
+    fi
+}
+
+is_shadow_build() [[ -e $STATEDIR/src ]]
+
+pro_file_or_dir=
 
 while [[ "$1" ]]; do
     # only set variables in this loop
@@ -847,10 +1065,11 @@ while [[ "$1" ]]; do
             [[ -d "$OPT_OUTPUTDIR" ]] || fatal "'$OPT_OUTPUTDIR' is not a directory"
             OPT_CLEAN_OUTPUTDIR=
             ;;
-        "-p" | "--projectdir") shift
-            OPT_PROJDIR="$1"; shift
-            OPT_PKGDIR="$OPT_PROJDIR"/rpm
-            [[ -d "$OPT_PROJDIR" ]] || fatal "'$OPT_PROJDIR' is not a directory"
+        "-p" | "--projectdir")
+            notice "The '$1' option is deprecated. Try '$ME --help' for more information."
+            [[ -d "$2" ]] || fatal "'$2' is not a directory"
+            pro_file_or_dir="$2"
+            shift 2
             ;;
         "-s" | "--specfile" ) shift
             OPT_SPEC="$1"; shift
@@ -858,8 +1077,9 @@ while [[ "$1" ]]; do
         "-i" | "--increment" ) shift
             OPT_INC_BUILD_NUMBER=1
             ;;
-        "-P" | "--pedantic" ) shift
-            OPT_PEDANTIC=1
+        "-P" | "--pedantic" )
+            notice "The '$1' option is deprecated and does nothing currently"
+            shift
             ;;
         "-x" | "--fix-version" ) shift
             OPT_FIX_VERSION=1
@@ -888,8 +1108,9 @@ while [[ "$1" ]]; do
             OPT_GIT_CHANGE_LOG_ARGS="${1#*=}"
             shift
             ;;
-        "-m" | "--submodule" ) shift
-            OPT_SUBMODULE="$1"; shift
+        "-m" | "--submodule" )
+            notice "The '$1' option is deprecated and does nothing currently"
+            shift 2
             ;;
         install | rpm | deploy | build | installdeps | apply | prep )
             OPT_NEEDSPEC=1;
@@ -935,6 +1156,97 @@ fi
 if [[ $OPT_FIX_VERSION_HINT && ! $(git_ tag --list "$OPT_FIX_VERSION_HINT") ]]; then
     fatal "'$OPT_FIX_VERSION_HINT' no such Git tag"
 fi
+
+case "$1" in
+    make | install | installdeps | rpm | deploy | prep )
+        cmd=run_$1
+        shift
+        ;;
+    apply )
+        cmd=run_$1; shift
+        APPLY_REVERSE=0
+        while [[ "$1" ]]; do
+            case "$1" in
+                -R) shift
+                    APPLY_REVERSE=1 ;;
+                *)
+                    short_usage quit
+                    ;;
+            esac
+        done
+        ;;
+    qmake )
+        cmd=run_$1; shift
+        while [[ "$1" ]]; do
+            case "$1" in
+                --) shift
+                    break
+                    ;;
+                *)
+                    if [[ -e $1 ]]; then
+                        pro_file_or_dir="$1"
+                        shift
+                    fi
+                    break
+                    ;;
+            esac
+        done
+        handle_pro_file_or_dir_option "$pro_file_or_dir"
+        ;;
+    build )
+        cmd=run_$1; shift
+        BUILD_DEBUG=(--define "debug_package %{nil}")
+        BUILD_JOBS=
+        BUILD_NOPREP=(--noprep)
+        while [[ "$1" ]]; do
+            case "$1" in
+                -d|--enable-debug) shift
+                    BUILD_DEBUG=() ;;
+                -j*)
+                    # support giving -j with and without space between
+                    # it and the 'n'
+                    if [[ ${#1} -gt 2 ]]; then
+                        BUILD_JOBS=${1:2}; shift
+                    else
+                        [[ -z "$2" ]] && short_usage quit
+                        BUILD_JOBS="$2"; shift 2;
+                    fi
+                    ;;
+                -p|--doprep) shift
+                    BUILD_NOPREP=()
+                    ;;
+                --) shift
+                    break
+                    ;;
+                *)
+                    if [[ -e $1 ]]; then
+                        pro_file_or_dir="$1"
+                        shift
+                    fi
+                    break
+                    ;;
+            esac
+        done
+        handle_pro_file_or_dir_option "$pro_file_or_dir"
+        [[ $BUILD_JOBS ]] || BUILD_JOBS=$(getconf _NPROCESSORS_ONLN)
+        ;;
+    run | ssh )
+        if [[ $1 == ssh ]]; then
+            notice "The 'ssh' command is deprecated. Use 'run' instead."
+        fi
+        shift
+        if [[ "$OPT_DEVICE" ]]; then
+            cmd="ssh_as $deviceuser"
+        else
+            cmd=""
+        fi
+        ;;
+    *)
+        short_usage quit
+        ;;
+esac
+
+maybe_restore_shadow_build
 
 # spec rules are complex:
 #  a .spec is required for some but not all operations
@@ -989,67 +1301,7 @@ if [[ "$OPT_SPEC" ]]; then
     ensure_spec_newer_than_yaml
 fi
 
-case "$1" in
-    qmake | make | install | rpm | deploy | prep )
-        cmd=run_$1
-        if [[ "$OPT_PEDANTIC" -eq 1 && "$OPT_SPEC" ]]; then
-            check_spec_supports_qtc
-        fi
-        shift
-        ;;
-    apply )
-        cmd=run_$1; shift
-        APPLY_REVERSE=0
-        while [[ "$1" ]]; do
-            case "$1" in
-                -R) shift
-                    APPLY_REVERSE=1 ;;
-                *)
-                    short_usage quit
-                    ;;
-            esac
-        done
-        ;;
-    build | installdeps )
-        cmd=run_$1; shift
-        BUILD_DEBUG=(--define "debug_package %{nil}")
-        BUILD_JOBS=
-        BUILD_NOPREP=(--noprep)
-        while [[ "$1" ]]; do
-            case "$1" in
-                -d|--enable-debug) shift
-                    BUILD_DEBUG=() ;;
-                -j*)
-                    # support giving -j with and without space between
-                    # it and the 'n'
-                    if [[ ${#1} -gt 2 ]]; then
-                        BUILD_JOBS=${1:2}; shift
-                    else
-                        [[ -z "$2" ]] && short_usage quit
-                        BUILD_JOBS="$2"; shift 2;
-                    fi
-                    ;;
-                -p|--doprep) shift
-                    BUILD_NOPREP=()
-                    ;;
-                *)
-                    break
-                    ;;
-            esac
-        done
-        [[ $BUILD_JOBS ]] || BUILD_JOBS=$(getconf _NPROCESSORS_ONLN)
-        ;;
-    run | ssh ) shift
-        if [[ "$OPT_DEVICE" ]]; then
-            cmd="ssh_as $deviceuser"
-        else
-            cmd=""
-        fi
-        ;;
-    *)
-        short_usage quit
-        ;;
-esac
+remove_wrappers_dir
 
 $cmd "$@"
 
@@ -1062,6 +1314,7 @@ set -o nounset
 SELF=$(readlink -f "$0")
 
 : ${MB2_SELF_TEST_VERBOSE:=}
+: ${MB2_SELF_TEST_TS:=}
 
 temp=$(mktemp -d) || exit
 trap "rm -rf '$temp'" EXIT
@@ -1070,6 +1323,10 @@ cd "$temp" || exit
 mkdir stubs || exit
 STUBS_DIR=$(readlink -f stubs)
 export PATH="$STUBS_DIR:$PATH"
+
+if ! which make >/dev/null; then
+    fatal "Please install 'make' and try again"
+fi
 
 ################################################################################
 # Test utils
@@ -1080,6 +1337,11 @@ tc_failed_num=0
 set_up_ts() {
     local ts=$1
     TS_NAME=$2
+
+    if [[ $MB2_SELF_TEST_TS && $TS_NAME != "$MB2_SELF_TEST_TS" ]]; then
+        return
+    fi
+
     ${ts}_ts_set_up "${@:3}"
     if [[ $? -ne 0 ]]; then
         fatal "Test suite set-up failed: $ts"
@@ -1088,6 +1350,11 @@ set_up_ts() {
 
 tear_down_ts() {
     local ts=$1
+
+    if [[ $MB2_SELF_TEST_TS && $TS_NAME != "$MB2_SELF_TEST_TS" ]]; then
+        return
+    fi
+
     ${ts}_ts_tear_down
     if [[ $? -ne 0 ]]; then
         fatal "Test suite tear-down failed: $ts"
@@ -1104,6 +1371,11 @@ run_tc() {
     local tc=$1
     TC_NAME=$2
     local args=("${@:3}")
+
+    if [[ $MB2_SELF_TEST_TS && ${TS_NAME:-} != "$MB2_SELF_TEST_TS" ]]; then
+        KNOWN_ISSUES=()
+        return
+    fi
 
     let tc_num++
     echo "*** Executing test case: ${TS_NAME:+$TS_NAME - }$TC_NAME"
@@ -1128,6 +1400,13 @@ run_tc() {
 $stderr
 ]]
 END
+    fi
+
+    if [[ $(type -t ${tc}_tc_tear_down) == function ]]; then
+        ${tc}_tc_tear_down
+        if [[ $? -ne 0 ]]; then
+            fatal "Test case tear-down failed: $tc"
+        fi
     fi
 
     return $rc
@@ -1175,6 +1454,69 @@ arg_pass_stub_clear() {
 
 expect_args() {
     [[ $# -ne 0 ]] && printf "%q\n" "$@" || true
+}
+
+sb2_stub() {
+    echo "stub invoked: $0 $(printf "%q " "$@")" >&2
+
+    local args=("$@")
+    bad_args() {
+        echo "stub $0: unexpected arguments: $(printf "%q " "${args[@]}")" >&2
+    }
+
+    if ! [[ $1 == -t && $3 != -* ]]; then
+        bad_args
+        return 1
+    fi
+
+    shift 2
+
+    env=(env)
+    if [[ $1 == env ]]; then
+        shift
+        while [[ $1 == -* || $1 =~ ^[[:alnum:]_]+= ]]; do
+            env+=("$1")
+            shift
+        done
+    fi
+
+    case $1 in
+        gcc)
+            case $2 in
+                -dumpmachine)
+                    echo "i486-meego-linux"
+                    ;;
+                *)
+                    bad_args
+                    return 1
+                    ;;
+            esac
+            ;;
+        rpmbuild)
+            # rpmbuild writes some progress messages to stdout
+            exec "${env[@]}" "$@" >&2
+            ;;
+        rpmspec)
+            exec "${env[@]}" "$@"
+            ;;
+        *)
+            bad_args
+            return 1
+            ;;
+    esac
+}
+
+sb2_stub_create() {
+    cat >"$STUBS_DIR/sb2" <<END || return
+#!/bin/bash
+$(declare -f sb2_stub)
+sb2_stub "\$@"
+END
+    chmod +x "$STUBS_DIR/sb2" || return
+}
+
+sb2_stub_remove() {
+    rm -f "$STUBS_DIR/sb2" || return
 }
 
 DEFAULT_TARGET=$(. ~/.scratchbox2/config; echo "$DEFAULT_TARGET")
@@ -1250,9 +1592,7 @@ sb2_arg_pass_ts_set_up() {
 
     # Create an empty spec file
     mkdir rpm || return
-    cat >rpm/test.spec <<END || return
-# Just say 'define qtc_qmake' to make check_spec_supports_qtc_silent happy
-END
+    : >rpm/test.spec || return
 }
 
 sb2_arg_pass_ts_tear_down() {
@@ -1312,7 +1652,8 @@ run_tc sb2_arg_pass "prep" \
 
 run_tc sb2_arg_pass "build" \
     "$(expect_args \
-        -t "$DEFAULT_TARGET" rpmbuild --build-in-place --target= \
+        -t "$DEFAULT_TARGET" env PATH="/tmp/@TMPDIR@/.mb2/wrappers:$PATH" rpmbuild \
+        --build-in-place --target= \
         --define 'debug_package %{nil}' \
         --define "_smp_mflags -j$(rpm_quote "bad  1")" \
         --define '_rpmdir /tmp/@TMPDIR@/RPMS' \
@@ -1326,7 +1667,8 @@ run_tc sb2_arg_pass "build" \
 
 run_tc sb2_arg_pass "build with debug" \
     "$(expect_args \
-        -t "$DEFAULT_TARGET" rpmbuild --build-in-place --target= \
+        -t "$DEFAULT_TARGET" env PATH="/tmp/@TMPDIR@/.mb2/wrappers:$PATH" rpmbuild \
+        --build-in-place --target= \
         --define "_smp_mflags -j$(rpm_quote "bad  1")" \
         --define '_rpmdir /tmp/@TMPDIR@/RPMS' \
         --define '_sourcedir /tmp/@TMPDIR@/rpm' \
@@ -1339,24 +1681,20 @@ run_tc sb2_arg_pass "build with debug" \
 
 run_tc sb2_arg_pass "qmake" \
     "$(expect_args \
-        -t "$DEFAULT_TARGET" rpmbuild --build-in-place --target= \
+        -t "$DEFAULT_TARGET" env PATH="/tmp/@TMPDIR@/.mb2/wrappers:$PATH" rpmbuild \
+        --build-in-place --target= \
         --define 'noecho 1' \
-        --define 'qtc_builddir /tmp/@TMPDIR@' \
-        --define 'qtc_make true ignoring make' \
-        --define "qtc_qmake5 %qmake5 $(rpm_quote "a b" "c  d" e f)" \
-        --define "qtc_qmake %qmake $(rpm_quote "a b" "c  d" e f)" \
+        --define '_sourcedir /tmp/@TMPDIR@/rpm' \
         -bc --short-circuit \
         /tmp/@TMPDIR@/rpm/@TEST_SPEC@)" \
     qmake "a b" "c  d" e f
 
 run_tc sb2_arg_pass "make" \
     "$(expect_args \
-        -t "$DEFAULT_TARGET" rpmbuild --build-in-place --target= \
+        -t "$DEFAULT_TARGET" env PATH="/tmp/@TMPDIR@/.mb2/wrappers:$PATH" rpmbuild \
+        --build-in-place --target= \
         --define 'noecho 1' \
-        --define 'qtc_builddir /tmp/@TMPDIR@' \
-        --define 'qtc_qmake5 true ignoring qmake' \
-        --define 'qtc_qmake true ignoring qmake' \
-        --define "qtc_make make %{?_smp_mflags} $(rpm_quote "a b" "c  d" e f)" \
+        --define '_sourcedir /tmp/@TMPDIR@/rpm' \
         -bc --short-circuit \
         /tmp/@TMPDIR@/rpm/@TEST_SPEC@)" \
     make "a b" "c  d" e f
@@ -1366,7 +1704,6 @@ run_tc sb2_arg_pass "install" \
     "$(expect_args \
         -t "$DEFAULT_TARGET" rpmbuild --build-in-place --target= \
         --define 'noecho 1' \
-        --define 'qtc_builddir /tmp/@TMPDIR@' \
         --define '_sourcedir /tmp/@TMPDIR@/rpm' \
         --define '_skip_install_processing 1' \
         --buildroot='/tmp/@TMPDIR@/installroot' \
@@ -1379,7 +1716,6 @@ run_tc sb2_arg_pass "rpm" \
     "$(expect_args \
         -t "$DEFAULT_TARGET" rpmbuild --build-in-place --target= \
         --define 'noecho 1' \
-        --define 'qtc_builddir /tmp/@TMPDIR@' \
         --define '_rpmdir /tmp/@TMPDIR@/RPMS' \
         --define '_sourcedir /tmp/@TMPDIR@/rpm' \
         --define '_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm' \
@@ -1393,58 +1729,11 @@ tear_down_ts sb2_arg_pass
 ################################################################################
 # Test arguments passing to commands invoked by rpmbuild
 
-rpmbuild_arg_pass_sb2_stub() {
-    echo "stub invoked: $0 $(printf "%q " "$@")" >&2
-
-    local args=("$@")
-    bad_args() {
-        echo "stub $0: unexpected arguments: $(printf "%q " "${args[@]}")" >&2
-    }
-
-    if ! [[ $1 == -t && $3 != -* ]]; then
-        bad_args
-        return 1
-    fi
-
-    shift 2
-
-    case $1 in
-        gcc)
-            case $2 in
-                -dumpmachine)
-                    echo "i486-meego-linux"
-                    ;;
-                *)
-                    bad_args
-                    return 1
-                    ;;
-            esac
-            ;;
-        rpmbuild)
-            # rpmbuild writes some progress messages to stdout
-            exec "$@" >&2
-            ;;
-        rpmspec)
-            exec "$@"
-            ;;
-        *)
-            bad_args
-            return 1
-            ;;
-    esac
-}
-
 rpmbuild_arg_pass_ts_set_up() {
     RPMBUILD_STUBS=(qmake make)
     arg_pass_stub_create "${RPMBUILD_STUBS[@]}"
 
-    # Create an sb2 stub
-    cat >"$STUBS_DIR/sb2" <<END || return
-#!/bin/bash
-$(declare -f rpmbuild_arg_pass_sb2_stub)
-rpmbuild_arg_pass_sb2_stub "\$@"
-END
-    chmod +x "$STUBS_DIR/sb2" || return
+    sb2_stub_create || return
 
     # Create a minimal spec file
     mkdir rpm || return
@@ -1458,10 +1747,6 @@ Name:       test
 # This is to not require meego-rpm-config installed for self-test execution
 %global __os_install_post %{nil}
 
-%{!?qtc_qmake:%define qtc_qmake %qmake}
-%{!?qtc_qmake5:%define qtc_qmake5 %qmake5}
-%{!?qtc_make:%define qtc_make make}
-%{?qtc_builddir:%define _builddir %qtc_builddir}
 Summary:    Test
 Version:    0.1
 Release:    1
@@ -1477,8 +1762,8 @@ Test
 %setup -q -n %{name}-%{version}
 
 %build
-%qtc_qmake5 
-%qtc_make %{?_smp_mflags}
+%qmake5
+make %{?_smp_mflags}
 
 %install
 mkdir -p %{buildroot}
@@ -1490,7 +1775,7 @@ END
 
 rpmbuild_arg_pass_ts_tear_down() {
     arg_pass_stub_remove "${RPMBUILD_STUBS[@]}" || return
-    rm -f "$STUBS_DIR/sb2" || return
+    sb2_stub_remove || return
     rm -f rpm/test.spec || return
     rmdir rpm || return
 }
@@ -1543,11 +1828,10 @@ run_tc rpmbuild_arg_pass "qmake" \
     "$(expect_args )" \
     qmake "a b" "c  d" e f
 
-KNOWN_ISSUE "Passes extra -j to make"
 if [[ $DEFAULT_JOBS -ne 1 ]]; then
     run_tc rpmbuild_arg_pass "make" \
         "$(expect_args )" \
-        "$(expect_args -j"$DEFAULT_JOBS" "a b" "c  d" e f -j"$DEFAULT_JOBS")" \
+        "$(expect_args -j"$DEFAULT_JOBS" "a b" "c  d" e f)" \
         make "a b" "c  d" e f
 else
     run_tc rpmbuild_arg_pass "make" \
@@ -1834,58 +2118,11 @@ run_tc readarray "Test readarray behavior"
 ################################################################################
 # Test build phases separation
 
-rpmbuild_phases_sb2_stub() {
-    echo "stub invoked: $0 $(printf "%q " "$@")" >&2
-
-    local args=("$@")
-    bad_args() {
-        echo "stub $0: unexpected arguments: $(printf "%q " "${args[@]}")" >&2
-    }
-
-    if ! [[ $1 == -t && $3 != -* ]]; then
-        bad_args
-        return 1
-    fi
-
-    shift 2
-
-    case $1 in
-        gcc)
-            case $2 in
-                -dumpmachine)
-                    echo "i486-meego-linux"
-                    ;;
-                *)
-                    bad_args
-                    return 1
-                    ;;
-            esac
-            ;;
-        rpmbuild)
-            # rpmbuild writes some progress messages to stdout
-            exec "$@" >&2
-            ;;
-        rpmspec)
-            exec "$@"
-            ;;
-        *)
-            bad_args
-            return 1
-            ;;
-    esac
-}
-
 rpmbuild_phases_ts_set_up() {
     RPMBUILD_STUBS=(my_setup qmake make my_install my_check)
     arg_pass_stub_create "${RPMBUILD_STUBS[@]}"
 
-    # Create an sb2 stub
-    cat >"$STUBS_DIR/sb2" <<END || return
-#!/bin/bash
-$(declare -f rpmbuild_phases_sb2_stub)
-rpmbuild_phases_sb2_stub "\$@"
-END
-    chmod +x "$STUBS_DIR/sb2" || return
+    sb2_stub_create || return
 
     # Create a minimal spec file
     mkdir rpm || return
@@ -1899,10 +2136,6 @@ Name:       test
 # This is to not require meego-rpm-config installed for self-test execution
 %global __os_install_post %{nil}
 
-%{!?qtc_qmake:%define qtc_qmake %qmake}
-%{!?qtc_qmake5:%define qtc_qmake5 %qmake5}
-%{!?qtc_make:%define qtc_make make}
-%{?qtc_builddir:%define _builddir %qtc_builddir}
 Summary:    Test
 Version:    0.1
 Release:    1
@@ -1918,8 +2151,8 @@ Test
 my_setup
 
 %build
-%qtc_qmake5
-%qtc_make %{?_smp_mflags}
+%qmake5
+make %{?_smp_mflags}
 
 %install
 mkdir -p %{buildroot}
@@ -1939,7 +2172,7 @@ END
 
 rpmbuild_phases_ts_tear_down() {
     arg_pass_stub_remove "${RPMBUILD_STUBS[@]}" || return
-    rm -f "$STUBS_DIR/sb2" || return
+    sb2_stub_remove || return
     rm -f rpm/test.spec || return
     rmdir rpm || return
     rm -f RPMS/test-0.1-1.i486.rpm || return
@@ -2029,6 +2262,387 @@ run_tc rpmbuild_phases "rpm" \
 
 tear_down_ts rpmbuild_phases
 
+################################################################################
+# Test compatibility with various packaging options
+
+# Accepts up to one argument - .pro file or a directory where to looks for a pro file. Defaults to
+# current working directory. Creates Makefile that makes single file named after the TARGET name and
+# installs it directly under the INSTALL_ROOT.
+special_packaging_qmake_stub() {
+    shopt -s nullglob
+    if [[ $# -eq 0 ]]; then
+        pro_files=(*.pro)
+    elif [[ $# -eq 1 ]]; then
+        if [[ $1 == *.pro ]]; then
+            if [[ ! -e $1 ]]; then
+                echo "stub qmake: file not found: $1" >&2
+                return 1
+            fi
+            pro_files=($1)
+        elif [[ -d $1 ]]; then
+            pro_files=("$1"/*.pro)
+        else
+            echo "stub qmake: not a directory: $1" >&2
+            return 1
+        fi
+    else
+        echo "stub qmake: up to one argument expected" >&2
+        return 1
+    fi
+
+    if [[ ${#pro_files[*]} -lt 1 ]]; then
+        echo "stub qmake: no project file found" >&2
+        return 1
+    elif [[ ${#pro_files[*]} -gt 1 ]]; then
+        echo "stub qmake: multiple project files found - select one" >&2
+        return 1
+    fi
+
+    target=$(sed -n 's/^TARGET=//p' $pro_files)
+    if [[ ! $target ]]; then
+        echo "stub qmake: failed to parse project file '$pro_files'" >&2
+        return 1
+    fi
+
+    cat >Makefile <<EOF
+all:
+	echo $target > $target
+
+install:
+	cp $target \$(INSTALL_ROOT)/$target
+EOF
+}
+
+special_packaging_ts_set_up() {
+    sb2_stub_create || return
+
+    cat >"$STUBS_DIR/qmake" <<END || return
+#!/bin/bash
+$(declare -f special_packaging_qmake_stub)
+special_packaging_qmake_stub "\$@"
+END
+    chmod +x "$STUBS_DIR/qmake" || return
+}
+
+special_packaging_ts_tear_down() {
+    sb2_stub_remove || return
+    rm -f "$STUBS_DIR/qmake" || return
+}
+
+# Accepts 6 arguments described inline
+special_packaging_tc() {
+    # SUBDIR: Put sources under subdirectory
+    #   - N: No
+    #   - Y: Yes, pass it to the %setup macro
+    #   - NOSET: Yes, do not pass it to the %setup macro
+    local maybe_subdir=$([[ $1 == Y || $1 == NOSET ]] && echo test)
+    local maybe_setupdir=$([[ $1 == Y ]] && echo "/%{name}")
+
+    # MULTI: Create multiple .spec and .pro files
+    #   - Y/N
+    local enable_multi=$([[ $2 == Y ]] && echo 1)
+
+    # PATCH: Create .spec with patches
+    #   - N: No
+    #   - APPLY: Yes, use 'mb2 apply' to apply them
+    #   - PREP: Yes, use 'mb2 prep' to apply them
+    #   - DOPREP: Yes, use 'mb2 build --doprep' to apply them
+    local enable_patch=$([[ $3 == APPLY || $3 == PREP || $3 == DOPREP ]] && echo "$3")
+
+    # SHADOW BUILD: Do shadow build
+    #   - Y/N
+    local enable_shadow=$([[ $4 == Y ]] && echo 1)
+
+    # PROJECT IN SPEC: Pass .pro file to qmake call in the .spec file
+    #   - Y/N
+    local maybe_project_in_spec=
+    if [[ $5 == Y ]]; then
+        if [[ ! $maybe_subdir || $maybe_setupdir ]]; then
+            maybe_project_in_spec=test.pro
+        else
+            maybe_project_in_spec=$maybe_subdir/test.pro
+        fi
+    fi
+
+    # PROJECT ON CMDLN: Pass .pro file or directory on command line
+    #   - N: No
+    #   - FILE: Yes
+    #   - DIR: Yes, pass the path to the subdirectory containing the .pro file
+    #   - OTHER: Yes, pass other .pro file than used in the .spec
+    local project_on_cmdln=
+    case $6 in
+        FILE) project_on_cmdln=${maybe_subdir:+$maybe_subdir/}test.pro;;
+        DIR) project_on_cmdln=$maybe_subdir;;
+        OTHER) project_on_cmdln=${maybe_subdir:+$maybe_subdir/}other.pro;;
+    esac
+
+    local srcdir=test
+    local builddir=test
+
+    local spec_arg=()
+    if [[ $enable_multi ]]; then
+        if [[ $enable_shadow ]]; then
+            spec_arg=(--specfile ../test/rpm/test.spec)
+        else
+            spec_arg=(--specfile rpm/test.spec)
+        fi
+    fi
+
+    if [[ $enable_shadow ]]; then
+        if [[ $project_on_cmdln ]]; then
+            project_on_cmdln=/$project_on_cmdln
+        fi
+        project_on_cmdln=../test$project_on_cmdln
+        builddir=test-build
+    fi
+
+    mkdir -p "$srcdir" || return
+    mkdir -p "$builddir" || return
+
+    mkdir "$srcdir/rpm" || return
+    cat >"$srcdir/rpm/test.spec" <<END || return
+Name:       test
+
+# These would normally come from the environment
+%{!?qmake:%define qmake qmake}
+%{!?qmake5:%define qmake5 qmake}
+%{!?qmake5_install:%define qmake5_install make install INSTALL_ROOT=%{buildroot}}
+
+# This is to not require meego-rpm-config installed for self-test execution
+%global __os_install_post %{nil}
+
+# Make it noop
+%define setup echo
+
+Summary:    Test
+Version:    0.1
+Release:    1
+Group:      Qt/Qt
+License:    LICENSE
+URL:        http://example.org/
+Source0:    %{name}-%{version}.tar.bz2
+${enable_patch:+Patch0:  test-fix.patch}
+
+%description
+Test
+
+%prep
+%setup -q -n %{name}-%{version}${maybe_setupdir}
+${enable_patch:+%patch0 -p1}
+
+%build
+%qmake5 ${maybe_project_in_spec}
+make %{?_smp_mflags}
+
+%install
+mkdir -p %{buildroot}
+%qmake5_install
+
+%files
+%defattr(-,root,root,-)
+/foo${enable_patch:+-patched}
+END
+
+    mkdir -p "$srcdir/$maybe_subdir" || return
+    echo TARGET=foo > "$srcdir/$maybe_subdir/test.pro" || return
+
+    if [[ $enable_multi ]]; then
+        touch "$srcdir/rpm/other.spec" || return
+        mkdir -p "$srcdir/$maybe_subdir" || return
+        echo TARGET=bar > "$srcdir/$maybe_subdir/other.pro" || return
+    fi
+
+    if [[ $enable_patch ]]; then
+        cat >"$srcdir/rpm/test-fix.patch" <<END || return
+--- a/test.pro
++++ b/test.pro
+@@ -1 +1 @@
+-TARGET=foo
++TARGET=foo-patched
+END
+    fi
+
+    find -ls >&2
+
+    (
+        maybe_doprep=
+        case $enable_patch in
+            APPLY) (
+                cd "$srcdir" || return
+                echo "--- Preparing sources" >&2
+                set -x
+                "$SELF" ${spec_arg[@]:+"${spec_arg[@]}"} apply || return
+                ) || return;;
+            PREP) (
+                cd "$srcdir" || return
+                echo "--- Preparing sources" >&2
+                set -x
+                "$SELF" ${spec_arg[@]:+"${spec_arg[@]}"} prep || return
+                ) || return;;
+            DOPREP)
+                maybe_doprep=--doprep
+                ;;
+        esac
+
+        (
+            cd "$builddir" || return
+            echo "--- Running build" >&2
+            set -x
+            "$SELF" ${spec_arg[@]:+"${spec_arg[@]}"} build ${maybe_doprep} ${project_on_cmdln:+"$project_on_cmdln"} || return
+        ) || return
+
+        rm -rf "$builddir"/{.mb2,RPMS,Makefile,foo} "$buildroot" || return
+
+        (
+            cd "$builddir" || return
+            echo "--- Running qmake/make/rpm" >&2
+            set -x
+            "$SELF" ${spec_arg[@]:+"${spec_arg[@]}"} qmake ${project_on_cmdln:+"$project_on_cmdln"} || return
+            "$SELF" ${spec_arg[@]:+"${spec_arg[@]}"} make || return
+            "$SELF" ${spec_arg[@]:+"${spec_arg[@]}"} rpm || return
+        ) || return
+    )
+
+    if [[ $? -ne 0 ]]; then
+        cat <<END
+Test case failed: $TC_NAME
+END
+        return 1
+    fi
+
+    return 0
+}
+
+special_packaging_tc_tear_down() {
+    rm -rf "$buildroot" || return
+    rm -rf ./test ./test-build || return
+}
+
+#   SUBDIR  MULTI  PATCH  SHADOW  PROJECT  PROJECT
+#                         BUILD   IN SPEC  ON CMDLN
+
+set_up_ts special_packaging "Compatibility / Flat package"
+run_tc special_packaging "Basic" \
+    N       N      N      N       N        N
+run_tc special_packaging "Basic (shadow)" \
+    N       N      N      Y       N        N
+run_tc special_packaging "Pass .pro file in spec" \
+    N       N      N      N       Y        N
+run_tc special_packaging "Pass .pro file in spec (shadow)" \
+    N       N      N      Y       Y        N
+run_tc special_packaging "Pass .pro file on cmdline" \
+    N       N      N      N       N        FILE
+run_tc special_packaging "Pass .pro file in spec and on cmdline (shadow)" \
+    N       N      N      Y       Y        FILE
+tear_down_ts special_packaging
+
+#   SUBDIR  MULTI  PATCH  SHADOW  PROJECT  PROJECT
+#                         BUILD   IN SPEC  ON CMDLN
+
+set_up_ts special_packaging "Compatibility / Flat package / Multiple configs"
+run_tc special_packaging "Basic" \
+    N       Y      N      N       Y        N
+run_tc special_packaging "Basic (shadow)" \
+    N       Y      N      Y       Y        N
+run_tc special_packaging "Pass .pro file" \
+    N       Y      N      N       Y        FILE
+run_tc special_packaging "Pass .pro file (shadow)" \
+    N       Y      N      Y       Y        FILE
+run_tc special_packaging "Pass other .pro file" \
+    N       Y      N      N       Y        OTHER
+run_tc special_packaging "Pass other .pro file (shadow)" \
+    N       Y      N      Y       Y        OTHER
+tear_down_ts special_packaging
+
+#   SUBDIR  MULTI  PATCH  SHADOW  PROJECT  PROJECT
+#                         BUILD   IN SPEC  ON CMDLN
+
+set_up_ts special_packaging "Compatibility / Flat package / With patches"
+run_tc special_packaging "Use apply" \
+    N       N      APPLY  N       N        N
+run_tc special_packaging "Use apply (shadow)" \
+    N       N      APPLY  Y       N        N
+run_tc special_packaging "Use prep" \
+    N       N      PREP   N       N        N
+run_tc special_packaging "Use prep (shadow)" \
+    N       N      PREP   Y       N        N
+run_tc special_packaging "Use --doprep" \
+    N       N      DOPREP N       N        N
+tear_down_ts special_packaging
+
+#   SUBDIR  MULTI  PATCH  SHADOW  PROJECT  PROJECT
+#                         BUILD   IN SPEC  ON CMDLN
+
+set_up_ts special_packaging "Compatibility / Subtree package"
+run_tc special_packaging "Basic" \
+    Y       N      N      N       N        N
+run_tc special_packaging "Basic (shadow)" \
+    Y       N      N      Y       N        N
+run_tc special_packaging "Pass .pro file" \
+    Y       N      N      N       N        FILE
+run_tc special_packaging "Pass .pro file (shadow)" \
+    Y       N      N      Y       N        FILE
+run_tc special_packaging "Pass .pro dir" \
+    Y       N      N      N       N        DIR
+run_tc special_packaging "Pass .pro dir (shadow)" \
+    Y       N      N      Y       N        DIR
+tear_down_ts special_packaging
+
+#   SUBDIR  MULTI  PATCH  SHADOW  PROJECT  PROJECT
+#                         BUILD   IN SPEC  ON CMDLN
+
+set_up_ts special_packaging "Compatibility / Subtree package / Without %setup subdir"
+run_tc special_packaging "Basic" \
+    NOSET   N      N      N       Y        N
+run_tc special_packaging "Basic (shadow)" \
+    NOSET   N      N      Y       Y        N
+run_tc special_packaging "Pass .pro file" \
+    NOSET   N      N      N       Y        FILE
+run_tc special_packaging "Pass .pro file (shadow)" \
+    NOSET   N      N      Y       Y        FILE
+run_tc special_packaging "Pass .pro dir" \
+    NOSET   N      N      N       Y        DIR
+run_tc special_packaging "Pass .pro dir (shadow)" \
+    NOSET   N      N      Y       Y        DIR
+tear_down_ts special_packaging
+
+#   SUBDIR  MULTI  PATCH  SHADOW  PROJECT  PROJECT
+#                         BUILD   IN SPEC  ON CMDLN
+
+set_up_ts special_packaging "Compatibility / Subtree package / Multiple configs"
+run_tc special_packaging "Basic" \
+    Y       Y      N      N       Y        N
+run_tc special_packaging "Basic (shadow)" \
+    Y       Y      N      Y       Y        N
+run_tc special_packaging "Pass .pro file" \
+    Y       Y      N      N       Y        FILE
+run_tc special_packaging "Pass .pro file (shadow)" \
+    Y       Y      N      Y       Y        FILE
+run_tc special_packaging "Pass .pro dir" \
+    Y       Y      N      N       Y        DIR
+run_tc special_packaging "Pass .pro dir (shadow)" \
+    Y       Y      N      Y       Y        DIR
+run_tc special_packaging "Pass other .pro file" \
+    Y       Y      N      N       Y        OTHER
+run_tc special_packaging "Pass other .pro file (shadow)" \
+    Y       Y      N      Y       Y        OTHER
+tear_down_ts special_packaging
+
+#   SUBDIR  MULTI  PATCH  SHADOW  PROJECT  PROJECT
+#                         BUILD   IN SPEC  ON CMDLN
+
+set_up_ts special_packaging "Compatibility - Subtree package / With patches"
+run_tc special_packaging "Use apply" \
+    Y       N      APPLY  N       N        N
+run_tc special_packaging "Use apply (shadow)" \
+    Y       N      APPLY  Y       N        N
+run_tc special_packaging "Use prep" \
+    Y       N      PREP   N       N        N
+run_tc special_packaging "Use prep (shadow)" \
+    Y       N      PREP   Y       N        N
+run_tc special_packaging "Use doprep" \
+    Y       N      DOPREP N       N        N
+tear_down_ts special_packaging
 
 ################################################################################
 
