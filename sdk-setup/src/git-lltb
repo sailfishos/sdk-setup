@@ -1,0 +1,250 @@
+#!/bin/bash
+#
+# git-lltb helps managing long lived topic branches
+#
+# Copyright (C) 2018 Jolla Ltd.
+# Contact: Martin Kampas <martin.kampas@jolla.com>
+# All rights reserved.
+#
+# You may use this file under the terms of BSD license as follows:
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+#   * Redistributions of source code must retain the above copyright
+#     notice, this list of conditions and the following disclaimer.
+#   * Redistributions in binary form must reproduce the above copyright
+#     notice, this list of conditions and the following disclaimer in the
+#     documentation and/or other materials provided with the distribution.
+#   * Neither the name of the Jolla Ltd nor the
+#     names of its contributors may be used to endorse or promote products
+#     derived from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+# ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+# WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+# DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS OR CONTRIBUTORS BE LIABLE FOR
+# ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+# (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+# LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+# ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+# SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+#
+
+set -o nounset
+
+synopsis()
+{
+    cat <<EOF
+usage: git-lltb patch-view [--tool TOOL] BRANCH UPSTREAM [REV-LIST-ARG...]
+EOF
+}
+
+brief_usage()
+{
+    cat <<EOF
+$(synopsis)
+
+Try 'git-lltb --help' for full help.
+EOF
+}
+
+usage()
+{
+    cat <<EOF
+git-lltb helps managing long lived topic branches
+
+$(synopsis)
+
+Commands:
+    patch-view [--tool TOOL] BRANCH UPSTREAM [REV-LIST-ARG...]
+        Provides alternative view of the topic branch as an evolving patch set
+
+        BRANCH is the topic branch, UPSTREAM is the upstream branch. Any
+        following arguments will be passed to git-rev-list. These can be used
+        to limit the range of commits in BRANCH to be considered, which is
+        useful e.g. when the repo was not always in a shape understandable to
+        this tool.
+
+        --tool TOOL
+            Tool to use to introspect Git history. Defaults to '$OPT_TOOL'
+
+            Hint: Use git-lltb outside the SDK with e.g. "--tool gitk".
+EOF
+}
+
+fatal()
+{
+    echo "Fatal: $*" >&2
+}
+
+debug()
+{
+    [[ $OPT_DEBUG ]] || return 0
+    echo "Debug: $*" >&2
+}
+
+if tty --silent <&1; then
+    progress_offset=0
+    progress()
+    {
+        local chars='|/-\'
+        printf "%s\r" "${chars:progress_offset:1}"
+        progress_offset=$(((progress_offset+1) % ${#chars}))
+    }
+else
+    progress() { :; }
+fi
+
+OPT_DEBUG=
+OPT_TOOL="git log -p"
+
+main_patch-view()
+{
+    local positional_args=()
+
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --tool)
+                [[ ${2:-} ]] || { echo "Argument expected: '$1'"; return 1; }
+                OPT_TOOL=$2
+                shift
+                ;;
+            -h)
+                brief_usage
+                return
+                ;;
+            --help)
+                usage
+                return
+                ;;
+            -*)
+                echo "Unrecognized option: '$1'" >&2
+                brief_usage >&2
+                return 1
+                ;;
+            *)
+                positional_args=(${positional_args:+"${positional_args[@]}"} "$1")
+                ;;
+        esac
+        shift
+    done
+
+    if [[ ${#positional_args[@]} -lt 2 ]]; then
+        echo "Requires exactly two positional arguments"
+        brief_usage >&2
+        return 1
+    fi
+
+    local branch=${positional_args[0]} upstream=${positional_args[1]} other=("${positional_args[@]:2}")
+
+    branch=$(git rev-parse "$branch") || return
+    upstream=$(git rev-parse "$upstream") || return
+
+    local original_git_dir=
+    original_git_dir=$(git rev-parse --absolute-git-dir) || return
+
+    local temp=
+    trap 'trap - RETURN; [[ ${temp:-} ]] && rm -rf "${temp}" || :' RETURN
+    temp=$(mktemp -d "$PWD/.git-lltb.XXXXXX") || return
+
+    git clone --quiet --shared --no-checkout "$original_git_dir" "$temp" || return
+
+    cd "$temp" || return
+
+    git checkout --quiet --orphan "git-lltb" || return
+    git rm --quiet -rf . || return
+
+    # With empty work tree git-format-patch does not print the name of the file it creates
+    touch .hack
+
+    local commits=
+    commits=($([[ $OPT_DEBUG ]] && set -x; git rev-list --reverse "$upstream..$branch" "${other[@]}")) || return
+    local tagged=
+    for commit in "${commits[@]}"; do
+        progress
+        local parents=
+        parents=($(git rev-list --no-walk "$commit^@")) || return
+        case ${#parents[@]} in
+            1)
+                debug "Processing normal commit '$commit'"
+                local subject= patchfile=
+                subject=$(git show --no-patch --pretty=%s "$commit") || return
+                patchfile=${subject//[^[:alnum:]_]/-}.patch
+                git format-patch --stdout "$commit^..$commit" > "$patchfile" || return
+                debug "Adding patch '$patchfile'"
+                git add -- "$patchfile" || return
+                tagged=
+                ;;
+            2)
+                debug "Processing merge commit '$commit'"
+                local is_reset=
+                is_reset=$(git diff --quiet "$commit^1..$commit" && echo 1)
+                if [[ $is_reset ]]; then
+                    if [[ ! $tagged ]]; then
+                        git commit --quiet -m "!!! Untagged changes preceding reset to upstream"
+                    fi
+                    git rm --quiet -rf . || return
+                    tagged=
+                else
+                    debug "Ignoring non-reset merge commit '$commit'"
+                fi
+                ;;
+            *)
+                fatal "Cannot handle commit with '${#parents[@]}' parents"
+                return 1
+                ;;
+        esac
+
+        local tag=
+        tag=$(git for-each-ref --points-at "$commit" refs/tags \
+            --format='%(refname:short): %(subject)'$'\n\n''%(body)')
+        if [[ $tag ]]; then
+            debug "Committing '$(head -n1 <<<"$tag")...'"
+            git commit --quiet -m "$tag" || return
+            tagged=1
+        fi
+    done
+
+    if [[ ! $tagged ]]; then
+        git commit --quiet -m "!!! Untagged changes at end"
+    fi
+
+    eval "$OPT_TOOL"
+}
+
+main()
+{
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            patch-view)
+                main_$1 "${@:2}"
+                return
+                ;;
+            -h)
+                brief_usage
+                return
+                ;;
+            --help)
+                usage
+                return
+                ;;
+            --debug)
+                OPT_DEBUG=1
+                ;;
+            -*)
+                echo "Unrecognized option: '$1'" >&2
+                brief_usage >&2
+                return 1
+                ;;
+            *)
+                echo "Unrecognized command: '$1'" >&2
+                brief_usage >&2
+                return 1
+                ;;
+        esac
+        shift
+    done
+}
+
+main "$@"
