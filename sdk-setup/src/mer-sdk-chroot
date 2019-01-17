@@ -236,8 +236,6 @@ prepare_mountpoints() {
     mount_bind /dev
     mount_bind /dev/pts
     mount_bind /dev/shm /run/shm
-    mount_bind /var/lib/dbus
-    mount_bind /var/run/dbus
 
     echo "Mounting $targetsdir as /srv/mer/targets"
     mkdir -p ${sdkroot}/srv/mer/targets
