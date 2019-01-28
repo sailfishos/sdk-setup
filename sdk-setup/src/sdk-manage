@@ -29,6 +29,7 @@ usage:
     $SELF tooling update <name>
     $SELF tooling register [--user <user> [--password <password>]] [--force]
     $____                  {--all | <name>...}
+    $SELF tooling uuidgen {--all | <name>...}
 
     $SELF target list [-l|--long] [--tooling <name>]
     $SELF target upgradable <name>
@@ -41,6 +42,7 @@ usage:
     $SELF target import <name>
     $SELF target register [--user <user> [--password <password>]] [--force]
     $____                 {--all | <name>...}
+    $SELF target uuidgen {--all | <name>...}
 
     $SELF toolchain list <tooling>
     $SELF toolchain install <tooling> <name>...
@@ -447,6 +449,52 @@ upgrade_object() {
     fi
 }
 
+init_machine_id() {
+    local type=$1 object=$2
+
+    if [[ $type == sdk ]]; then
+        echo >&2 "init_machine_id: not intented to be used on sdk"
+        return 1
+    fi
+
+    echo >&2 "Initializing machine ID for $type '$object'"
+
+    if enter "$type:$object" test -s /etc/machine-id; then
+        echo >&2 "NOTICE: removing unexpected non-empty /etc/machine-id in the '$object' $type"
+        enter "$type:$object" rm -f /etc/machine-id || return
+    fi
+    if enter "$type:$object" test -s /var/lib/dbus/machine-id; then
+        echo >&2 "NOTICE: removing unexpected non-empty /var/lib/dbus/machine-id in the '$object' $type"
+        enter "$type:$object" rm -f /var/lib/dbus/machine-id || return
+    fi
+
+    enter "$type:$object" systemd-machine-id-setup || return
+    enter "$type:$object" dbus-uuidgen --ensure || return
+}
+
+reset_machine_id() {
+    local type=$1
+    shift
+
+    if [[ $type == sdk ]]; then
+        echo >&2 "reset_machine_id: not intented to be used on sdk"
+        return 1
+    fi
+
+    local objects=
+    objects=($(get_all_or_selected_of_type "$type" "$@")) || return
+
+    local object=
+    for object in "${objects[@]}"; do
+        echo >&2 "Resetting machine ID for $type '$object'"
+
+        enter "$type:$object" rm -f /etc/machine-id || return
+        enter "$type:$object" rm -f /var/lib/dbus/machine-id || return
+        enter "$type:$object" systemd-machine-id-setup || return
+        enter "$type:$object" dbus-uuidgen --ensure || return
+    done
+}
+
 ################################################################'
 # tooling management
 
@@ -608,6 +656,8 @@ install_tooling() {
         set_tooling_mode "$name" "$MODE"
     fi
 
+    init_machine_id tooling "$name" || return
+
     echo >&2 "Tooling '$name' now setup"
     succeeded=1
 }
@@ -664,6 +714,9 @@ manage_toolings() {
             ;;
         ?(--)register ) shift
             register_object tooling "$@"
+            ;;
+        ?(--)uuidgen ) shift
+            reset_machine_id tooling "$@"
             ;;
         * )
             echo >&2 "unrecognized option '$1'"
@@ -935,20 +988,6 @@ import_target() {
           "$HOST_TARGETS/$target/" "$MER_TARGETS/$target"
 }
 
-# create a unique device-id for the target
-target_uuidgen() {
-    local mytarget=$1
-
-    if [[ -z $mytarget ]]; then
-	echo >&2 "NOTICE: target_uuidgen: empty target name given"
-	return 0
-    fi
-
-    echo >&2 "target_uuidgen: generating a unique id for target '$mytarget'"
-    sb2 -t "$mytarget" -m sdk-install -R rm -f /var/lib/dbus/machine-id || return
-    sb2 -t "$mytarget" -m sdk-install -R dbus-uuidgen --ensure
-}
-
 # add the MerSDK hostname to target's /etc/hosts
 amend_target_hosts() {
     local mytarget=$1
@@ -1180,8 +1219,7 @@ install_target() {
             -m sdk-build -n -N -t "$MER_TOOLINGS/$tooling" "$target" "$MER_TOOLINGS/$tooling/$compiler"
     ) || return
 
-    # make sure the created target gets a unique id
-    target_uuidgen "$target" || return
+    init_machine_id target "$target" || return
 
     # fix target's /etc/hosts
     amend_target_hosts "$target" || return
@@ -1282,6 +1320,9 @@ manage_targets() {
 	?(--)register ) shift
             register_object target "$@"
 	    ;;
+        ?(--)uuidgen ) shift
+            reset_machine_id target "$@"
+            ;;
 	* )
             echo >&2 "unrecognized option '$1'"
             usage
