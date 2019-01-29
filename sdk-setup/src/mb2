@@ -420,7 +420,7 @@ get_device() {
                 maintag=$TAG_NAME
                 eval local $ATTRIBUTES
                 ;;
-            mac|index|subnet|ip|sshkeypath )
+            mac|index|subnet|ip|sshkeypath|sshport )
                 # Don't process and store nested tags if we're in
                 # device with wrong name
                 if [[ "$maintag" == "device" ]] && [[ $IN_DEVICE != 1 ]]; then
@@ -434,6 +434,9 @@ get_device() {
     if [[ "$device_subnet" ]]; then
         device_ip="$device_subnet".$device_index
     fi
+    if [[ ! "$device_sshport" ]]; then
+        device_sshport=22
+    fi
     if [[ "$FOUND_DEVICE" == 1 ]]; then return 0; else return 1; fi
 }
 
@@ -441,14 +444,14 @@ rsync_as() {
     local user="$1";shift
     local key=$(get_shared_dir)/${device_sshkeypath}/$user
     [[ -f "$key" ]] || fatal "No key for user $user on $device_name given in devices.xml (rsync $key)"
-    RSYNC_RSH="ssh -F /etc/ssh/ssh_config.sdk -l $user -i \"$key\"" rsync "$@"
+    RSYNC_RSH="ssh -F /etc/ssh/ssh_config.sdk -l $user -i \"$key\" -p $device_sshport" rsync "$@"
 }
 
 ssh_as() {
     local user="$1";shift
     local key=$(get_shared_dir)/${device_sshkeypath}/$user
     [[ -f "$key" ]] || fatal "No key for user $user on $device_name given in devices.xml ($key)"
-    ssh -F /etc/ssh/ssh_config.sdk -i "$key" -l $user $device_ip "$(quote "$@")"
+    ssh -F /etc/ssh/ssh_config.sdk -i "$key" -l $user $device_ip -p $device_sshport "$(quote "$@")"
 }
 
 cd_to_spec_setup_dir() {
