@@ -331,6 +331,49 @@ enter() {
     fi
 }
 
+object_config_file()
+{
+    local type=${1%:*} object=${1#*:}
+    ${type}_config_file "$object"
+}
+
+object_config_get()
+{
+    local object=$1 key=$2 default=${3:-}
+    local config_file=$(object_config_file "$object")
+    local value=
+    if [[ -e "$config_file" ]]; then
+        value=$(sed -n "s/^$key=//p" "$config_file") || return
+    fi
+    echo "${value:-$default}"
+}
+
+object_config_set()
+{
+    local type=${1%:*} object=${1#*:} key=$2 value=$3
+    local config_file=$(object_config_file "$type:$object")
+    local maybe_sudo=
+    if [[ $type != target ]]; then
+        maybe_sudo=sudo
+    fi
+    # The following sed command needs at least one line
+    $maybe_sudo tee -a "$config_file" <<<'' >/dev/null || return
+    $maybe_sudo sed -i -e "1i $key=$value" -e "/^$key=/d" -e '/^$/d' "$config_file"
+}
+
+get_object_mode()
+{
+    local object=$1
+    local mode=
+    object_config_get "$object" "$MODE_KEY" "$MODE_USER"
+}
+
+set_object_mode()
+{
+    local object=$1 value=$2
+    object_config_set "$object" "$MODE_KEY" "$value"
+}
+
 object_zypper() {
     local object=$1 args=("${@:2}")
 
@@ -500,16 +543,11 @@ reset_machine_id() {
 
 tooling_exists() [[ -e $MER_TOOLINGS/$1 ]]
 
-get_tooling_mode()
+# specialization of object_config_file()
+tooling_config_file()
 {
     local tooling=$1
-    cat "$MER_TOOLINGS/$tooling/$MODE_FILE" 2>/dev/null || echo "$MODE_USER"
-}
-
-set_tooling_mode()
-{
-    local tooling=$1 mode=$2
-    echo "$mode" |sudo tee >/dev/null "$MER_TOOLINGS/$tooling/$MODE_FILE"
+    echo "$MER_TOOLINGS/$tooling/$CONFIG_FILE"
 }
 
 # specialization of assert_object_exists()
@@ -566,7 +604,7 @@ list_toolings() {
 
     local tooling=
     for tooling in $(get_all_of_type_tooling); do
-        echo "$tooling" "$(get_tooling_mode "$tooling")"
+        echo "$tooling" "$(get_object_mode "tooling:$tooling")"
     done |column -t
 }
 
@@ -653,7 +691,7 @@ install_tooling() {
             manage_user_targets_repository touch tooling "$name" "${size:-0}"
         fi
     else
-        set_tooling_mode "$name" "$MODE"
+        set_object_mode "tooling:$name" "$MODE"
     fi
 
     init_machine_id tooling "$name" || return
@@ -667,7 +705,7 @@ remove_tooling() {
 
     assert_name_valid "$name" || return
 
-    local mode=$(get_tooling_mode "$name")
+    local mode=$(get_object_mode "tooling:$name")
     if [[ $MODE != "$mode" ]]; then
         echo >&2 "The tooling '$name' can only be removed in the '$mode' mode."
         return 1
@@ -835,16 +873,11 @@ manage_develpkgs() {
 ################################################################
 # Targets
 
-get_target_mode()
+# specialization of object_config_file()
+target_config_file()
 {
     local target=$1
-    cat "$MER_TARGETS/$target/$MODE_FILE" 2>/dev/null || echo "$MODE_USER"
-}
-
-set_target_mode()
-{
-    local target=$1 mode=$2
-    echo "$mode" >"$MER_TARGETS/$target/$MODE_FILE"
+    echo "$MER_TARGETS/$target/$CONFIG_FILE"
 }
 
 target_exists() {
@@ -925,7 +958,7 @@ list_targets() {
     local target=
     for target in $targets; do
         tooling=$(get_tooling_used_by_target "$target") # may fail
-        echo "$target" "${tooling:--}" "$(get_target_mode "$target")"
+        echo "$target" "${tooling:--}" "$(get_object_mode "target:$target")"
     done |column -t
     return ${PIPESTATUS[0]}
 }
@@ -1237,7 +1270,7 @@ install_target() {
             manage_user_targets_repository touch target "$target" "${size:-0}"
         fi
     else
-        set_target_mode "$target" "$MODE"
+        set_object_mode "target:$target" "$MODE"
     fi
 
     echo >&2 "Target '$target' now setup"
@@ -1248,7 +1281,7 @@ remove_target() {
     local target=$1
     assert_name_valid "$target" || return
     if [[ -d $SBOX2DIR/$target ]]; then
-        local mode=$(get_target_mode "$target")
+        local mode=$(get_object_mode "target:$target")
         if [[ $MODE != "$mode" ]]; then
             echo >&2 "The target '$target' can only be removed in the '$mode' mode."
             return 1
@@ -1458,8 +1491,9 @@ HOST_TARGETS=/host_targets
 SBOX2DIR=${HOME}/.scratchbox2
 TARGETS_XML=${HOST_TARGETS}/targets.xml
 USER_TARGETS_REPOSITORY=${HOST_TARGETS}/targets.repository
+CONFIG_FILE=.sdk-manage.conf
 
-MODE_FILE=.sdk-manage.mode
+MODE_KEY=mode
 MODE_USER=user
 MODE_INSTALLER=installer
 MODE=$MODE_USER
