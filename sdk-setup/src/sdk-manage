@@ -37,6 +37,7 @@ usage:
     $SELF target install <name> <url> [--tooling <name>
     $____                [--tooling-url <url>]] [--toolchain <name>]
     $SELF target snapshot [-r|--reset[={outdated|force}]] <original> <snapshot>
+    $SELF target reserve <original> <snapshot-template> <lock-file> <pool-size>
     $SELF target remove  <name>
     $SELF target refresh {--all | <name>...}
     $SELF target update <name>
@@ -98,6 +99,19 @@ Usage notes
         unconditionally by passing 'force' instead.  Resetting a snapshot has
         the same effect as removing the snapshot and creating it again, except
         that it preserves it's internal state and is more efficient.
+
+    $SELF target reserve
+        Reserve a pooled snapshot of the target identified with <original>.
+        The name for the snapshot will be printed on stdout. It will be
+        determined using <snapshot-template>, which is expected to contain at
+        least 3 consecutive 'X's in its last dot-separated component. The
+        snapshot will be reserved for as long as the <lock-file> remains
+        locked.  <pool-size> serves also as a limit for the number of
+        snapshots that can be reserved. Only snapshots using the given
+        <snapshot-template> are considered for this purpose. The
+        least-recently-used approach is applied to choose from pooled
+        snapshots unless a snapshot exists with the same <lock-file> recently
+        used.
 
 Global options
     -m, --mode <mode>
@@ -315,6 +329,52 @@ sudo_sync_trees() {
     if [[ $dst_existed || ! $can_reflink ]]; then
         sudo rsync -a --delete "$src/" "$dst" || return
     fi
+}
+
+assert_template_valid() {
+    local template=$1
+    if ! [[ $template =~ \.XXXX*$ ]]; then
+        echo >&2 "Expected name with at least 3 consecutive 'X's in its last component." \
+            "Got '$template'"
+        return 1
+    fi
+}
+
+name_matches_template() {
+    local name=$1 template=$2
+
+    assert_template_valid "$template" || return
+
+    local prefix=${template%.*}
+    local suffix=${template##*.}
+
+    [[ $name =~ ^"$prefix."${suffix//?/.}$ ]]
+}
+
+random_name() {
+    local template=$1 existing_names=$(cat)
+
+    assert_template_valid "$template" || return
+
+    local prefix=${template%.*}
+    local suffix_length=$((${#template} - ${#prefix} - 1))
+
+    local suffix= name=
+    while true; do
+        suffix=$(LC_ALL=C tr -dc A-Z0-9 </dev/urandom \
+            |dd bs=1 count="$suffix_length" 2>/dev/null) || return
+        name=$prefix.$suffix
+        if ! grep -q -F --line-regexp "$name" <<<"$existing_names"; then
+            break
+        fi
+    done
+
+    echo "$name"
+}
+
+is_locked() {
+    local lock_file=$1
+    [[ -e $lock_file ]] && ! flock --nonblock 0 <"$lock_file"
 }
 
 ################################################################'
@@ -1514,6 +1574,119 @@ target_snapshot_needs_reset() {
     (( most_recent_install_time > snapshot_time_s ))
 }
 
+reserve_target() {
+    local positional_args=()
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -*)
+                echo >&2 "unrecognized option '$1'"
+                usage
+                return 1
+                ;;
+            *)
+                if [[ ${#positional_args[*]} -eq 4 ]]; then
+                    echo >&2 "unexpected positional argument '$1'"
+                    usage
+                    return 1
+                fi
+                positional_args+=("$1")
+                ;;
+        esac
+        shift
+    done
+
+    if [[ ${#positional_args[*]} -ne 4 ]]; then
+        echo >&2 "Too few arguments given"
+        usage
+        return 1
+    fi
+
+    local original=${positional_args[0]}
+    local snapshot_template=${positional_args[1]}
+    local lock_file=${positional_args[2]}
+    local pool_size=${positional_args[3]}
+
+    assert_name_valid "$original" || return
+    assert_name_valid "$snapshot_template" || return
+
+    if ! target_exists "$original"; then
+        echo >&2 "Target not found '$original'"
+        return 1
+    fi
+
+    assert_template_valid "$snapshot_template" || return
+
+    if ! is_locked "$lock_file"; then
+        echo >&2 "WARNING: File does not seem to be locked: '$lock_file'"
+    fi
+
+    if ! [[ $pool_size -gt 0 ]]; then
+        echo >&2 "Not a positive integer: '$pool_size'"
+        return 1
+    fi
+
+    local target= pooled_targets=() lru_pooled_target= lru_time= reset=
+    for target in $(get_all_of_type_target); do
+        name_matches_template "$target" "$snapshot_template" || continue
+
+        local other_lock_file=
+        other_lock_file=$(object_config_get "target:$target" "$LOCK_KEY") || return
+        if [[ ! $other_lock_file ]]; then
+            echo >&2 "WARNING: Ingoring pooled target with no lock file set: '$target'"
+            continue
+        fi
+
+        pooled_targets+=("$target")
+
+        local lock_time=
+        lock_time=$(object_config_get "target:$target" "$LOCK_TIME_KEY") || return
+        lock_time=$(date --date "$lock_time" +%s) || return
+
+        # Target recently reserved using the same lock is favored disregards its LRU score
+        if [[ $other_lock_file == "$lock_file" ]]; then
+            lru_pooled_target=$target
+            lru_time=$lock_time
+            reset=outdated
+            break
+        fi
+
+        if is_locked "$other_lock_file"; then
+            if [[ $other_lock_file == "$lock_file" ]]; then
+                echo >&2 "WARNING: Another target reserved with the same lock file: '$target'"
+            fi
+            # Target still in use
+            continue
+        fi
+
+        if [[ ! $lru_time || $lru_time -gt $lock_time ]]; then
+            lru_pooled_target=$target
+            lru_time=$lock_time
+            reset=force
+        fi
+    done
+
+    local snapshot=
+    if [[ $lru_pooled_target ]]; then
+        snapshot=$lru_pooled_target
+        snapshot_target --reset="$reset" "$original" "$snapshot" || return
+    else
+        if [[ ${#pooled_targets[@]} -ge $pool_size ]]; then
+            echo >&2 "Pool size exceeded. Target cannot be reserved."
+            return 1
+        fi
+
+        local snapshot=
+        snapshot=$(IFS=$'\n'; random_name "$snapshot_template" <<<"${pooled_targets[*]}") || return
+
+        # sb2-init would pollute stdout
+        snapshot_target "$original" "$snapshot" >&2 || return
+    fi
+
+    object_config_set "target:$snapshot" "$LOCK_TIME_KEY" "$(date -R)" || return
+    object_config_set "target:$snapshot" "$LOCK_KEY" "$lock_file" || return
+    echo "$snapshot"
+}
+
 remove_target() {
     local target=$1
     assert_name_valid "$target" || return
@@ -1570,6 +1743,9 @@ manage_targets() {
 	    ;;
         ?(--)snapshot ) shift
             snapshot_target "$@"
+            ;;
+        ?(--)reserve ) shift
+            reserve_target "$@"
             ;;
 	?(--)remove ) shift
 	    remove_target "$@"
@@ -1748,6 +1924,9 @@ MODE=$MODE_USER
 
 SNAPSHOT_OF_KEY=snapshot-of
 SNAPSHOT_TIME_KEY=snapshot-time
+
+LOCK_KEY=lock
+LOCK_TIME_KEY=lock-time
 
 TMPDIR_DOWNLOADS=/var/tmp
 
