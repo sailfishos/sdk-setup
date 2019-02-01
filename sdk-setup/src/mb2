@@ -156,7 +156,7 @@ GLOBAL OPTIONS
     -d, --device <name>
         Specify the device
 
-    -o, --outputdir <dir>
+    -o, --output-dir <dir>
         Where to place produced RPM files. Defaults to ./RPMS directory.  With
         this option existing files in the output directory are preserved
 
@@ -1060,7 +1060,11 @@ while [[ "$1" ]]; do
         "-d" | "--device") shift
             OPT_DEVICE="$1"; shift
             ;;
-        "-o" | "--outputdir") shift
+        "-o" | "--outputdir" | "--output-dir")
+            if [[ $1 == --outputdir ]]; then
+                notice "The '$1' option is deprecated. Use '--output-dir' instead."
+            fi
+            shift
             OPT_OUTPUTDIR="$1"; shift
             [[ -d "$OPT_OUTPUTDIR" ]] || fatal "'$OPT_OUTPUTDIR' is not a directory"
             OPT_CLEAN_OUTPUTDIR=
