@@ -157,8 +157,17 @@ GLOBAL OPTIONS
         Specify the device
 
     -o, --output-dir <dir>
-        Where to place produced RPM files. Defaults to ./RPMS directory.  With
-        this option existing files in the output directory are preserved
+        Defaults to './RPMS'. The resulting RPM packages will be placed
+        directly under the specified <dir>. With this option existing files in
+        the output directory are preserved.  Implies '--search-output-dir'
+
+    --search-output-dir[={verbose|quiet}]
+        Consider the RPM packages found in the output directory when installing
+        build time dependencies. The optional value controls zypper verbosity.
+        The default is 'verbose'.
+
+    --no-search-output-dir
+        Override '--search-output-dir' option
 
     -s, --specfile <file>
         Specify the .spec file
@@ -298,7 +307,14 @@ verify_target_dependencies() {
         if inside_build_engine; then
             local oldpkgs=$(sb2 -t "$OPT_TARGET" -m sdk-install rpm -qa)
         fi
-        sb2 -t "$OPT_TARGET" -m sdk-install -R zypper --quiet --non-interactive in "${deps[@]}"
+        if [[ $OPT_SEARCH_OUTPUTDIR ]]; then
+            local args=(--"$OPT_SEARCH_OUTPUTDIR_VERBOSITY" --non-interactive \
+                --plus-repo "$OPT_OUTPUTDIR" --no-gpg-checks)
+            sb2 -t "$OPT_TARGET" -m sdk-install -R zypper "${args[@]}" dup --from '~plus-repo-1'
+            sb2 -t "$OPT_TARGET" -m sdk-install -R zypper "${args[@]}" in "${deps[@]}"
+        else
+            sb2 -t "$OPT_TARGET" -m sdk-install -R zypper --quiet --non-interactive in "${deps[@]}"
+        fi
         if inside_build_engine; then
             local newpkgs=$(sb2 -t "$OPT_TARGET" -m sdk-install rpm -qa)
             if [[ $newpkgs != $oldpkgs ]]; then
@@ -951,6 +967,8 @@ OPT_TARGET=
 OPT_DEVICE=
 OPT_OUTPUTDIR=$(readlink -f ./RPMS)
 OPT_CLEAN_OUTPUTDIR=1
+OPT_SEARCH_OUTPUTDIR=
+OPT_SEARCH_OUTPUTDIR_VERBOSITY=verbose
 OPT_PKGDIR="./rpm"
 OPT_PRO_FILE_OR_DIR=
 OPT_SRC_DIR=
@@ -1068,12 +1086,28 @@ while [[ "$1" ]]; do
             OPT_OUTPUTDIR="$1"; shift
             [[ -d "$OPT_OUTPUTDIR" ]] || fatal "'$OPT_OUTPUTDIR' is not a directory"
             OPT_CLEAN_OUTPUTDIR=
+            OPT_SEARCH_OUTPUTDIR=1
             ;;
         "-p" | "--projectdir")
             notice "The '$1' option is deprecated. Try '$ME --help' for more information."
             [[ -d "$2" ]] || fatal "'$2' is not a directory"
             pro_file_or_dir="$2"
             shift 2
+            ;;
+        "--search-output-dir") shift
+            OPT_SEARCH_OUTPUTDIR=1
+            ;;
+        "--search-output-dir"=* )
+            OPT_SEARCH_OUTPUTDIR=1
+            OPT_SEARCH_OUTPUTDIR_VERBOSITY=${1#*=}
+            if [[ $OPT_SEARCH_OUTPUTDIR_VERBOSITY != verbose &&
+                    $OPT_SEARCH_OUTPUTDIR_VERBOSITY != quiet ]]; then
+                fatal "Unexpected argument to '--search-output-dir': '$OPT_SEARCH_OUTPUTDIR_VERBOSITY'"
+            fi
+            shift
+            ;;
+        "--no-search-output-dir") shift
+            OPT_SEARCH_OUTPUTDIR=
             ;;
         "-s" | "--specfile" ) shift
             OPT_SPEC="$1"; shift
@@ -1156,6 +1190,10 @@ if [[ ! "$OPT_TARGET" ]]; then
 fi
 
 [[ -d ~/.scratchbox2/$OPT_TARGET ]] || fatal "$OPT_TARGET is an invalid sb2 target"
+
+if [[ $OPT_SEARCH_OUTPUTDIR ]]; then
+    mkdir -p "$OPT_OUTPUTDIR"
+fi
 
 if [[ $OPT_FIX_VERSION_HINT && ! $(git_ tag --list "$OPT_FIX_VERSION_HINT") ]]; then
     fatal "'$OPT_FIX_VERSION_HINT' no such Git tag"
