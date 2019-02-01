@@ -157,11 +157,9 @@ COMMANDS
         global option, with the effect of reseting the target snapshot
         forcefully to the (possibly updated) state of the original target
         first.
-        Compatible global options: -s -t
 
     prep
         Run rpmbuild. Execute just the %prep section of the .spec file.
-        Compatible global options: -n.
 
     apply [-R]
         Apply all patches defined in the .spec file to the source tree.
@@ -177,7 +175,6 @@ COMMANDS
         -p    run %prep phase as well
         -d    enable debug build
         -j <n> use only 'n' CPUs to build
-        Compatible global options: -s -t -i -x -X -c -n
 
     qmake [<project-dir-or-file>] [[--] <qmake-extra-args>]
         Run rpmbuild. Execute just the %build section of the .spec file,
@@ -186,33 +183,31 @@ COMMANDS
         the current working directory is treated as the project directory. (The
         file name part is ignored - project file selection is done by qmake call
         inside the .spec file.)
-        Compatible global options: -s -t -n
 
     make [<make-extra-args>]
         Run rpmbuild. Execute just the %build section of the .spec file,
         suppressing any "qmake" invocation figuring in that section.
-        Compatible global options: -s -t
 
     install
         Run rpmbuild. Execute just the %install section of the .spec file.
-        Compatible global options: -s -t
 
     rpm
         Run rpmbuild. Execute just the %install section of the .spec file, then
         build binary packages.
-        Compatible global options: -s -t -i -x -X -c
 
     deploy --zypper|--pkcon|--rsync|--sdk
         Deploy build results to a device. This implies also the "install" step
         and except for the --rsync method it will include also the "rpm" step.
-        Compatible global options: -s -t -d -i -f -x -X -c
 
     run [<command> [<args>]]
         Run the given command (on device if --device given).  Can be used for
         running gdb and a gdb server.
-        Compatible global options: -s -t -d
 
 GLOBAL OPTIONS
+    The order of passing options matters. Options that occur later on the
+    command line may override earlier options, including those implied by
+    the earlier options.
+
     -i, --increment
         Increment release number in .spec file
 
@@ -263,8 +258,8 @@ GLOBAL OPTIONS
         Force mb2 to directly use a target for which snapshots exist.
 
     -f, --shared-folder <dir>
-        The folder where QtCreator shares devices.xml and ssh keys this option
-        is useful if deploy option is used outside of virtual machine
+        The folder where QtCreator shares devices.xml and ssh keys. This option
+        is useful when the deploy command is used outside of virtual machine.
 
     -T, --task <name>
         Modifies behavior of '--output-prefix' and '--snapshot' options.
