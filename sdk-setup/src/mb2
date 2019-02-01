@@ -648,7 +648,7 @@ END
 
 run_installdeps() {
     # Refresh repos before installing dependencies
-    sb2 -t "$target" -m sdk-install -R zypper --non-interactive ref
+    sb2 -t "$OPT_TARGET" -m sdk-install -R zypper --non-interactive ref
     verify_target_dependencies
 }
 
