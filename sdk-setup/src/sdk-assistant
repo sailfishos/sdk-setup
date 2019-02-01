@@ -70,6 +70,7 @@ Options:
     <URL>                   : a tarball URL or a local file
     -y | --non-interactive  : do not ask questions
     -z | --dry-run          : do nothing, just print out what would happen
+    --slow                  : with 'list', check the state more thoroughly
     -h | --help             : show this help
 
 EOF
@@ -95,19 +96,26 @@ list() {
         sdk-manage "$type" list
     else
         {
-            sdk-manage tooling list |sed 's/^/- /'
-            sdk-manage target list --long
-        } |tr -s ' ' |sort -k 2,2 |awk '
-            BEGIN {
-                tooling=""
-            }
-            $2 != tooling {
-                tooling=$2
-                print tooling
-            }
-            $1 != "-" {
-                print "  ", $1
-            }'
+            sdk-manage tooling list |awk -v OFS=: '{print $1, "", $1}'
+            sdk-manage target list --long ${OPT_SLOW:+--check-snapshots} |awk -v OFS=: '
+                $4 != "-" {
+                    note = sub(/\*$/, "", $4) ? "(snapshot, outdated)" : "(snapshot)"
+                    print $1, $4, $1 "  " note
+                    next
+                }
+                $2 == "-" {
+                    print $1, "<no-tooling>", $1
+                    if (!no_tooling_printed) {
+                        print "<no-tooling>", "", "<no-tooling>"
+                        no_tooling_printed = 1
+                    }
+                    next
+                }
+                {
+                    print $1, $2, $1
+                }'
+        } |column --separator : --output-separator : --tree 3 --tree-id 1 --tree-parent 2 \
+            |cut -d : -f 3
     fi
 }
 
@@ -123,6 +131,7 @@ OPT_DRY_RUN=
 OPT_LIST=
 OPT_NAME=
 OPT_REMOVE=
+OPT_SLOW=
 OPT_TOOLING_NAME=
 OPT_TYPE=
 OPT_UPDATE=
@@ -137,6 +146,9 @@ while [[ ${1:-} ]]; do
             ;;
         -z | --dry-run )
             OPT_DRY_RUN=1
+            ;;
+        --slow )
+            OPT_SLOW=1
             ;;
         -h | --help )
             usage quit
@@ -192,6 +204,10 @@ case $1 in
 esac
 
 [[ $# -eq 0 ]] || fail "$1: unexpected argument"
+
+if [[ $OPT_SLOW && ! $OPT_LIST ]]; then
+    fail "The '--slow' option can only be used with the 'list' command"
+fi
 
 if [[ $EUID -eq 0 ]]; then
     fail "$(basename $0) must not be run as root."
