@@ -122,8 +122,7 @@ list() {
 have() {
     local type=$1
     local name=$2
-    # FIXME: targets are listed all on one line
-    sdk-manage "$type" list |tr ' ' '\n' |grep -q -F --line-regexp "$name"
+    sdk-manage "$type" list |grep -q -F --line-regexp "$name"
 }
 
 OPT_CREATE=
