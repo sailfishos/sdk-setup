@@ -56,6 +56,9 @@ Note that any other build steps in the .spec file will also be run.
 one it must be provided.  $ME is aware of spectacle and will update the spec
 file if there is an obvious yaml file which is newer.
 
+
+SHADOW BUILDS
+
 CWD is used as a base dir for installroot/ and RPMS/ to allow for shadow
 builds. Shadow builds can be done by passing project file or directory path to
 the "build" or "qmake" command:
@@ -79,6 +82,32 @@ Limitations related to shadow builds:
        tree prior to starting a shadow build (shadow builds for multiple
        targets are still possible provided that the %prep section is
        target-independent).
+
+
+SHARED OUTPUT DIRECTORY
+
+To make deployment easier it is possible to use a shared output directory
+specified with the '--output-dir' option or more conveniently with the
+combination of '--output-prefix' and '--task' options.  Consider enabling
+'--output-prefix' by default by creating an alias in your '~/.mersdk.profile'
+and optionally invoking mb2 with the '--task' option to get build results
+grouped by the tasks they are related to:
+
+    alias mb2='mb2 --output-prefix ~/RPMS'
+
+    cd packageA
+    mb2 -t target --task jbXXXXX build
+    cd ../packageB
+    mb2 -t target --task jbXXXXX build
+    rsync -av ~/RPMS/jbXXXXX-target/ device:RPMS \\
+        && ssh device zypper -p RPMS -v dup
+
+With these options the output directory is also searched for build-time
+dependencies by default, so if packageB requires packageA at build time, you
+do not need to install packageA manually to the build target.
+
+
+MAINTAINING CHANGELOGS
 
 If a file exists with '.changes' extension, otherwise matching the
 spec file name, the effect will be the same as having a %changelog
@@ -161,6 +190,12 @@ GLOBAL OPTIONS
         directly under the specified <dir>. With this option existing files in
         the output directory are preserved.  Implies '--search-output-dir'
 
+    -O, --output-prefix <dir>
+        Much like '--output-dir' except that a subdirectory of the given <dir>
+        will be used, denoted by the build target name (see '--target') and
+        optionally prefixed with task name (see '--task') separated with
+        single dash ('-') character ('<dir>/[<task>-]<target>').
+
     --search-output-dir[={verbose|quiet}]
         Consider the RPM packages found in the output directory when installing
         build time dependencies. The optional value controls zypper verbosity.
@@ -175,6 +210,9 @@ GLOBAL OPTIONS
     -f, --shared-folder <dir>
         The folder where QtCreator shares devices.xml and ssh keys this option
         is useful if deploy option is used outside of virtual machine
+
+    -T, --task <name>
+        Modifies behavior of the '--output-prefix' option.
 
     -x, --fix-version[=<tag>]
         This option is implied when used inside a Git working tree (use -X to
@@ -969,6 +1007,7 @@ OPT_OUTPUTDIR=$(readlink -f ./RPMS)
 OPT_CLEAN_OUTPUTDIR=1
 OPT_SEARCH_OUTPUTDIR=
 OPT_SEARCH_OUTPUTDIR_VERBOSITY=verbose
+OPT_OUTPUT_PREFIX=
 OPT_PKGDIR="./rpm"
 OPT_PRO_FILE_OR_DIR=
 OPT_SRC_DIR=
@@ -1085,6 +1124,14 @@ while [[ "$1" ]]; do
             shift
             OPT_OUTPUTDIR="$1"; shift
             [[ -d "$OPT_OUTPUTDIR" ]] || fatal "'$OPT_OUTPUTDIR' is not a directory"
+            OPT_OUTPUT_PREFIX=
+            OPT_CLEAN_OUTPUTDIR=
+            OPT_SEARCH_OUTPUTDIR=1
+            ;;
+        "-O" | "--output-prefix") shift
+            OPT_OUTPUT_PREFIX="$1"; shift
+            [[ -d "$OPT_OUTPUT_PREFIX" ]] || fatal "'$OPT_OUTPUT_PREFIX' is not a directory"
+            OPT_OUTPUTDIR=
             OPT_CLEAN_OUTPUTDIR=
             OPT_SEARCH_OUTPUTDIR=1
             ;;
@@ -1111,6 +1158,9 @@ while [[ "$1" ]]; do
             ;;
         "-s" | "--specfile" ) shift
             OPT_SPEC="$1"; shift
+            ;;
+        "-T" | "--task" ) shift
+            OPT_TASK="$1"; shift
             ;;
         "-i" | "--increment" ) shift
             OPT_INC_BUILD_NUMBER=1
@@ -1190,6 +1240,10 @@ if [[ ! "$OPT_TARGET" ]]; then
 fi
 
 [[ -d ~/.scratchbox2/$OPT_TARGET ]] || fatal "$OPT_TARGET is an invalid sb2 target"
+
+if [[ $OPT_OUTPUT_PREFIX ]]; then
+    OPT_OUTPUTDIR=$OPT_OUTPUT_PREFIX/${OPT_TASK:+$OPT_TASK-}$OPT_TARGET
+fi
 
 if [[ $OPT_SEARCH_OUTPUTDIR ]]; then
     mkdir -p "$OPT_OUTPUTDIR"
