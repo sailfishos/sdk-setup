@@ -31,10 +31,13 @@ usage:
     $____                  {--all | <name>...}
     $SELF tooling uuidgen {--all | <name>...}
 
-    $SELF target list [-l|--long] [--tooling <name>]
+    $SELF target list [-l|--long] [--tooling <name>] [--snapshots-of <name>]
+    $____             [--check-snapshots]
     $SELF target upgradable <name>
     $SELF target install <name> <url> [--tooling <name>
     $____                [--tooling-url <url>]] [--toolchain <name>]
+    $SELF target snapshot [-r|--reset[={outdated|force}]] <original> <snapshot>
+    $SELF target reserve <original> <snapshot-template> <lock-file> <pool-size>
     $SELF target remove  <name>
     $SELF target refresh {--all | <name>...}
     $SELF target update <name>
@@ -66,11 +69,49 @@ usage:
     $SELF --version
 
 Usage notes
+    $SELF target list
+        The '--long' format uses the following columns:
+
+        TARGET NAME
+        TOOLING NAME
+          - or '-' if the target does not use a tooling
+        MODE
+          - see '--mode'
+        ORIGINAL TARGET NAME
+          - or '-' if this is not a snapshot
+          - immediatelly followed with '*' if the snapshot is outdated and
+            checking snapshots was requested with '--check-snapshots'
+
     $SELF target install
         When tooling selection is forced with '--tooling' without passing
         '--tooling-url', the selected tooling MUST exist.  If '--tooling-url' is
         passed as well, the tooling MAY NOT exist, in which case it will be
         installed automatically prior to target installation.
+
+    $SELF target snapshot
+        Snapshot targets are like normal targets in most respects.  When the
+        '--reset[={outdated|force}]' option is used, it is not an error when
+        the target named <snapshot> already exists, provided that it is a
+        snapshot target that was taken from the specified <original> target.
+        This defaults to the 'outdated' behavior, in which case the snapshot
+        will be reset only when the original target was updated (RPM database
+        changed) after the snapshot was taken.  A snapshot can be reset
+        unconditionally by passing 'force' instead.  Resetting a snapshot has
+        the same effect as removing the snapshot and creating it again, except
+        that it preserves it's internal state and is more efficient.
+
+    $SELF target reserve
+        Reserve a pooled snapshot of the target identified with <original>.
+        The name for the snapshot will be printed on stdout. It will be
+        determined using <snapshot-template>, which is expected to contain at
+        least 3 consecutive 'X's in its last dot-separated component. The
+        snapshot will be reserved for as long as the <lock-file> remains
+        locked.  <pool-size> serves also as a limit for the number of
+        snapshots that can be reserved. Only snapshots using the given
+        <snapshot-template> are considered for this purpose. The
+        least-recently-used approach is applied to choose from pooled
+        snapshots unless a snapshot exists with the same <lock-file> recently
+        used.
 
 Global options
     -m, --mode <mode>
@@ -274,6 +315,68 @@ manage_user_targets_repository() {
     $USER_TARGETS_REPOSITORY/manage.sh --repository "$USER_TARGETS_REPOSITORY" "$@"
 }
 
+sudo_sync_trees() {
+    local src=$1 dst=$2
+    local dst_existed=$([[ ! -e "$dst" ]] && echo 1)
+
+    # TODO Currently our 'cp' does not support --reflink, so right now we will
+    # just act here as if the clonefile(2) call was not supported by the filesystem.
+    local can_reflink=
+
+    if [[ $can_reflink ]]; then
+        sudo cp -a --reflink=always --no-target-directory "$src" "$dst" || return
+    fi
+    if [[ $dst_existed || ! $can_reflink ]]; then
+        sudo rsync -a --delete "$src/" "$dst" || return
+    fi
+}
+
+assert_template_valid() {
+    local template=$1
+    if ! [[ $template =~ \.XXXX*$ ]]; then
+        echo >&2 "Expected name with at least 3 consecutive 'X's in its last component." \
+            "Got '$template'"
+        return 1
+    fi
+}
+
+name_matches_template() {
+    local name=$1 template=$2
+
+    assert_template_valid "$template" || return
+
+    local prefix=${template%.*}
+    local suffix=${template##*.}
+
+    [[ $name =~ ^"$prefix."${suffix//?/.}$ ]]
+}
+
+random_name() {
+    local template=$1 existing_names=$(cat)
+
+    assert_template_valid "$template" || return
+
+    local prefix=${template%.*}
+    local suffix_length=$((${#template} - ${#prefix} - 1))
+
+    local suffix= name=
+    while true; do
+        suffix=$(LC_ALL=C tr -dc A-Z0-9 </dev/urandom \
+            |dd bs=1 count="$suffix_length" 2>/dev/null) || return
+        name=$prefix.$suffix
+        if ! grep -q -F --line-regexp "$name" <<<"$existing_names"; then
+            break
+        fi
+    done
+
+    echo "$name"
+}
+
+is_locked() {
+    local lock_file=$1
+    [[ -e $lock_file ]] && ! flock --nonblock 0 <"$lock_file"
+}
+
 ################################################################'
 # Polymorphic utilities for common operations on targets, toolings and the SDK itself.
 #
@@ -329,6 +432,49 @@ enter() {
     else
         enter_$type "$object" "${cmd[@]}"
     fi
+}
+
+object_config_file()
+{
+    local type=${1%:*} object=${1#*:}
+    ${type}_config_file "$object"
+}
+
+object_config_get()
+{
+    local object=$1 key=$2 default=${3:-}
+    local config_file=$(object_config_file "$object")
+    local value=
+    if [[ -e "$config_file" ]]; then
+        value=$(sed -n "s/^$key=//p" "$config_file") || return
+    fi
+    echo "${value:-$default}"
+}
+
+object_config_set()
+{
+    local type=${1%:*} object=${1#*:} key=$2 value=$3
+    local config_file=$(object_config_file "$type:$object")
+    local maybe_sudo=
+    if [[ $type != target ]]; then
+        maybe_sudo=sudo
+    fi
+    # The following sed command needs at least one line
+    $maybe_sudo tee -a "$config_file" <<<'' >/dev/null || return
+    $maybe_sudo sed -i -e "1i $key=$value" -e "/^$key=/d" -e '/^$/d' "$config_file"
+}
+
+get_object_mode()
+{
+    local object=$1
+    local mode=
+    object_config_get "$object" "$MODE_KEY" "$MODE_USER"
+}
+
+set_object_mode()
+{
+    local object=$1 value=$2
+    object_config_set "$object" "$MODE_KEY" "$value"
 }
 
 object_zypper() {
@@ -500,16 +646,11 @@ reset_machine_id() {
 
 tooling_exists() [[ -e $MER_TOOLINGS/$1 ]]
 
-get_tooling_mode()
+# specialization of object_config_file()
+tooling_config_file()
 {
     local tooling=$1
-    cat "$MER_TOOLINGS/$tooling/$MODE_FILE" 2>/dev/null || echo "$MODE_USER"
-}
-
-set_tooling_mode()
-{
-    local tooling=$1 mode=$2
-    echo "$mode" |sudo tee >/dev/null "$MER_TOOLINGS/$tooling/$MODE_FILE"
+    echo "$MER_TOOLINGS/$tooling/$CONFIG_FILE"
 }
 
 # specialization of assert_object_exists()
@@ -566,7 +707,7 @@ list_toolings() {
 
     local tooling=
     for tooling in $(get_all_of_type_tooling); do
-        echo "$tooling" "$(get_tooling_mode "$tooling")"
+        echo "$tooling" "$(get_object_mode "tooling:$tooling")"
     done |column -t
 }
 
@@ -653,7 +794,7 @@ install_tooling() {
             manage_user_targets_repository touch tooling "$name" "${size:-0}"
         fi
     else
-        set_tooling_mode "$name" "$MODE"
+        set_object_mode "tooling:$name" "$MODE"
     fi
 
     init_machine_id tooling "$name" || return
@@ -667,7 +808,7 @@ remove_tooling() {
 
     assert_name_valid "$name" || return
 
-    local mode=$(get_tooling_mode "$name")
+    local mode=$(get_object_mode "tooling:$name")
     if [[ $MODE != "$mode" ]]; then
         echo >&2 "The tooling '$name' can only be removed in the '$mode' mode."
         return 1
@@ -835,16 +976,11 @@ manage_develpkgs() {
 ################################################################
 # Targets
 
-get_target_mode()
+# specialization of object_config_file()
+target_config_file()
 {
     local target=$1
-    cat "$MER_TARGETS/$target/$MODE_FILE" 2>/dev/null || echo "$MODE_USER"
-}
-
-set_target_mode()
-{
-    local target=$1 mode=$2
-    echo "$mode" >"$MER_TARGETS/$target/$MODE_FILE"
+    echo "$MER_TARGETS/$target/$CONFIG_FILE"
 }
 
 target_exists() {
@@ -885,12 +1021,35 @@ get_targets_using_tooling() {
     done
 }
 
+get_snapshots_of_target() {
+    local target=$1
+    local other=
+    for other in $(get_all_of_type_target); do
+        snapshot_of=$(object_config_get "target:$other" "$SNAPSHOT_OF_KEY")
+        if [[ $snapshot_of == "$target" ]]; then
+            echo "$other"
+        fi
+    done
+}
+
 list_targets() {
-    local long= tooling=
+    local long= tooling= check_snapshots= snapshots_of=
     while [[ $# -gt 0 ]]; do
         case $1 in
             -l|--long)
                 long=1
+                ;;
+            --check-snapshots)
+                check_snapshots=1
+                ;;
+            --snapshots-of)
+                snapshots_of=${2:-}
+                if [[ ! $snapshots_of ]]; then
+                    echo >&2 "$1: Argument expected"
+                    usage
+                    return 1
+                fi
+                shift
                 ;;
             --tooling)
                 tooling=${2:-}
@@ -910,9 +1069,23 @@ list_targets() {
         shift
     done
 
+    if [[ $snapshots_of && $tooling ]]; then
+        echo >&2 "Cannot combine '--snapshots-of' with '--tooling'"
+        usage
+        return 1
+    fi
+
+    if [[ $check_snapshots && ! $long ]]; then
+        echo >&2 "Cannot use '--check-snapshots' without '--long'"
+        usage
+        return 1
+    fi
+
     local targets=
     if [[ $tooling ]]; then
         targets=$(get_targets_using_tooling "$tooling") || return
+    elif [[ $snapshots_of ]]; then
+        targets=$(get_snapshots_of_target "$snapshots_of") || return
     else
         targets=$(get_all_of_type_target) || return
     fi
@@ -922,10 +1095,18 @@ list_targets() {
         return
     fi
 
-    local target=
+    local target= mode= snapshot_of= needs_reset=
     for target in $targets; do
         tooling=$(get_tooling_used_by_target "$target") # may fail
-        echo "$target" "${tooling:--}" "$(get_target_mode "$target")"
+        mode=$(get_object_mode "target:$target")
+        snapshot_of=$(object_config_get "target:$target" "$SNAPSHOT_OF_KEY")
+        needs_reset=
+        if [[ $snapshot_of && $check_snapshots ]]; then
+            if target_snapshot_needs_reset "$target" "$snapshot_of"; then
+                needs_reset=*
+            fi
+        fi
+        echo "$target" "${tooling:--}" "$mode" "${snapshot_of:--}${needs_reset}"
     done |column -t
     return ${PIPESTATUS[0]}
 }
@@ -1237,20 +1418,290 @@ install_target() {
             manage_user_targets_repository touch target "$target" "${size:-0}"
         fi
     else
-        set_target_mode "$target" "$MODE"
+        set_object_mode "target:$target" "$MODE"
     fi
 
     echo >&2 "Target '$target' now setup"
     succeeded=1
 }
 
+snapshot_target() {
+    local reset= positional_args=()
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -r|--reset)
+                reset=outdated
+                ;;
+            -r=*|--reset=*)
+                reset=${1#*=}
+                if [[ $reset != outdated && $reset != force ]]; then
+                    echo >&2 "unexpected argument to --reset: '$reset'"
+                    usage
+                    return 1
+                fi
+                ;;
+            -*)
+                echo >&2 "unrecognized option '$1'"
+                usage
+                return 1
+                ;;
+            *)
+                if [[ ${#positional_args[*]} -eq 2 ]]; then
+                    echo >&2 "unexpected positional argument '$1'"
+                    usage
+                    return 1
+                fi
+                positional_args+=("$1")
+                ;;
+        esac
+        shift
+    done
+
+    local original=${positional_args[0]}
+    local snapshot=${positional_args[1]}
+
+    assert_name_valid "$original" || return
+    assert_name_valid "$snapshot" || return
+
+    if ! target_exists "$original"; then
+        echo >&2 "Target not found '$original'"
+        return 1
+    fi
+
+    local existed_before=
+    if target_exists "$snapshot"; then
+        existed_before=1
+        if [[ ! $reset ]]; then
+            echo >&2 "Target already exists '$snapshot'. Wanted to use '--reset'?"
+            return 1
+        fi
+    fi
+
+    local succeeded= config_backup= reset_started=
+    snapshot_target_cleanup() (
+        trap 'echo cleaning up...' INT TERM HUP
+        if [[ ! $succeeded ]]; then
+            if [[ $existed_before ]]; then
+                if [[ $config_backup ]]; then
+                    local config=$(object_config_file "target:$snapshot")
+                    cat >"$config" <<<"$config_backup"
+                fi
+                if [[ $reset_started ]]; then
+                    echo >&2 "Leaving the '$snapshot' target in a possibly inconsistent state"
+                fi
+            else
+                rm -rf "$SBOX2DIR/$snapshot"
+                sudo rm -rf "$MER_TARGETS/$snapshot"
+                if [[ $INSIDE_VBOX ]]; then
+                    rm -rf "$HOST_TARGETS/$snapshot"
+                fi
+            fi
+        fi
+    )
+    trap 'snapshot_target_cleanup; trap - RETURN' RETURN
+    trap 'return 1' INT TERM HUP
+
+    if [[ ! $existed_before ]]; then
+        local orig_sb2_config=~/.scratchbox2/$original/sb2.config
+        local sb2_init_args=
+        sb2_init_args=$(set +o nounset; \
+            . "$orig_sb2_config" && printf '%s\n' "$SBOX_INIT_ORIG_ARGS") || return
+        sb2_init_args=${sb2_init_args/ $original / $snapshot }
+
+        echo >&2 "Taking snapshot '$snapshot' of '$original' target..."
+        sudo_sync_trees "$MER_TARGETS/$original" "$MER_TARGETS/$snapshot" || return
+        object_config_set "target:$snapshot" "$SNAPSHOT_OF_KEY" "$original" || return
+        ( cd "$MER_TARGETS/$snapshot" && sb2-init $sb2_init_args ) || return
+        object_config_set "target:$snapshot" "$SNAPSHOT_TIME_KEY" "$(date -R)" || return
+    else
+        local snapshot_of=
+        snapshot_of=$(object_config_get "target:$snapshot" "$SNAPSHOT_OF_KEY") || return
+        if [[ $snapshot_of != "$original" ]]; then
+            echo >&2 "The '$snapshot' target is not a snapshot of '$original'"
+            return 1
+        fi
+
+        if [[ $reset == force ]] || target_snapshot_needs_reset "$snapshot" "$original"; then
+            echo >&2 "Resetting snapshot '$snapshot' of '$original' target..."
+            local config=$(object_config_file "target:$snapshot")
+            if [[ -e $config ]]; then
+                read -r -d '' config_backup <"$config"
+            fi
+            reset_started=1
+            sudo_sync_trees "$MER_TARGETS/$original" "$MER_TARGETS/$snapshot" || return
+            if [[ $config_backup ]]; then
+                cat >"$config" <<<"$config_backup"
+                config_backup=
+            fi
+            object_config_set "target:$snapshot" "$SNAPSHOT_TIME_KEY" "$(date -R)" || return
+        fi
+    fi
+
+    succeeded=1
+}
+
+target_snapshot_needs_reset() {
+    local snapshot=$1 original=$2
+
+    local tmpfile=
+    target_snapshot_needs_reset_cleanup() (
+        trap 'echo cleaning up...' INT TERM HUP
+        if [[ $tmpfile ]]; then
+            rm -f "$tmpfile"
+        fi
+    )
+    trap 'target_snapshot_needs_reset_cleanup; trap - RETURN' RETURN
+    trap 'return 1' INT TERM HUP
+
+    local snapshot_time=
+    snapshot_time=$(object_config_get "target:$snapshot" "$SNAPSHOT_TIME_KEY") || return
+
+    # Try to avoid querying RPM database as it takes considerable amount of time
+    tmpfile=$(mktemp) || return
+    touch --date "$snapshot_time" "$tmpfile" || return
+    local newer=
+    newer=$(find "$MER_TARGETS/$original/var/lib/rpm" -newer "$tmpfile" -print -quit) || return
+    if [[ ! $newer ]]; then
+        return 1
+    fi
+
+    # TODO how to determine recent package removal?
+    local most_recent_install_time=
+    most_recent_install_time=$(set -o pipefail; rpm --root="$MER_TARGETS/$original" -qa \
+        --queryformat '%{installtime}\n' |sort -n |tail -n1) || return
+    local snapshot_time_s=$(date --date "$snapshot_time" +%s) || return
+
+    (( most_recent_install_time > snapshot_time_s ))
+}
+
+reserve_target() {
+    local positional_args=()
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -*)
+                echo >&2 "unrecognized option '$1'"
+                usage
+                return 1
+                ;;
+            *)
+                if [[ ${#positional_args[*]} -eq 4 ]]; then
+                    echo >&2 "unexpected positional argument '$1'"
+                    usage
+                    return 1
+                fi
+                positional_args+=("$1")
+                ;;
+        esac
+        shift
+    done
+
+    if [[ ${#positional_args[*]} -ne 4 ]]; then
+        echo >&2 "Too few arguments given"
+        usage
+        return 1
+    fi
+
+    local original=${positional_args[0]}
+    local snapshot_template=${positional_args[1]}
+    local lock_file=${positional_args[2]}
+    local pool_size=${positional_args[3]}
+
+    assert_name_valid "$original" || return
+    assert_name_valid "$snapshot_template" || return
+
+    if ! target_exists "$original"; then
+        echo >&2 "Target not found '$original'"
+        return 1
+    fi
+
+    assert_template_valid "$snapshot_template" || return
+
+    if ! is_locked "$lock_file"; then
+        echo >&2 "WARNING: File does not seem to be locked: '$lock_file'"
+    fi
+
+    if ! [[ $pool_size -gt 0 ]]; then
+        echo >&2 "Not a positive integer: '$pool_size'"
+        return 1
+    fi
+
+    local target= pooled_targets=() lru_pooled_target= lru_time= reset=
+    for target in $(get_all_of_type_target); do
+        name_matches_template "$target" "$snapshot_template" || continue
+
+        local other_lock_file=
+        other_lock_file=$(object_config_get "target:$target" "$LOCK_KEY") || return
+        if [[ ! $other_lock_file ]]; then
+            echo >&2 "WARNING: Ingoring pooled target with no lock file set: '$target'"
+            continue
+        fi
+
+        pooled_targets+=("$target")
+
+        local lock_time=
+        lock_time=$(object_config_get "target:$target" "$LOCK_TIME_KEY") || return
+        lock_time=$(date --date "$lock_time" +%s) || return
+
+        # Target recently reserved using the same lock is favored disregards its LRU score
+        if [[ $other_lock_file == "$lock_file" ]]; then
+            lru_pooled_target=$target
+            lru_time=$lock_time
+            reset=outdated
+            break
+        fi
+
+        if is_locked "$other_lock_file"; then
+            if [[ $other_lock_file == "$lock_file" ]]; then
+                echo >&2 "WARNING: Another target reserved with the same lock file: '$target'"
+            fi
+            # Target still in use
+            continue
+        fi
+
+        if [[ ! $lru_time || $lru_time -gt $lock_time ]]; then
+            lru_pooled_target=$target
+            lru_time=$lock_time
+            reset=force
+        fi
+    done
+
+    local snapshot=
+    if [[ $lru_pooled_target ]]; then
+        snapshot=$lru_pooled_target
+        snapshot_target --reset="$reset" "$original" "$snapshot" || return
+    else
+        if [[ ${#pooled_targets[@]} -ge $pool_size ]]; then
+            echo >&2 "Pool size exceeded. Target cannot be reserved."
+            return 1
+        fi
+
+        local snapshot=
+        snapshot=$(IFS=$'\n'; random_name "$snapshot_template" <<<"${pooled_targets[*]}") || return
+
+        # sb2-init would pollute stdout
+        snapshot_target "$original" "$snapshot" >&2 || return
+    fi
+
+    object_config_set "target:$snapshot" "$LOCK_TIME_KEY" "$(date -R)" || return
+    object_config_set "target:$snapshot" "$LOCK_KEY" "$lock_file" || return
+    echo "$snapshot"
+}
+
 remove_target() {
     local target=$1
     assert_name_valid "$target" || return
     if [[ -d $SBOX2DIR/$target ]]; then
-        local mode=$(get_target_mode "$target")
+        local mode=$(get_object_mode "target:$target")
         if [[ $MODE != "$mode" ]]; then
             echo >&2 "The target '$target' can only be removed in the '$mode' mode."
+            return 1
+        fi
+
+        local snapshots=$(get_snapshots_of_target "$target")
+        if [[ $snapshots ]]; then
+            snapshots=$(echo $snapshots |sed 's/ /, /')
+            echo >&2 "Cannot remove target '$target': The following snapshots exist: '$snapshots'." \
+                "Remove the snapshots first."
             return 1
         fi
 
@@ -1290,6 +1741,12 @@ manage_targets() {
 	?(--)install ) shift
             install_target "$@"
 	    ;;
+        ?(--)snapshot ) shift
+            snapshot_target "$@"
+            ;;
+        ?(--)reserve ) shift
+            reserve_target "$@"
+            ;;
 	?(--)remove ) shift
 	    remove_target "$@"
 	    ;;
@@ -1458,11 +1915,18 @@ HOST_TARGETS=/host_targets
 SBOX2DIR=${HOME}/.scratchbox2
 TARGETS_XML=${HOST_TARGETS}/targets.xml
 USER_TARGETS_REPOSITORY=${HOST_TARGETS}/targets.repository
+CONFIG_FILE=.sdk-manage.conf
 
-MODE_FILE=.sdk-manage.mode
+MODE_KEY=mode
 MODE_USER=user
 MODE_INSTALLER=installer
 MODE=$MODE_USER
+
+SNAPSHOT_OF_KEY=snapshot-of
+SNAPSHOT_TIME_KEY=snapshot-time
+
+LOCK_KEY=lock
+LOCK_TIME_KEY=lock-time
 
 TMPDIR_DOWNLOADS=/var/tmp
 

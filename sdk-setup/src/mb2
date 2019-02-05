@@ -56,6 +56,9 @@ Note that any other build steps in the .spec file will also be run.
 one it must be provided.  $ME is aware of spectacle and will update the spec
 file if there is an obvious yaml file which is newer.
 
+
+SHADOW BUILDS
+
 CWD is used as a base dir for installroot/ and RPMS/ to allow for shadow
 builds. Shadow builds can be done by passing project file or directory path to
 the "build" or "qmake" command:
@@ -80,6 +83,62 @@ Limitations related to shadow builds:
        targets are still possible provided that the %prep section is
        target-independent).
 
+
+SHARED OUTPUT DIRECTORY
+
+To make deployment easier it is possible to use a shared output directory
+specified with the '--output-dir' option or more conveniently with the
+combination of '--output-prefix' and '--task' options.  Consider enabling
+'--output-prefix' by default by creating an alias in your '~/.mersdk.profile'
+and optionally invoking mb2 with the '--task' option to get build results
+grouped by the tasks they are related to:
+
+    alias mb2='mb2 --output-prefix ~/RPMS'
+
+    cd packageA
+    mb2 -t target --task jbXXXXX build
+    cd ../packageB
+    mb2 -t target --task jbXXXXX build
+    rsync -av ~/RPMS/jbXXXXX-target/ device:RPMS \\
+        && ssh device zypper -p RPMS -v dup
+
+With these options the output directory is also searched for build-time
+dependencies by default, so if packageB requires packageA at build time, you
+do not need to install packageA manually to the build target.
+
+
+CLEAN BUILDS
+
+It is possible to avoid polluting build targets with build time dependencies
+of a particular package by using the '--snapshot' option. With this option the
+build target is not used directly. Instead a snapshot is taken and the build
+is done using the snapshot of the build target. See '--snapshot' for details
+on how the snapshot is chosen.
+
+The snapshot will be reset automatically whenever the original build target is
+updated, so if e.g. a locally built package is needed as a build-time
+dependency, instead of installing it manually you should rely on the above
+mentioned fact that with custom output directory the '--search-output-dir'
+option is implied, and combine the '--snapshot' option with the
+'--output-prefix' option.
+
+For similar reasons, when mb2 fails to install build-time dependencies due to
+errors like "file not found on the server", .i.e., because the local
+repository cache got outdated, it is the original target that should be
+updated, not the snapshot.
+
+Consider enabling '--snapshot' by default as well:
+
+    alias mb2='mb2 --output-prefix ~/RPMS --snapshot'
+
+In order to ensure targets are not polluted by running mb2 without
+'--snapshot' unintentionally, mb2 requires to use '--no-snapshot' explicitly
+once at least one snapshot exists for a target.  Existing snapshots can be
+listed and removed using 'sdk-assistant'.
+
+
+MAINTAINING CHANGELOGS
+
 If a file exists with '.changes' extension, otherwise matching the
 spec file name, the effect will be the same as having a %changelog
 section in the spec file.  If a file with '.changes.run' extension is
@@ -87,15 +146,20 @@ found instead, this file will be executed and its output treated as
 the actual changelog.
 
 COMMANDS
-    installdeps
+    installdeps [--[no-]refresh] [--reset]
         Install the missing build-time dependencies as is done implicitly by
         the "prep", "build" and "qmake" commands but refresh the package cache
+        first, unless '--no-refresh' is active. When the global '--snapshot'
+        option is used, '--no-refresh' is implied.  This can be overriden with
+        '--refresh' - do not use unless you know what you are doing. If
+        refresh is needed, refresh (and update) the original target instead.
+        The '--reset' option can only be used together with the '--snapshot'
+        global option, with the effect of reseting the target snapshot
+        forcefully to the (possibly updated) state of the original target
         first.
-        Compatible global options: -s -t
 
     prep
         Run rpmbuild. Execute just the %prep section of the .spec file.
-        Compatible global options: -n.
 
     apply [-R]
         Apply all patches defined in the .spec file to the source tree.
@@ -111,7 +175,6 @@ COMMANDS
         -p    run %prep phase as well
         -d    enable debug build
         -j <n> use only 'n' CPUs to build
-        Compatible global options: -s -t -i -x -X -c -n
 
     qmake [<project-dir-or-file>] [[--] <qmake-extra-args>]
         Run rpmbuild. Execute just the %build section of the .spec file,
@@ -120,33 +183,31 @@ COMMANDS
         the current working directory is treated as the project directory. (The
         file name part is ignored - project file selection is done by qmake call
         inside the .spec file.)
-        Compatible global options: -s -t -n
 
     make [<make-extra-args>]
         Run rpmbuild. Execute just the %build section of the .spec file,
         suppressing any "qmake" invocation figuring in that section.
-        Compatible global options: -s -t
 
     install
         Run rpmbuild. Execute just the %install section of the .spec file.
-        Compatible global options: -s -t
 
     rpm
         Run rpmbuild. Execute just the %install section of the .spec file, then
         build binary packages.
-        Compatible global options: -s -t -i -x -X -c
 
     deploy --zypper|--pkcon|--rsync|--sdk
         Deploy build results to a device. This implies also the "install" step
         and except for the --rsync method it will include also the "rpm" step.
-        Compatible global options: -s -t -d -i -f -x -X -c
 
     run [<command> [<args>]]
         Run the given command (on device if --device given).  Can be used for
         running gdb and a gdb server.
-        Compatible global options: -s -t -d
 
 GLOBAL OPTIONS
+    The order of passing options matters. Options that occur later on the
+    command line may override earlier options, including those implied by
+    the earlier options.
+
     -i, --increment
         Increment release number in .spec file
 
@@ -156,16 +217,52 @@ GLOBAL OPTIONS
     -d, --device <name>
         Specify the device
 
-    -o, --outputdir <dir>
-        Where to place produced RPM files. Defaults to ./RPMS directory.  With
-        this option existing files in the output directory are preserved
+    -o, --output-dir <dir>
+        Defaults to './RPMS'. The resulting RPM packages will be placed
+        directly under the specified <dir>. With this option existing files in
+        the output directory are preserved.  Implies '--search-output-dir'
+
+    -O, --output-prefix <dir>
+        Much like '--output-dir' except that a subdirectory of the given <dir>
+        will be used, denoted by the build target name (see '--target') and
+        optionally prefixed with task name (see '--task') separated with
+        single dash ('-') character ('<dir>/[<task>-]<target>').
+
+    --search-output-dir[={verbose|quiet}]
+        Consider the RPM packages found in the output directory when installing
+        build time dependencies. The optional value controls zypper verbosity.
+        The default is 'verbose'.
+
+    --no-search-output-dir
+        Override '--search-output-dir' option
 
     -s, --specfile <file>
         Specify the .spec file
 
+    -S, --snapshot[=<suffix>]
+        Avoid installing build-time dependencies to the sb2 target - use a
+        snapshot of that target instead. The snapshot name will be determined
+        by combining the original target name with the given <suffix>. Any
+        occurence of '%{task}' within the <suffix> will be substituted with
+        the name specified with the '--task' option or with an empty string if
+        the '--task' option is not used. When no suffix was specified or when
+        the substitution yields an empty string, a temporary snapshot will be
+        used (these have ".mb2." followed by random character sequence in
+        their names).  Snapshot state is preserved across mb2 invocations
+        unless the original target was updated meanwhile or it is a temporary
+        snapshot that was previously used with different build tree, in which
+        cases the snapshot will be reset. Snapshot can be reset forcefully
+        using the 'installdeps' command with its '--reset' option.
+
+    --no-snapshot
+        Force mb2 to directly use a target for which snapshots exist.
+
     -f, --shared-folder <dir>
-        The folder where QtCreator shares devices.xml and ssh keys this option
-        is useful if deploy option is used outside of virtual machine
+        The folder where QtCreator shares devices.xml and ssh keys. This option
+        is useful when the deploy command is used outside of virtual machine.
+
+    -T, --task <name>
+        Modifies behavior of '--output-prefix' and '--snapshot' options.
 
     -x, --fix-version[=<tag>]
         This option is implied when used inside a Git working tree (use -X to
@@ -191,6 +288,12 @@ GLOBAL OPTIONS
         '.changes.run' extension to instruct $ME to generate changelog with
         'git-change-log <args>' instead.
 
+
+KNOWN ISSUES
+
+Build target snapshot is not reset automatically when the original target is
+changed just by removing packages. Package installation or update is needed to
+trigger the automatic reset.
 EOF
 }
 
@@ -298,7 +401,14 @@ verify_target_dependencies() {
         if inside_build_engine; then
             local oldpkgs=$(sb2 -t "$OPT_TARGET" -m sdk-install rpm -qa)
         fi
-        sb2 -t "$OPT_TARGET" -m sdk-install -R zypper --quiet --non-interactive in "${deps[@]}"
+        if [[ $OPT_SEARCH_OUTPUTDIR ]]; then
+            local args=(--"$OPT_SEARCH_OUTPUTDIR_VERBOSITY" --non-interactive \
+                --plus-repo "$OPT_OUTPUTDIR" --no-gpg-checks)
+            sb2 -t "$OPT_TARGET" -m sdk-install -R zypper "${args[@]}" dup --from '~plus-repo-1'
+            sb2 -t "$OPT_TARGET" -m sdk-install -R zypper "${args[@]}" in "${deps[@]}"
+        else
+            sb2 -t "$OPT_TARGET" -m sdk-install -R zypper --quiet --non-interactive in "${deps[@]}"
+        fi
         if inside_build_engine; then
             local newpkgs=$(sb2 -t "$OPT_TARGET" -m sdk-install rpm -qa)
             if [[ $newpkgs != $oldpkgs ]]; then
@@ -649,9 +759,37 @@ END
     chmod +x "$wrapper"
 }
 
+switch_to_snapshot() {
+    OPT_ORIGINAL_TARGET=$OPT_TARGET
+    OPT_SNAPSHOT_SUFFIX=${OPT_SNAPSHOT_SUFFIX//%{task\}/$OPT_TASK}
+
+    if [[ $OPT_SNAPSHOT_SUFFIX ]]; then
+        OPT_TARGET=$OPT_ORIGINAL_TARGET.$OPT_SNAPSHOT_SUFFIX
+        sdk-manage target snapshot --reset=outdated "$OPT_ORIGINAL_TARGET" "$OPT_TARGET" || return
+    else
+        local lock=$STATEDIR/snapshot.lock
+        mkdir -p "$STATEDIR" || return
+        exec 10> "$lock" || return
+        if ! flock --nonblock 10; then
+            fatal "Failed to flock '$lock'"
+        fi
+        OPT_TARGET=$(sdk-manage target reserve "$OPT_ORIGINAL_TARGET" \
+            "$OPT_ORIGINAL_TARGET.$SNAPSHOT_POOL_SUFFIX" "$lock" "$SNAPSHOT_POOL_SIZE") || return
+    fi
+
+    notice "The '--snapshot' option is active - using the '$OPT_TARGET' snapshot of the target"
+}
+
 run_installdeps() {
-    # Refresh repos before installing dependencies
-    sb2 -t "$target" -m sdk-install -R zypper --non-interactive ref
+    if [[ $INSTALLDEPS_RESET ]]; then
+        if ! sdk-manage target snapshot --reset=force "$OPT_ORIGINAL_TARGET" "$OPT_SNAPSHOT"; then
+            fatal "Failed to reset snapshot '$OPT_SNAPSHOT' to '$OPT_ORIGINAL_TARGET'"
+        fi
+    fi
+    if [[ ! $INSTALLDEPS_NOREFRESH ]]; then
+        # Refresh repos before installing dependencies
+        sb2 -t "$OPT_TARGET" -m sdk-install -R zypper --non-interactive ref
+    fi
     verify_target_dependencies
 }
 
@@ -951,9 +1089,16 @@ ME=${0/#*\//}
 # option variables
 OPT_SPEC=
 OPT_TARGET=
+OPT_ORIGINAL_TARGET=
+OPT_SNAPSHOT=
+OPT_SNAPSHOT_SUFFIX=
+OPT_NO_SNAPSHOT=
 OPT_DEVICE=
 OPT_OUTPUTDIR=$(readlink -f ./RPMS)
 OPT_CLEAN_OUTPUTDIR=1
+OPT_SEARCH_OUTPUTDIR=
+OPT_SEARCH_OUTPUTDIR_VERBOSITY=verbose
+OPT_OUTPUT_PREFIX=
 OPT_PKGDIR="./rpm"
 OPT_PRO_FILE_OR_DIR=
 OPT_SRC_DIR=
@@ -969,6 +1114,8 @@ OPT_NO_DEPS=
 deviceuser=nemo
 
 STATEDIR=$PWD/.mb2
+SNAPSHOT_POOL_SUFFIX=mb2.XXX
+SNAPSHOT_POOL_SIZE=5
 
 # Virtualbox environment will install in this hardcoded location
 if inside_build_engine; then
@@ -1063,10 +1210,23 @@ while [[ "$1" ]]; do
         "-d" | "--device") shift
             OPT_DEVICE="$1"; shift
             ;;
-        "-o" | "--outputdir") shift
+        "-o" | "--outputdir" | "--output-dir")
+            if [[ $1 == --outputdir ]]; then
+                notice "The '$1' option is deprecated. Use '--output-dir' instead."
+            fi
+            shift
             OPT_OUTPUTDIR="$1"; shift
             [[ -d "$OPT_OUTPUTDIR" ]] || fatal "'$OPT_OUTPUTDIR' is not a directory"
+            OPT_OUTPUT_PREFIX=
             OPT_CLEAN_OUTPUTDIR=
+            OPT_SEARCH_OUTPUTDIR=1
+            ;;
+        "-O" | "--output-prefix") shift
+            OPT_OUTPUT_PREFIX="$1"; shift
+            [[ -d "$OPT_OUTPUT_PREFIX" ]] || fatal "'$OPT_OUTPUT_PREFIX' is not a directory"
+            OPT_OUTPUTDIR=
+            OPT_CLEAN_OUTPUTDIR=
+            OPT_SEARCH_OUTPUTDIR=1
             ;;
         "-p" | "--projectdir")
             notice "The '$1' option is deprecated. Try '$ME --help' for more information."
@@ -1074,8 +1234,40 @@ while [[ "$1" ]]; do
             pro_file_or_dir="$2"
             shift 2
             ;;
+        "--search-output-dir") shift
+            OPT_SEARCH_OUTPUTDIR=1
+            ;;
+        "--search-output-dir"=* )
+            OPT_SEARCH_OUTPUTDIR=1
+            OPT_SEARCH_OUTPUTDIR_VERBOSITY=${1#*=}
+            if [[ $OPT_SEARCH_OUTPUTDIR_VERBOSITY != verbose &&
+                    $OPT_SEARCH_OUTPUTDIR_VERBOSITY != quiet ]]; then
+                fatal "Unexpected argument to '--search-output-dir': '$OPT_SEARCH_OUTPUTDIR_VERBOSITY'"
+            fi
+            shift
+            ;;
+        "--no-search-output-dir") shift
+            OPT_SEARCH_OUTPUTDIR=
+            ;;
         "-s" | "--specfile" ) shift
             OPT_SPEC="$1"; shift
+            ;;
+        "-S" | "--snapshot" ) shift
+            OPT_SNAPSHOT=1
+            OPT_SNAPSHOT_SUFFIX=
+            ;;
+        "-S"=* | "--snapshot"=* )
+            OPT_SNAPSHOT=1
+            OPT_SNAPSHOT_SUFFIX=${1#*=}
+            shift
+            ;;
+        "--no-snapshot" ) shift
+            OPT_SNAPSHOT=
+            OPT_SNAPSHOT_SUFFIX=
+            OPT_NO_SNAPSHOT=1
+            ;;
+        "-T" | "--task" ) shift
+            OPT_TASK="$1"; shift
             ;;
         "-i" | "--increment" ) shift
             OPT_INC_BUILD_NUMBER=1
@@ -1156,14 +1348,54 @@ fi
 
 [[ -d ~/.scratchbox2/$OPT_TARGET ]] || fatal "$OPT_TARGET is an invalid sb2 target"
 
+if [[ $OPT_OUTPUT_PREFIX ]]; then
+    OPT_OUTPUTDIR=$OPT_OUTPUT_PREFIX/${OPT_TASK:+$OPT_TASK-}$OPT_TARGET
+fi
+
+if [[ $OPT_SEARCH_OUTPUTDIR ]]; then
+    mkdir -p "$OPT_OUTPUTDIR"
+fi
+
+if [[ $OPT_SNAPSHOT ]]; then
+    switch_to_snapshot || fatal "Failed to init target snapshot"
+elif [[ ! $OPT_NO_SNAPSHOT ]]; then
+    if [[ $(sdk-manage target list --snapshots-of "$OPT_TARGET") ]]; then
+        echo >&2 "The '$OPT_TARGET' target has snapshots."
+        echo >&2 "Pass '--no-snapshot' to confirm you really want to use the target directly."
+        exit 1
+    fi
+fi
+
 if [[ $OPT_FIX_VERSION_HINT && ! $(git_ tag --list "$OPT_FIX_VERSION_HINT") ]]; then
     fatal "'$OPT_FIX_VERSION_HINT' no such Git tag"
 fi
 
 case "$1" in
-    make | install | installdeps | rpm | deploy | prep )
+    make | install | rpm | deploy | prep )
         cmd=run_$1
         shift
+        ;;
+    installdeps )
+        cmd=run_$1; shift
+        if [[ $OPT_SNAPSHOT ]]; then
+            INSTALLDEPS_NOREFRESH=1
+        fi
+        while [[ "$1" ]]; do
+            case "$1" in
+                --refresh) shift
+                    INSTALLDEPS_NOREFRESH= ;;
+                --no-refresh) shift
+                    INSTALLDEPS_NOREFRESH=1 ;;
+                --reset) shift
+                    if [[ ! $OPT_SNAPSHOT ]]; then
+                        fatal "Cannot do 'installdeps --reset' without '--snapshot'"
+                    fi
+                    INSTALLDEPS_RESET=1 ;;
+                *)
+                    short_usage quit
+                    ;;
+            esac
+        done
         ;;
     apply )
         cmd=run_$1; shift
