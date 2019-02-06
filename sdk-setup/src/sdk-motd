@@ -167,6 +167,12 @@ maybe_refresh()
     fi
 }
 
+title_to_anchor()
+{
+    local title=$1
+    printf '%s' "${title// /_}" |perl -p -e 's/([^-._A-Za-z0-9])/sprintf(".%02X", ord($1))/seg'
+}
+
 list_motds()
 {
     sed -n 's/^[[:space:]]*===[[:space:]]*\([^=[:space:]].*[^[:space:]]\)[[:space:]]*===[[:space:]]*$/\1/p' "$CACHE_FILE"
@@ -215,10 +221,12 @@ END
         return 1
     fi
 
+    local anchor=$(title_to_anchor "$title")
+
     fmt --width "$FMT_WIDTH" <<END
 $body
 
-Learn more on <$OPT_PAGE#${title// /_}>.
+Learn more on <$OPT_PAGE#$anchor>.
 END
 }
 
