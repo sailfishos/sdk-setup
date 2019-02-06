@@ -104,8 +104,9 @@ MOTD FILE FORMAT
     message that the SDK must be upgraded to enable the mentioned feature.
 
 REFERENCES
-    1. $DEFAULT_PAGE
-       Default Wiki page to use as a source of MOTDs
+    1. $DEFAULT_PAGE_RELEASE
+       $DEFAULT_PAGE_PRERELEASE
+       Default Wiki pages to use as a source of MOTDs
 
     2. https://meta.wikimedia.org/wiki/Help:Piped_link
        MediaWiki's Piped links
@@ -165,6 +166,18 @@ refresh()
     touch "$CACHE_FILE" || return
 
     with_tmp_file "$CACHE_FILE" download_page "$OPT_PAGE"
+}
+
+ssu_domain()
+{
+    local domain=
+    if ! domain=$(ssu domain 2>/dev/null |sed 's/.*[[:space:]]\([[:alpha:]]\+\)$/\1/') \
+        || [[ ! $domain ]]; then
+        fatal "Failed to determine SSU domain"
+        return 1
+    fi
+
+    printf '%s\n' "$domain"
 }
 
 maybe_refresh()
@@ -376,7 +389,8 @@ add_recent()
 
 set_defaults()
 {
-    DEFAULT_PAGE="https://sailfishos.org/wiki/SDK_Tips"
+    DEFAULT_PAGE_PRERELEASE="https://sailfishos.org/wiki/SDK_Tips_-_Prerelease"
+    DEFAULT_PAGE_RELEASE="https://sailfishos.org/wiki/SDK_Tips"
     CACHE_FILE=$XDG_CACHE_HOME/$SELF
     RECENT_FILE=$XDG_DATA_HOME/$SELF
     # When --daily is used and no unread messages are available, prolong the
@@ -384,11 +398,18 @@ set_defaults()
     READ_AGAIN_MIN_DAYS=4
     FMT_WIDTH=80
 
+    local domain=
+    domain=$(ssu_domain) || return
+
     OPT_ALL=
     OPT_DAILY=
     OPT_NO_RECORD=
     OPT_NO_REFRESH=
-    OPT_PAGE=$DEFAULT_PAGE
+    if [[ $domain == jolla ]]; then
+        OPT_PAGE=$DEFAULT_PAGE_PRERELEASE
+    else
+        OPT_PAGE=$DEFAULT_PAGE_RELEASE
+    fi
     OPT_RECENT=
     OPT_REFRESH=
     OPT_SHORT_USAGE=
@@ -516,6 +537,7 @@ fi 9>"$XDG_RUNTIME_DIR/$USER-$SELF.lock"
 ##############################################################################
 # S E L F - T E S T  EXECUTION BEGINS HERE
 
+ssu_domain() { echo "sailfish"; }
 set_defaults || exit
 CACHE_FILE=
 RECENT_FILE=
