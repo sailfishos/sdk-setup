@@ -96,9 +96,17 @@ MOTD FILE FORMAT
         - <code/> HTML tag
         - amp, lt, gt HTML entities
 
+    It is possible to restrict displaying certain MOTD just to installations
+    where a package/version requirement is met. This requirement may be
+    specified in parentheses near the end of the heading, e.g.,
+    "(sdk-utils>=1.2.3)". Failure to meet a requirement will hide the MOTD if
+    it is an older-than requirement. Otherwise the MOTD will be displayed with
+    message that the SDK must be upgraded to enable the mentioned feature.
+
 REFERENCES
-    1. $DEFAULT_PAGE
-       Default Wiki page to use as a source of MOTDs
+    1. $DEFAULT_PAGE_RELEASE
+       $DEFAULT_PAGE_PRERELEASE
+       Default Wiki pages to use as a source of MOTDs
 
     2. https://meta.wikimedia.org/wiki/Help:Piped_link
        MediaWiki's Piped links
@@ -160,6 +168,18 @@ refresh()
     with_tmp_file "$CACHE_FILE" download_page "$OPT_PAGE"
 }
 
+ssu_domain()
+{
+    local domain=
+    if ! domain=$(ssu domain 2>/dev/null |sed 's/.*[[:space:]]\([[:alpha:]]\+\)$/\1/') \
+        || [[ ! $domain ]]; then
+        fatal "Failed to determine SSU domain"
+        return 1
+    fi
+
+    printf '%s\n' "$domain"
+}
+
 maybe_refresh()
 {
     if [[ ! -e $CACHE_FILE || $(find "$CACHE_FILE" -mmin +$((60*24))) ]]; then
@@ -167,9 +187,46 @@ maybe_refresh()
     fi
 }
 
+title_to_anchor()
+{
+    local title=$1
+    printf '%s' "${title// /_}" |perl -p -e 's/([^-._A-Za-z0-9])/sprintf(".%02X", ord($1))/seg'
+}
+
+requirement_from_title()
+{
+    local title=$1
+    if [[ $title =~ \([[:space:]]*([^()[:space:]]*)[[:space:]]*\)$ ]]; then
+        printf '%s\n' "${BASH_REMATCH[1]}"
+        return
+    fi
+    return 1
+}
+
+is_requirement_met()
+{
+    local requirement=$1
+    zypper search --provides --match-exact --installed-only "$requirement" >/dev/null
+}
+
+requires_older() [[ $1 == *'<'* ]]
+
 list_motds()
 {
-    sed -n 's/^[[:space:]]*===[[:space:]]*\([^=[:space:]].*[^[:space:]]\)[[:space:]]*===[[:space:]]*$/\1/p' "$CACHE_FILE"
+    local titles=
+    titles=$(sed -n \
+        's/^[[:space:]]*===[[:space:]]*\([^=[:space:]].*[^[:space:]]\)[[:space:]]*===[[:space:]]*$/\1/p' \
+        "$CACHE_FILE")
+    [[ ! $titles ]] && return
+
+    local title= requirement=
+    while read title; do
+        if requirement=$(requirement_from_title "$title"); then
+            # Skip obsolete MOTDs - those that require some older version of a package
+            is_requirement_met "$requirement" || ! requires_older "$requirement" || continue
+        fi
+        printf '%s\n' "$title"
+    done <<<"$titles"
 }
 
 print_motd()
@@ -183,7 +240,7 @@ print_motd()
             found_motd=0
             body=""
         }
-        /^[[:space:]]*===[^=]+===[[:space:]]*$/ {
+        /^[[:space:]]*===[^=].*[^=]===[[:space:]]*$/ {
             gsub(/^[[:space:]]*===[[:space:]]*/, "")
             gsub(/[[:space:]]*===[[:space:]]*$/, "")
             if ($0 == title) {
@@ -215,10 +272,23 @@ END
         return 1
     fi
 
+    local requirement=
+    if requirement=$(requirement_from_title "$title"); then
+        if ! is_requirement_met "$requirement"; then
+            if requires_older "$requirement"; then
+                fatal "The '$title' MOTD is abandoned now"
+                return 1
+            fi
+            body+=$'\n\n'"Update your SDK to make this feature available - $requirement is needed."
+        fi
+    fi
+
+    local anchor=$(title_to_anchor "$title")
+
     fmt --width "$FMT_WIDTH" <<END
 $body
 
-Learn more on <$OPT_PAGE#${title// /_}>.
+Learn more on <$OPT_PAGE#$anchor>.
 END
 }
 
@@ -319,7 +389,8 @@ add_recent()
 
 set_defaults()
 {
-    DEFAULT_PAGE="https://sailfishos.org/wiki/SDK_Tips"
+    DEFAULT_PAGE_PRERELEASE="https://sailfishos.org/wiki/SDK_Tips_-_Prerelease"
+    DEFAULT_PAGE_RELEASE="https://sailfishos.org/wiki/SDK_Tips"
     CACHE_FILE=$XDG_CACHE_HOME/$SELF
     RECENT_FILE=$XDG_DATA_HOME/$SELF
     # When --daily is used and no unread messages are available, prolong the
@@ -327,11 +398,18 @@ set_defaults()
     READ_AGAIN_MIN_DAYS=4
     FMT_WIDTH=80
 
+    local domain=
+    domain=$(ssu_domain) || return
+
     OPT_ALL=
     OPT_DAILY=
     OPT_NO_RECORD=
     OPT_NO_REFRESH=
-    OPT_PAGE=$DEFAULT_PAGE
+    if [[ $domain == jolla ]]; then
+        OPT_PAGE=$DEFAULT_PAGE_PRERELEASE
+    else
+        OPT_PAGE=$DEFAULT_PAGE_RELEASE
+    fi
     OPT_RECENT=
     OPT_REFRESH=
     OPT_SHORT_USAGE=
@@ -459,6 +537,7 @@ fi 9>"$XDG_RUNTIME_DIR/$USER-$SELF.lock"
 ##############################################################################
 # S E L F - T E S T  EXECUTION BEGINS HERE
 
+ssu_domain() { echo "sailfish"; }
 set_defaults || exit
 CACHE_FILE=
 RECENT_FILE=
@@ -585,6 +664,52 @@ verify print_all <<'END'
   The third & last tip.
 
   Learn more on <https://sailfishos.org/wiki/SDK_Tips#Tip_3>.
+END
+
+is_requirement_met() [[ $1 == "sdk-utils>=1" ]]
+sed -i 's/Tip 1/& (sdk-utils>=2) /' "$CACHE_FILE"
+sed -i 's/Tip 2/& (sdk-utils>=1 ) /' "$CACHE_FILE"
+sed -i 's/Tip 3/& (  sdk-utils<1 ) /' "$CACHE_FILE"
+
+verify list_motds <<'END'
+Tip 1 (sdk-utils>=2)
+Tip 2 (sdk-utils>=1 )
+END
+
+verify print_motd "Tip 1 (sdk-utils>=2)" <<'END'
+This is the very first tip how to use `foo` or `bar <baz>` within the SDK
+right after the Installation.
+
+Update your SDK to make this feature available - sdk-utils>=2 is needed.
+
+Learn more on
+<https://sailfishos.org/wiki/SDK_Tips#Tip_1_.28sdk-utils.3E.3D2.29>.
+END
+
+verify print_motd "Tip 2 (sdk-utils>=1 )" <<'END'
+This is the second tip.
+
+Learn more on
+<https://sailfishos.org/wiki/SDK_Tips#Tip_2_.28sdk-utils.3E.3D1_.29>.
+END
+
+verify print_all <<'END'
+* Tip 1 (sdk-utils>=2)
+
+  This is the very first tip how to use `foo` or `bar <baz>` within the SDK
+  right after the Installation.
+
+  Update your SDK to make this feature available - sdk-utils>=2 is needed.
+
+  Learn more on
+  <https://sailfishos.org/wiki/SDK_Tips#Tip_1_.28sdk-utils.3E.3D2.29>.
+
+* Tip 2 (sdk-utils>=1 )
+
+  This is the second tip.
+
+  Learn more on
+  <https://sailfishos.org/wiki/SDK_Tips#Tip_2_.28sdk-utils.3E.3D1_.29>.
 END
 
 if [[ $some_failed ]]; then
