@@ -32,11 +32,12 @@
 #
 
 set -o nounset
+set -o pipefail
 
 synopsis()
 {
     cat <<EOF
-usage: git-lltb patch-view [--tool TOOL] BRANCH UPSTREAM [REV-LIST-ARG...]
+usage: git-lltb patch-view [OPTIONS] BRANCH UPSTREAM [REV-LIST-ARG...]
 EOF
 }
 
@@ -70,6 +71,11 @@ Commands:
             Tool to use to introspect Git history. Defaults to '$OPT_TOOL'
 
             Hint: Use git-lltb outside the SDK with e.g. "--tool gitk".
+
+        --accurate
+            By default, git-lltb obfuscates contextual information like commit
+            IDs or line numbers in order to produce more condensed view of the
+            differencies. With this option all the information is preserved.
 EOF
 }
 
@@ -96,8 +102,49 @@ else
     progress() { :; }
 fi
 
+maybe_obfuscate_patch()
+{
+    if [[ $OPT_ACCURATE ]]; then
+        cat
+        return 0
+    fi
+
+    awk '
+        BEGIN {
+            in_body=0
+        }
+        NR == 1 && /^From / {
+            gsub(/./, "0", $2)
+            print
+            next
+        }
+
+        /^---$/ {
+            in_body=1
+            print
+            next
+        }
+
+        in_body && /^index / {
+            gsub(/[0-9a-f]/, "0", $2)
+            print
+            next
+        }
+
+        in_body && /^@@ / {
+            gsub(/[0-9]+,[0-9]+/, "000,0", $2)
+            gsub(/[0-9]+,[0-9]+/, "000,0", $3)
+            print
+            next
+        }
+
+        { print }
+    '
+}
+
 OPT_DEBUG=
 OPT_TOOL="git log -p"
+OPT_ACCURATE=
 
 main_patch-view()
 {
@@ -109,6 +156,9 @@ main_patch-view()
                 [[ ${2:-} ]] || { echo "Argument expected: '$1'"; return 1; }
                 OPT_TOOL=$2
                 shift
+                ;;
+            --accurate)
+                OPT_ACCURATE=1
                 ;;
             -h)
                 brief_usage
@@ -171,7 +221,8 @@ main_patch-view()
                 local subject= patchfile=
                 subject=$(git show --no-patch --pretty=%s "$commit") || return
                 patchfile=${subject//[^[:alnum:]_]/-}.patch
-                git format-patch --stdout "$commit^..$commit" > "$patchfile" || return
+                git format-patch --stdout "$commit^..$commit" \
+                    |maybe_obfuscate_patch > "$patchfile" || return
                 debug "Adding patch '$patchfile'"
                 git add -- "$patchfile" || return
                 tagged=
