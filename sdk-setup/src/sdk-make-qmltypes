@@ -375,6 +375,11 @@ trim_comments()
     sed '/^\s*$/d; /^\s*#/d; s/\s\+#.*//'
 }
 
+shortest()
+{
+    awk '{print length, $0}' |sort -n |sed 's/^[0-9]\+ //; q';
+}
+
 csv_to_space_separated()
 {
     local python=
@@ -660,6 +665,33 @@ find_subdirs_with_qmltypes()
     git ls-files '*.qmltypes' |xargs -n1 -d'\n' --no-run-if-empty dirname |sort -u
 }
 
+find_build_dirs_for_qmltypes_subdirs()
+{
+    local subdirs=$1
+
+    local subdir=
+    while read subdir; do
+        local prjtype=
+        if [[ -e "$subdir/CMakeLists.txt" ]]; then
+            prjtype=cmake
+        else
+            prjtype=other
+        fi
+
+        # The spec may use shadow build explicitly. In this case the build directory should be a
+        # subdirectory of the source directory.
+        local makefile=
+        makefile=$(find -path "*/$subdir/Makefile" |shortest) || return
+
+        if [[ ! $makefile ]]; then
+            fatal "No corresponding build directory found for '$subdir' directory"
+            return 1
+        fi
+
+        printf '%s:%s\n' "$prjtype" "$(dirname "$makefile")"
+    done <<<"$subdirs"
+}
+
 make_qmltypes()
 {
     local wrappers_dir=$1 dir=$2 subdirs=$3
@@ -668,13 +700,18 @@ make_qmltypes()
 
     local subdir=
     while read subdir; do
+        local prjtype=${subdir%%:*}
+        subdir=${subdir#*:}
         (
             cd "$dir/$subdir" || return
-            if [[ -e CMakeLists.txt ]]; then
-                make qmltypes/fast -f - <Makefile || return
-            else
-                make qmltypes -f - <Makefile || return
-            fi
+            case $prjtype in
+                cmake)
+                    make qmltypes/fast -f - <Makefile || return
+                    ;;
+                other)
+                    make qmltypes -f - <Makefile || return
+                    ;;
+            esac
         ) || return
     done <<<"$subdirs"
 }
@@ -937,6 +974,8 @@ job_do_make_qmltypes()
         fatal "No *.qmltypes file found in '${self[local_path]}', branch '${self[branch]}'"
         return 1
     fi
+
+    subdirs=$(find_build_dirs_for_qmltypes_subdirs "$subdirs") || return
 
     if ! ssh_emulator "$(declare -f make_qmltypes); make_qmltypes ${WRAPPERS_DIR@Q} ${PWD@Q} ${subdirs@Q}"; then
         fatal "Failed to run qmlplugindump inside emulator"
@@ -1248,6 +1287,8 @@ main_single()
     if [[ ! $OPT_NO_BUILD ]]; then
         mb2_ ${OPT_SPEC:+-s "$OPT_SPEC"} build || return
     fi
+
+    subdirs=$(find_build_dirs_for_qmltypes_subdirs "$subdirs") || return
 
     local packages=
     packages=$(find "$OPT_RPMS_DIR" -maxdepth 1 -name '*.rpm') || return
