@@ -1625,7 +1625,7 @@ reserve_target() {
         return 1
     fi
 
-    local target= pooled_targets=() lru_pooled_target= lru_time= reset=
+    local target= pooled_targets=() lru_pooled_target= lru_time= lru_same_lock= reset=
     for target in $(get_all_of_type_target); do
         name_matches_template "$target" "$snapshot_template" || continue
 
@@ -1654,6 +1654,7 @@ reserve_target() {
         if [[ $other_lock_file == "$lock_file" ]]; then
             lru_pooled_target=$target
             lru_time=$lock_time
+            lru_same_lock=1
             reset=outdated
             break
         fi
@@ -1666,7 +1667,7 @@ reserve_target() {
     done
 
     local snapshot=
-    if [[ $lru_pooled_target ]]; then
+    if [[ $lru_pooled_target && ($lru_same_lock || ${#pooled_targets[@]} -ge $pool_size) ]]; then
         snapshot=$lru_pooled_target
         snapshot_target --reset="$reset" "$original" "$snapshot" || return
     else
