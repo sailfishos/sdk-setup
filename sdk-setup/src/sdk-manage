@@ -1638,14 +1638,6 @@ reserve_target() {
 
         pooled_targets+=("$target")
 
-        if is_locked "$other_lock_file"; then
-            if [[ $other_lock_file == "$lock_file" ]]; then
-                echo >&2 "WARNING: Another target reserved with the same lock file: '$target'"
-            fi
-            # Target still in use
-            continue
-        fi
-
         local lock_time=
         lock_time=$(object_config_get "target:$target" "$LOCK_TIME_KEY") || return
         lock_time=$(date --date "$lock_time" +%s) || return
