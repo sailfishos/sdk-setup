@@ -392,6 +392,24 @@ ensure_spec_newer_than_yaml() {
     # it's ok also not to have a yaml
 }
 
+# Copy a repo excluding packages built from the given exclude_source_name package
+filter_repo()
+{
+    local exclude_source_name=$1 repo=$2 output=$3
+
+    rm -rf "$output"
+    mkdir -p "$output"
+
+    local pkg=
+    while read -r pkg; do
+        local source_rpm= evr=
+        read source_rpm evr < <(rpm -q --queryformat '%{SOURCERPM} %{EVR}\n' -p "$pkg")
+        local source_name=${source_rpm%-$evr.src.rpm}
+        [[ $source_name != $exclude_source_name ]] || continue
+        ln -s --target-directory="$output" "$pkg"
+    done < <(find "$repo" -maxdepth 1 -name '*.rpm')
+}
+
 verify_target_dependencies() {
     [[ $OPT_NO_DEPS ]] && return
 
@@ -402,8 +420,11 @@ verify_target_dependencies() {
             local oldpkgs=$(sb2 -t "$OPT_TARGET" -m sdk-install rpm -qa)
         fi
         if [[ $OPT_SEARCH_OUTPUTDIR ]]; then
+            local filtered_outputdir=$STATEDIR/filtered-output-dir
+            local exclude_source_name=$(get_spec_tag "%{name}")
+            filter_repo "$exclude_source_name" "$OPT_OUTPUTDIR" "$filtered_outputdir"
             local args=(--"$OPT_SEARCH_OUTPUTDIR_VERBOSITY" --non-interactive \
-                --plus-repo "$OPT_OUTPUTDIR" --no-gpg-checks)
+                --plus-repo "$filtered_outputdir" --no-gpg-checks)
             sb2 -t "$OPT_TARGET" -m sdk-install -R zypper "${args[@]}" dup --from '~plus-repo-1'
             sb2 -t "$OPT_TARGET" -m sdk-install -R zypper "${args[@]}" in "${deps[@]}"
         else
