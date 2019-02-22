@@ -1410,7 +1410,7 @@ fi
 
 if [[ $OPT_SNAPSHOT ]]; then
     switch_to_snapshot || fatal "Failed to init target snapshot"
-elif [[ ! $OPT_NO_SNAPSHOT ]]; then
+elif [[ ! $OPT_NO_SNAPSHOT && ! $MB2_SELF_TEST_RUN ]]; then
     if [[ $(sdk-manage target list --snapshots-of "$OPT_TARGET") ]]; then
         echo >&2 "The '$OPT_TARGET' target has snapshots."
         echo >&2 "Pass '--no-snapshot' to confirm you really want to use the target directly."
@@ -1625,8 +1625,7 @@ if ! which make >/dev/null; then
     fatal "Please install 'make' and try again"
 fi
 
-# We do not really touch the target during self-test
-OPT_NO_SNAPSHOT=1
+export MB2_SELF_TEST_RUN=1
 
 ################################################################################
 # Test utils
