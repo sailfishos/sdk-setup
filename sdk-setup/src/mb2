@@ -1387,10 +1387,6 @@ elif [[ ! $OPT_NO_SNAPSHOT ]]; then
     fi
 fi
 
-if [[ $OPT_FIX_VERSION_HINT && ! $(git_ tag --list "$OPT_FIX_VERSION_HINT") ]]; then
-    fatal "'$OPT_FIX_VERSION_HINT' no such Git tag"
-fi
-
 case "$1" in
     make | install | rpm | deploy | prep )
         cmd=run_$1
@@ -1503,6 +1499,10 @@ case "$1" in
 esac
 
 maybe_restore_shadow_build
+
+if [[ $OPT_FIX_VERSION_HINT && ! $(git_ tag --list "$OPT_FIX_VERSION_HINT") ]]; then
+    fatal "'$OPT_FIX_VERSION_HINT' no such Git tag"
+fi
 
 # spec rules are complex:
 #  a .spec is required for some but not all operations
