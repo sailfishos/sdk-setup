@@ -89,16 +89,19 @@ SHARED OUTPUT DIRECTORY
 To make deployment easier it is possible to use a shared output directory
 specified with the '--output-dir' option or more conveniently with the
 combination of '--output-prefix' and '--task' options.  Consider enabling
-'--output-prefix' by default by creating an alias in your '~/.mersdk.profile'
-and optionally invoking mb2 with the '--task' option to get build results
-grouped by the tasks they are related to:
+'--output-prefix' and '--task' by default by creating an alias in your
+'~/.mersdk.profile' to get build results grouped by the tasks they are
+related to.  By default the task will be determined based on the current Git
+branch - check '--task' for more details:
 
-    alias mb2='mb2 --output-prefix ~/RPMS'
+    alias mb2='mb2 --output-prefix ~/RPMS --task'
 
     cd packageA
-    mb2 -t target --task jbXXXXX build
+    git checkout -b jbXXXXX
+    mb2 -t target build
     cd ../packageB
-    mb2 -t target --task jbXXXXX build
+    git checkout -b jbXXXXX
+    mb2 -t target build
     rsync -av ~/RPMS/jbXXXXX-target/ device:RPMS \\
         && ssh device zypper -p RPMS -v dup
 
@@ -129,7 +132,7 @@ updated, not the snapshot.
 
 Consider enabling '--snapshot' by default as well:
 
-    alias mb2='mb2 --output-prefix ~/RPMS --snapshot'
+    alias mb2='mb2 --output-prefix ~/RPMS --task --snapshot'
 
 In order to ensure targets are not polluted by running mb2 without
 '--snapshot' unintentionally, mb2 requires to use '--no-snapshot' explicitly
@@ -261,8 +264,16 @@ GLOBAL OPTIONS
         The folder where QtCreator shares devices.xml and ssh keys. This option
         is useful when the deploy command is used outside of virtual machine.
 
-    -T, --task <name>
+    -T, --task[=<name>|=git:<regex>]
         Modifies behavior of '--output-prefix' and '--snapshot' options.
+        The task name can be specified either directly as <name> or it can be
+        derived from the current Git branch name, using the POSIX extended
+        regular expression <regex> both as a condition to enable this option
+        and as a mean to select substring of the branch name to be used as
+        the task name.  Defaults to '$DEF_TASK'.
+
+    --no-task
+        Override --task option
 
     -x, --fix-version[=<tag>]
         This option is implied when used inside a Git working tree (use -X to
@@ -515,6 +526,25 @@ fix_package_version() {
 
     echo "Setting version: ${version}"
     sed -i "s,^Version:.*,Version: ${version}," "$spec_file"
+}
+
+maybe_set_task_name_from_git_branch_name() {
+    if [[ $OPT_TASK != git:* ]]; then
+        return
+    elif ! inside_git_worktree; then
+        OPT_TASK=
+        return
+    fi
+
+    local regex=${OPT_TASK#git:}
+    local branch=$(git_ rev-parse --abbrev-ref HEAD)
+
+    if [[ $branch =~ $regex ]]; then
+        OPT_TASK=${BASH_REMATCH[0]}
+        notice "Task name determined as '$OPT_TASK' (from the current Git branch)"
+    else
+        OPT_TASK=
+    fi
 }
 
 # Helper to read XML
@@ -1107,6 +1137,8 @@ inside_git_worktree() { git_ status &>/dev/null; }
 # this is same as basename $0
 ME=${0/#*\//}
 
+DEF_TASK='git:^jb[0-9]+'
+
 # option variables
 OPT_SPEC=
 OPT_TARGET=
@@ -1288,7 +1320,14 @@ while [[ "$1" ]]; do
             OPT_NO_SNAPSHOT=1
             ;;
         "-T" | "--task" ) shift
-            OPT_TASK="$1"; shift
+            OPT_TASK=$DEF_TASK
+            ;;
+        "-T"=* | "--task"=* )
+            OPT_TASK=${1#*=}
+            shift
+            ;;
+        "--no-task" ) shift
+            OPT_TASK=
             ;;
         "-i" | "--increment" ) shift
             OPT_INC_BUILD_NUMBER=1
@@ -1369,14 +1408,6 @@ fi
 
 [[ -d ~/.scratchbox2/$OPT_TARGET ]] || fatal "$OPT_TARGET is an invalid sb2 target"
 
-if [[ $OPT_OUTPUT_PREFIX ]]; then
-    OPT_OUTPUTDIR=$OPT_OUTPUT_PREFIX/${OPT_TASK:+$OPT_TASK-}$OPT_TARGET
-fi
-
-if [[ $OPT_SEARCH_OUTPUTDIR ]]; then
-    mkdir -p "$OPT_OUTPUTDIR"
-fi
-
 if [[ $OPT_SNAPSHOT ]]; then
     switch_to_snapshot || fatal "Failed to init target snapshot"
 elif [[ ! $OPT_NO_SNAPSHOT ]]; then
@@ -1385,10 +1416,6 @@ elif [[ ! $OPT_NO_SNAPSHOT ]]; then
         echo >&2 "Pass '--no-snapshot' to confirm you really want to use the target directly."
         exit 1
     fi
-fi
-
-if [[ $OPT_FIX_VERSION_HINT && ! $(git_ tag --list "$OPT_FIX_VERSION_HINT") ]]; then
-    fatal "'$OPT_FIX_VERSION_HINT' no such Git tag"
 fi
 
 case "$1" in
@@ -1504,6 +1531,20 @@ esac
 
 maybe_restore_shadow_build
 
+maybe_set_task_name_from_git_branch_name
+
+if [[ $OPT_OUTPUT_PREFIX ]]; then
+    OPT_OUTPUTDIR=$OPT_OUTPUT_PREFIX/${OPT_TASK:+$OPT_TASK-}$OPT_ORIGINAL_TARGET
+fi
+
+if [[ $OPT_SEARCH_OUTPUTDIR ]]; then
+    mkdir -p "$OPT_OUTPUTDIR"
+fi
+
+if [[ $OPT_FIX_VERSION_HINT && ! $(git_ tag --list "$OPT_FIX_VERSION_HINT") ]]; then
+    fatal "'$OPT_FIX_VERSION_HINT' no such Git tag"
+fi
+
 # spec rules are complex:
 #  a .spec is required for some but not all operations
 #  if -s is given then
@@ -1583,6 +1624,9 @@ export PATH="$STUBS_DIR:$PATH"
 if ! which make >/dev/null; then
     fatal "Please install 'make' and try again"
 fi
+
+# We do not really touch the target during self-test
+OPT_NO_SNAPSHOT=1
 
 ################################################################################
 # Test utils
