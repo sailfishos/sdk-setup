@@ -1584,6 +1584,9 @@ if ! which make >/dev/null; then
     fatal "Please install 'make' and try again"
 fi
 
+# We do not really touch the target during self-test
+OPT_NO_SNAPSHOT=1
+
 ################################################################################
 # Test utils
 
