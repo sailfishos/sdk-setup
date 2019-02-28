@@ -74,7 +74,9 @@ populate_suites() {
     local suite_inis=()
     local unique_inis=()
     SUITES=()
-    suite_inis=($(sb2 -t "$target" find "${CONFIG_DIRS[@]}" -maxdepth 1 -name "*.ini" -type f -printf "%f\n" 2>/dev/null))
+    local query=$(printf 'cd %q 2>/dev/null \
+            && find -maxdepth 1 -name "*.ini" -type f -print\n' "${CONFIG_DIRS[@]}")
+    suite_inis=($(sb2 -t "$target" sh -c "$query" | sed 's,^.*/,,'))
     unique_inis=($(printf '%s\n' ${suite_inis[@]:+"${suite_inis[@]}"} | sort -u))
     SUITES=("${unique_inis[@]%.ini}")
     if [[ ${OPT_SUITES:-} ]]; then
