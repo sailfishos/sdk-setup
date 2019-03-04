@@ -1,47 +1,58 @@
-#!/bin/bash
+#!/bin/sh
+#
+# Resize root FS to fully use the available space on the device
+#
+# Copyright (C) 2019 Jolla Ltd.
+# Contact: Martin Kampas <martin.kampas@jollamobile.com>
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#
+# - Redistributions of source code must retain the above copyright
+#   notice, this list of conditions and the following disclaimer.
+# - Redistributions in binary form must reproduce the above copyright
+#   notice, this list of conditions and the following disclaimer in
+#   the documentation and/or other materials provided with the
+#   distribution.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+# ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+# LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+# POSSIBILITY OF SUCH DAMAGE.
 
-if [[ -e /resize_root_fs ]]; then
-   resize2fs /dev/sda1
-   rm /resize_root_fs	
-   exit
-fi
+set -o errexit
 
-pre=$(mktemp)
-post=$(mktemp)
+devsize()
+{
+    blockdev --getsz /dev/sda
+}
 
-# Store partition table
-dd if=/dev/sda bs=1k count=1 of=$pre  > /dev/null 2>&1
+partsize()
+{
+    local dump=
+    dump=$(sfdisk --dump /dev/sda)
+    sed -n 's,^/dev/sda1 : .*size=[[:space:]]*\([0-9]\+\).*,\1,p' <<<"$dump"
+}
 
-grep -v "^#" << RESIZE | fdisk /dev/sda > /dev/null 2>&1
-# Taken from http://www.mail-archive.com/devel@lists.sailfishos.org/msg00273.html
-# Delete partition 1, type:
-d
-# Recreate using full size
-n
-p
-1
+expandpart()
+{
+    sfdisk --force -N 1 /dev/sda <<<", +"
+    newsize=$(partsize)
+    resizepart /dev/sda 1 "$newsize"
+    resize2fs /dev/sda1
+}
 
-
-# make it bootable
-a
-1
-# Now we use the 'expert menu' to set the partition start to 1, type:
-x
-b
-1
-1
-r
-# Write and exit, type
-w
-RESIZE
-
-# Store partition table
-dd if=/dev/sda bs=1k count=1 of=$post  > /dev/null 2>&1
-
-if ! diff -q $pre $post >/dev/null 2>&1; then
-   echo "Partition table changed, rebooting"
-   touch /resize_root_fs
-   rm $pre $post
-   reboot
-fi
-rm $pre $post
+devsize=$(devsize)
+partsize=$(partsize)
+tolerance=1024
+# Due to alignment etc. the partition will always be a bit smaller
+[ $((devsize - partsize)) -lt $tolerance ] || expandpart
