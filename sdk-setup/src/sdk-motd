@@ -113,6 +113,11 @@ REFERENCES
 END
 }
 
+warning()
+{
+    printf 'sdk-motd: warning: %s\n' "$*" >&2
+}
+
 fatal()
 {
     printf 'sdk-motd: fatal: %s\n' "$*" >&2
@@ -203,10 +208,93 @@ requirement_from_title()
     return 1
 }
 
+# It will store the result in a variable named 'version_compare_OUT'
+version_compare()
+{
+    local v1=$1 v2=$2
+
+    if [[ ! $version_compare_COPROC ]]; then
+        local python=
+        read -r -d '' python <<'END'
+import sys
+import rpm
+
+def cmp_ver(v1, v2):
+    v1h = rpm.hdr()
+    v2h = rpm.hdr()
+    v1h[rpm.RPMTAG_EPOCH] = 0
+    v2h[rpm.RPMTAG_EPOCH] = 0
+    v1h[rpm.RPMTAG_RELEASE] = "0"
+    v2h[rpm.RPMTAG_RELEASE] = "0"
+    v1h[rpm.RPMTAG_VERSION] = v1
+    v2h[rpm.RPMTAG_VERSION] = v2
+    return rpm.versionCompare(v1h, v2h)
+
+while True:
+    line = sys.stdin.readline()
+    if not len(line):
+        break
+    v1, v2 = line.rstrip().split()
+    print cmp_ver(v1, v2)
+    sys.stdout.flush()
+END
+        coproc version_compare_COPROC { python -c "$python"; } || return
+    fi
+
+    printf '%s %s\n' "$v1" "$v2" >&"${version_compare_COPROC[1]}" || return
+    read version_compare_OUT <&"${version_compare_COPROC[0]}"
+}
+
+# It will store the version in a variable named 'query_package_version_OUT'
+query_package_version()
+{
+    local name=$1
+
+    local cached=
+    if cached=$(grep -e "^$name " <<<"$query_package_version_CACHE" |cut -d ' ' -f 2); then
+        query_package_version_OUT=$cached
+        [[ $query_package_version_OUT ]]
+        return
+    fi
+
+    query_package_version_CACHE+="$name $(rpm -q --queryformat '%{VERSION}\n' "$name")"$'\n'
+    query_package_version "$name"
+}
+
 is_requirement_met()
 {
     local requirement=$1
-    zypper search --provides --match-exact --installed-only "$requirement" >/dev/null
+
+    local name= op= wanted_version=
+    if [[ $requirement =~ ^([^<=>]+)([<=>]+)([^<=>]+)$ ]]; then
+        name=${BASH_REMATCH[1]}
+        op=${BASH_REMATCH[2]}
+        wanted_version=${BASH_REMATCH[3]}
+    else
+        name=$requirement
+        op='>'
+        wanted_version=0
+    fi
+
+    case $op in
+        '>') op=-gt;;
+        '>=') op=-ge;;
+        '<') op=-lt;;
+        '<=') op=-le;;
+        '='|'==') op=-eq;;
+        *)
+            warning "Invalid operator in requirement '$requirement'"
+            return 1
+            ;;
+    esac
+
+    local query_package_version_OUT=
+    query_package_version "$name" || return
+
+    local version_compare_OUT=
+    version_compare "$query_package_version_OUT" "$wanted_version" || return
+
+    test "$version_compare_OUT" "$op" 0
 }
 
 requires_older() [[ $1 == *'<'* ]]
@@ -397,6 +485,9 @@ set_defaults()
     # "daily" period to this number of days
     READ_AGAIN_MIN_DAYS=4
     FMT_WIDTH=80
+
+    version_compare_COPROC=
+    query_package_version_CACHE=
 
     local domain=
     domain=$(ssu_domain) || return
@@ -666,7 +757,7 @@ verify print_all <<'END'
   Learn more on <https://sailfishos.org/wiki/SDK_Tips#Tip_3>.
 END
 
-is_requirement_met() [[ $1 == "sdk-utils>=1" ]]
+query_package_version() { query_package_version_OUT=1; }
 sed -i 's/Tip 1/& (sdk-utils>=2) /' "$CACHE_FILE"
 sed -i 's/Tip 2/& (sdk-utils>=1 ) /' "$CACHE_FILE"
 sed -i 's/Tip 3/& (  sdk-utils<1 ) /' "$CACHE_FILE"
