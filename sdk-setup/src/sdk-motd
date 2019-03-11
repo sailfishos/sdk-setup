@@ -201,7 +201,8 @@ title_to_anchor()
 requirement_from_title()
 {
     local title=$1
-    if [[ $title =~ \([[:space:]]*([^()[:space:]]*)[[:space:]]*\)$ ]]; then
+    local re='\([[:space:]]*([^()[:space:]]+)[[:space:]]*\)$'
+    if [[ $title =~ $re ]]; then
         printf '%s\n' "${BASH_REMATCH[1]}"
         return
     fi
@@ -238,7 +239,16 @@ while True:
     print cmp_ver(v1, v2)
     sys.stdout.flush()
 END
-        coproc version_compare_COPROC { python -c "$python"; } || return
+        # coproc is not available in Bash older than 4.0
+        if [[ ${BASH_VERSINFO[0]} -lt 4 ]]; then
+            version_compare_OUT=$(python -c "$python" <<<"$v1 $v2")
+            return
+        fi
+
+        # do not use the syntax with custom NAME to avoid syntax error on "near
+        # unexpected token `}'" in Bash older than 4.0
+        coproc python -c "$python" || return
+        version_compare_COPROC=(${COPROC[*]})
     fi
 
     printf '%s %s\n' "$v1" "$v2" >&"${version_compare_COPROC[1]}" || return
