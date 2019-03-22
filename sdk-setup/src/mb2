@@ -1824,7 +1824,9 @@ DEFAULT_TARGET=$(. ~/.scratchbox2/config; echo "$DEFAULT_TARGET")
 DEFAULT_JOBS=$(getconf _NPROCESSORS_ONLN)
 
 if inside_build_engine; then
-    DEFAULT_DEVICE="Sailfish OS Emulator"
+    # Assume the first one mentioned is the most recent one
+    DEFAULT_DEVICE=$(sed -n 's/.*name="\(Sailfish OS Emulator[^"]*\)".*/\1/; T; p; q' \
+        "$(get_shared_dir)/devices.xml")
 else
     echo "Note: Skipping test cases involving device connection - not inside a Sailfish OS build engine" >&2
     DEFAULT_DEVICE=
