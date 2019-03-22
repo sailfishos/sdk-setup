@@ -805,7 +805,9 @@ init_noop_wrapper() {
 #!/bin/bash
 self=${0#$PWD/}
 command=${0##*/}
-echo "$self: Ignoring $command" >&2
+NBSP=$'\xC2\xA0'
+# NBSP used to prevent Qt Creator treating this as an error when issued for 'qmake'
+echo "$self:${NBSP}Ignoring $command" >&2
 END
     chmod +x "$wrapper"
 }
