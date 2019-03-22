@@ -682,25 +682,12 @@ rpm_quote() {
 }
 
 init_wrappers_dir() {
-    [[ -e $STATEDIR/wrappers ]] && return
-
-    # The working directory inside build engine is noexec
-    if inside_build_engine; then
-        mkdir -p ~/.mb2
-        local real=$(mktemp -d ~/.mb2/wrappers.XXXX) || return
-        ln -s --no-target-dir "$real" "$STATEDIR/wrappers" || return
-    else
-        mkdir -p "$STATEDIR/wrappers" || return
-    fi
+    [[ -e $WRAPPERSDIR ]] || mkdir -p "$WRAPPERSDIR"
 }
 
 remove_wrappers_dir() {
-    if inside_build_engine; then
-        rm -rf "$(readlink -f "$STATEDIR/wrappers")"
-        rm -f "$STATEDIR/wrappers"
-    else
-        rm -rf "$STATEDIR/wrappers"
-    fi
+    # Better be paranoid than sorry. And quieten the unnecessary verbose 'rmdir --parents'
+    rm -f "$WRAPPERSDIR"/* && rmdir --parents "$WRAPPERSDIR" &>/dev/null
 }
 
 # 1. Allows to pass extra arguments to qmake
@@ -805,7 +792,9 @@ init_noop_wrapper() {
 #!/bin/bash
 self=${0#$PWD/}
 command=${0##*/}
-echo "$self: Ignoring $command" >&2
+NBSP=$'\xC2\xA0'
+# NBSP used to prevent Qt Creator treating this as an error when issued for 'qmake'
+echo "$self:${NBSP}Ignoring $command" >&2
 END
     chmod +x "$wrapper"
 }
@@ -887,13 +876,13 @@ run_build() {
     build_tgt=${build_tgt%-gnueabi}
 
     if is_shadow_build; then
-        init_qmake_wrapper $STATEDIR/wrappers/qmake
+        init_qmake_wrapper $WRAPPERSDIR/qmake
     fi
 
     (
         cd_to_spec_setup_dir;
         [[ $OPT_CLEAN_OUTPUTDIR ]] && rm -f "$OPT_OUTPUTDIR/"*.rpm;
-        sb2 -t $OPT_TARGET env PATH="$STATEDIR/wrappers:$PATH" rpmbuild \
+        sb2 -t $OPT_TARGET env PATH="$WRAPPERSDIR:$PATH" rpmbuild \
             --build-in-place --target=$build_tgt \
             "${BUILD_DEBUG[@]}" \
             --define "_smp_mflags -j$(rpm_quote "$BUILD_JOBS")" \
@@ -960,12 +949,12 @@ run_qmake() {
         # This is a good time to verify the target dependencies as per mb
         verify_target_dependencies
 
-        init_qmake_wrapper $STATEDIR/wrappers/qmake "$@"
-        init_noop_wrapper $STATEDIR/wrappers/make
+        init_qmake_wrapper $WRAPPERSDIR/qmake "$@"
+        init_noop_wrapper $WRAPPERSDIR/make
 
         (
             cd_to_spec_setup_dir;
-            sb2 -t $OPT_TARGET env PATH="$STATEDIR/wrappers:$PATH" rpmbuild \
+            sb2 -t $OPT_TARGET env PATH="$WRAPPERSDIR:$PATH" rpmbuild \
                 --build-in-place --target=$build_tgt \
                 --define "noecho 1" \
                 --define "_sourcedir $(dirname $OPT_SPEC)" \
@@ -994,12 +983,12 @@ run_make() {
         local build_tgt=$(sb2 -t $OPT_TARGET gcc -dumpmachine)
         build_tgt=${build_tgt%-gnueabi}
 
-        init_noop_wrapper $STATEDIR/wrappers/qmake
-        init_simple_wrapper $STATEDIR/wrappers/make "$@"
+        init_noop_wrapper $WRAPPERSDIR/qmake
+        init_simple_wrapper $WRAPPERSDIR/make "$@"
 
         (
             cd_to_spec_setup_dir;
-            sb2 -t $OPT_TARGET env PATH="$STATEDIR/wrappers:$PATH" rpmbuild \
+            sb2 -t $OPT_TARGET env PATH="$WRAPPERSDIR:$PATH" rpmbuild \
                 --build-in-place --target=$build_tgt \
                 --define "noecho 1" \
                 --define "_sourcedir $(dirname $OPT_SPEC)" \
@@ -1134,6 +1123,26 @@ get_shared_dir() {
 inside_build_engine() [[ -f /etc/mer-sdk-vbox ]]
 inside_git_worktree() { git_ status &>/dev/null; }
 
+# Symlink creation under VirtualBox shared folder shared from Windows requires special permissions
+# which are not always granted
+maybe_symlink_create() {
+    local target=$1 maybe_symlink=$2
+    if inside_build_engine; then
+        ln -sfn "$target" "$maybe_symlink" &>/dev/null || printf '%s' "$target" > "$maybe_symlink"
+    else
+        ln -sfn "$target" "$maybe_symlink"
+    fi
+}
+
+maybe_symlink_read() {
+    local maybe_symlink=$1
+    if [[ -L $maybe_symlink ]]; then
+        readlink -f "$maybe_symlink"
+    else
+        cat "$maybe_symlink"
+    fi
+}
+
 # this is same as basename $0
 ME=${0/#*\//}
 
@@ -1169,6 +1178,14 @@ deviceuser=nemo
 STATEDIR=$PWD/.mb2
 SNAPSHOT_POOL_SUFFIX=mb2.XXX
 SNAPSHOT_POOL_SIZE=5
+
+# The working directory inside build engine is noexec and symlink creation under VirtualBox
+# shared folder shared from Windows requires special permissions
+if inside_build_engine; then
+    WRAPPERSDIR=$HOME/.mb2/wrappers${PWD#"$HOME"}
+else
+    WRAPPERSDIR=$STATEDIR/wrappers
+fi
 
 # Virtualbox environment will install in this hardcoded location
 if inside_build_engine; then
@@ -1236,13 +1253,13 @@ handle_pro_file_or_dir_option() {
 
     # The project file/directory might be specified explicitly for non-shadow builds as well
     if [[ $src_dir != "$(readlink -f "$PWD")" ]]; then
-        ln -sfn "$src_dir" "$STATEDIR/src"
+        maybe_symlink_create "$src_dir" "$STATEDIR/src"
     fi
 }
 
 maybe_restore_shadow_build() {
-    if [[ -L $STATEDIR/src ]]; then
-        OPT_SRC_DIR=$(readlink -f "$STATEDIR/src")
+    if [[ -e $STATEDIR/src ]]; then
+        OPT_SRC_DIR=$(maybe_symlink_read "$STATEDIR/src")
         OPT_PKGDIR=$OPT_SRC_DIR/rpm
     fi
 }
@@ -1619,6 +1636,7 @@ cd "$temp" || exit
 
 mkdir stubs || exit
 STUBS_DIR=$(readlink -f stubs)
+ORIG_PATH=$PATH
 export PATH="$STUBS_DIR:$PATH"
 
 if ! which make >/dev/null; then
@@ -1822,7 +1840,9 @@ DEFAULT_TARGET=$(. ~/.scratchbox2/config; echo "$DEFAULT_TARGET")
 DEFAULT_JOBS=$(getconf _NPROCESSORS_ONLN)
 
 if inside_build_engine; then
-    DEFAULT_DEVICE="Sailfish OS Emulator"
+    # Assume the first one mentioned is the most recent one
+    DEFAULT_DEVICE=$(sed -n 's/.*name="\(Sailfish OS Emulator[^"]*\)".*/\1/; T; p; q' \
+        "$(get_shared_dir)/devices.xml")
 else
     echo "Note: Skipping test cases involving device connection - not inside a Sailfish OS build engine" >&2
     DEFAULT_DEVICE=
@@ -1908,9 +1928,10 @@ sb2_arg_pass_tc() {
     "$SELF" "${args[@]}" || return
     local actual_raw= actual= diff=
     actual_raw=$(arg_pass_stub_results sb2) || return
-    actual=$(sed -e 's,/tmp\.[^/]\+,/@TMPDIR@,' \
-                 -e "s,/home/deploy,/tmp/@TMPDIR@," \
-                 -e 's,/test\.spec\.[^/]\+,/@TEST_SPEC@,' <<<"$actual_raw")
+    actual=$(sed -e 's,/home/mersdk/.mb2/wrappers/tmp/tmp\.[[:alnum:]]\+,/tmp/@TMPDIR@/.mb2/wrappers,g' \
+                 -e 's,/tmp\.[[:alnum:]]\+,/@TMPDIR@,g' \
+                 -e "s,/home/deploy,/tmp/@TMPDIR@,g" \
+                 -e 's,/test\.spec\.[^/]\+,/@TEST_SPEC@,g' <<<"$actual_raw")
     if ! diff=$(diff <(cat <<<"$expected") <(cat <<<"$actual")); then
         cat <<END
 Test case failed: $TC_NAME
@@ -1951,7 +1972,7 @@ run_tc sb2_arg_pass "prep" \
 
 run_tc sb2_arg_pass "build" \
     "$(expect_args \
-        -t "$DEFAULT_TARGET" env PATH="/tmp/@TMPDIR@/.mb2/wrappers:$PATH" rpmbuild \
+        -t "$DEFAULT_TARGET" env PATH="/tmp/@TMPDIR@/.mb2/wrappers:/tmp/@TMPDIR@/stubs:$ORIG_PATH" rpmbuild \
         --build-in-place --target= \
         --define 'debug_package %{nil}' \
         --define "_smp_mflags -j$(rpm_quote "bad  1")" \
@@ -1966,7 +1987,7 @@ run_tc sb2_arg_pass "build" \
 
 run_tc sb2_arg_pass "build with debug" \
     "$(expect_args \
-        -t "$DEFAULT_TARGET" env PATH="/tmp/@TMPDIR@/.mb2/wrappers:$PATH" rpmbuild \
+        -t "$DEFAULT_TARGET" env PATH="/tmp/@TMPDIR@/.mb2/wrappers:/tmp/@TMPDIR@/stubs:$ORIG_PATH" rpmbuild \
         --build-in-place --target= \
         --define "_smp_mflags -j$(rpm_quote "bad  1")" \
         --define '_rpmdir /tmp/@TMPDIR@/RPMS' \
@@ -1980,7 +2001,7 @@ run_tc sb2_arg_pass "build with debug" \
 
 run_tc sb2_arg_pass "qmake" \
     "$(expect_args \
-        -t "$DEFAULT_TARGET" env PATH="/tmp/@TMPDIR@/.mb2/wrappers:$PATH" rpmbuild \
+        -t "$DEFAULT_TARGET" env PATH="/tmp/@TMPDIR@/.mb2/wrappers:/tmp/@TMPDIR@/stubs:$ORIG_PATH" rpmbuild \
         --build-in-place --target= \
         --define 'noecho 1' \
         --define '_sourcedir /tmp/@TMPDIR@/rpm' \
@@ -1990,7 +2011,7 @@ run_tc sb2_arg_pass "qmake" \
 
 run_tc sb2_arg_pass "make" \
     "$(expect_args \
-        -t "$DEFAULT_TARGET" env PATH="/tmp/@TMPDIR@/.mb2/wrappers:$PATH" rpmbuild \
+        -t "$DEFAULT_TARGET" env PATH="/tmp/@TMPDIR@/.mb2/wrappers:/tmp/@TMPDIR@/stubs:$ORIG_PATH" rpmbuild \
         --build-in-place --target= \
         --define 'noecho 1' \
         --define '_sourcedir /tmp/@TMPDIR@/rpm' \
