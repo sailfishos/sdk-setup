@@ -71,16 +71,16 @@ the "build" or "qmake" command:
     $ mkdir build && cd build
     $ mb2 qmake ../path/to/sources
     $ mb2 make
-    $ mb2 rpm
+    $ mb2 package
 
 Limitations related to shadow builds:
 
     1. Shadow build is only available for packages that use qmake.
     2. The "--doprep" option to the "build" command cannot be used with shadow
        builds.
-    3. If "prep" or "apply" is needed, it must be used directly on the source
-       tree prior to starting a shadow build (shadow builds for multiple
-       targets are still possible provided that the %prep section is
+    3. If "prepare" or "apply" is needed, it must be used directly on the
+       source tree prior to starting a shadow build (shadow builds for
+       multiple targets are still possible provided that the %prep section is
        target-independent).
 
 
@@ -149,19 +149,22 @@ found instead, this file will be executed and its output treated as
 the actual changelog.
 
 COMMANDS
-    installdeps [--[no-]refresh] [--reset]
-        Install the missing build-time dependencies as is done implicitly by
-        the "prep", "build" and "qmake" commands but refresh the package cache
-        first, unless '--no-refresh' is active. When the global '--snapshot'
-        option is used, '--no-refresh' is implied.  This can be overriden with
-        '--refresh' - do not use unless you know what you are doing. If
-        refresh is needed, refresh (and update) the original target instead.
-        The '--reset' option can only be used together with the '--snapshot'
+    build-requires [--[no-]refresh] {pull|reset}
+        When 'pull' is used, install or update the build-time dependencies as
+        is done implicitly by the "prepare", "build" and "qmake" commands but
+        refresh the package cache first, unless '--no-refresh' is active.
+
+        When the global '--snapshot' option is used, '--no-refresh' is
+        implied.  This can be overriden with '--refresh' - do not use unless
+        you know what you are doing. If refresh is needed, refresh (and
+        update) the original target instead.
+
+        The 'reset' command can only be used together with the '--snapshot'
         global option, with the effect of reseting the target snapshot
         forcefully to the (possibly updated) state of the original target
-        first.
+        first, pulling later.
 
-    prep
+    prepare
         Run rpmbuild. Execute just the %prep section of the .spec file.
 
     apply [-R]
@@ -191,20 +194,43 @@ COMMANDS
         Run rpmbuild. Execute just the %build section of the .spec file,
         suppressing any "qmake" invocation figuring in that section.
 
-    install
+    make-install
         Run rpmbuild. Execute just the %install section of the .spec file.
 
-    rpm
+    package
         Run rpmbuild. Execute just the %install section of the .spec file, then
         build binary packages.
 
-    deploy --zypper|--pkcon|--rsync|--sdk
-        Deploy build results to a device. This implies also the "install" step
-        and except for the --rsync method it will include also the "rpm" step.
+    deploy {--pkcon|--rsync|--sdk|--zypper}
+        Deploy build results to a device. This implies also the "make-install"
+        step and except for the --rsync method it will include also the
+        "package" step.
+
+        The following deployment methods are available, corresponding to the
+        single mandatory option:
+
+        --pkcon
+            Uses 'pkcon' to install RPM package(s). Requires the "Allow
+            untrusted software" option enabled in Settings, does not require
+            root access to the device.
+
+        --rsync
+            Uses 'rsync' to copy the installed files under '/opt/sdk/<name>'
+            without building/installing RPM package(s).  Does not require root
+            access to the device.
+
+        --sdk
+            Uses the method native to the SDK to install RPM package(s).
+            Requires developer mode enabled on the device, does not require
+            root access.
+
+        --zypper
+            Uses 'zypper' to install RPM package(s).  Requires 'zypper'
+            installed on the device, requires root access to the device.
 
     run [<command> [<args>]]
-        Run the given command (on device if --device given).  Can be used for
-        running gdb and a gdb server.
+        Run the given command on the device specified with '--device'.  Can be
+        used for running gdb and a gdb server.
 
 GLOBAL OPTIONS
     The order of passing options matters. Options that occur later on the
@@ -244,18 +270,21 @@ GLOBAL OPTIONS
 
     -S, --snapshot[=<suffix>]
         Avoid installing build-time dependencies to the sb2 target - use a
-        snapshot of that target instead. The snapshot name will be determined
-        by combining the original target name with the given <suffix>. Any
-        occurence of '%{task}' within the <suffix> will be substituted with
-        the name specified with the '--task' option or with an empty string if
-        the '--task' option is not used. When no suffix was specified or when
-        the substitution yields an empty string, a temporary snapshot will be
-        used (these have ".mb2." followed by random character sequence in
-        their names).  Snapshot state is preserved across mb2 invocations
-        unless the original target was updated meanwhile or it is a temporary
-        snapshot that was previously used with different build tree, in which
-        cases the snapshot will be reset. Snapshot can be reset forcefully
-        using the 'installdeps' command with its '--reset' option.
+        snapshot of that target instead.
+
+        The snapshot name will be determined by combining the original target
+        name with the given <suffix>. Any occurence of '%{task}' within the
+        <suffix> will be substituted with the name specified with the '--task'
+        option or with an empty string if the '--task' option is not used.
+        When no suffix was specified or when the substitution yields an empty
+        string, a temporary snapshot will be used (these have ".mb2." followed
+        by random character sequence in their names).
+
+        Snapshot state is preserved across mb2 invocations unless the original
+        target was updated meanwhile or it is a temporary snapshot that was
+        previously used with different build tree, in which cases the snapshot
+        will be reset. Snapshot can be reset forcefully using the
+        'build-requires reset' command.
 
     --no-snapshot
         Force mb2 to directly use a target for which snapshots exist.
@@ -279,6 +308,7 @@ GLOBAL OPTIONS
         This option is implied when used inside a Git working tree (use -X to
         override). Within Application SDK it is only implied if the version
         recorded in the .spec file is exactly "0".
+
         Use the latest tag from the current git branch as package version or
         the given <tag>.  If the current HEAD, index or working tree differs
         from the tree denoted by the tag, a suffix composed from the current
@@ -820,13 +850,13 @@ switch_to_snapshot() {
     notice "The '--snapshot' option is active - using the '$OPT_TARGET' snapshot of the target"
 }
 
-run_installdeps() {
-    if [[ $INSTALLDEPS_RESET ]]; then
+run_build_requires() {
+    if [[ $BUILD_REQUIRES_MODE == reset ]]; then
         if ! sdk-manage target snapshot --reset=force "$OPT_ORIGINAL_TARGET" "$OPT_SNAPSHOT"; then
             fatal "Failed to reset snapshot '$OPT_SNAPSHOT' to '$OPT_ORIGINAL_TARGET'"
         fi
     fi
-    if [[ ! $INSTALLDEPS_NOREFRESH ]]; then
+    if [[ ! $BUILD_REQUIRES_NOREFRESH ]]; then
         # Refresh repos before installing dependencies
         sb2 -t "$OPT_TARGET" -m sdk-install -R zypper --non-interactive ref
     fi
@@ -900,7 +930,7 @@ run_build() {
     return $rc
 }
 
-run_prep() {
+run_prepare() {
     verify_target_dependencies
 
     increment_build_number;
@@ -1003,7 +1033,7 @@ run_make() {
     fi
 }
 
-run_install() {
+run_make_install() {
     local build_tgt=$(sb2 -t $OPT_TARGET gcc -dumpmachine)
     build_tgt=${build_tgt%-gnueabi}
 
@@ -1031,7 +1061,7 @@ run_install() {
     return $rc
 }
 
-run_rpm() {
+run_package() {
     local build_tgt=$(sb2 -t $OPT_TARGET gcc -dumpmachine)
     build_tgt=${build_tgt%-gnueabi}
 
@@ -1080,7 +1110,7 @@ run_deploy() {
                     method="pkcon --plain --noninteractive install-local"
                 fi
                 shift
-                run_rpm
+                run_package
                 [[ $? -ne 0 ]] && return 1
                 rpms=$(find $OPT_OUTPUTDIR -name '*.rpm' -a ! -name '*-debug*.rpm')
                 rsync_as $deviceuser -av ${rpms} $device_ip:/home/$deviceuser/RPMS/
@@ -1091,7 +1121,7 @@ run_deploy() {
                 ssh_as $deviceuser rm -f ${device_rpms}
                 ;;
             "--zypper" ) shift
-                run_rpm
+                run_package
                 [[ $? -ne 0 ]] && return 1
                 rpms=$(find $OPT_OUTPUTDIR -name '*.rpm' -a ! -name '*-debug*.rpm')
                 rsync_as root -av ${rpms} $device_ip:/root/RPMS/
@@ -1102,7 +1132,7 @@ run_deploy() {
                 ssh_as root rm -f ${device_rpms}
                 ;;
             "--rsync" ) shift
-                run_install
+                run_make_install
                 [[ $? -ne 0 ]] && return 1
                 name=$(get_spec_tag "%{name}")
                 rsync_as $deviceuser -av ${buildroot}/. $device_ip:/opt/sdk/$name
@@ -1384,7 +1414,8 @@ while [[ "$1" ]]; do
             notice "The '$1' option is deprecated and does nothing currently"
             shift 2
             ;;
-        install | rpm | deploy | build | installdeps | apply | prep )
+        make-install | install | package | rpm | deploy | build | build-requires | installdeps \
+            | apply | prepare | prep )
             OPT_NEEDSPEC=1;
             break
             ;;
@@ -1436,31 +1467,56 @@ elif [[ ! $OPT_NO_SNAPSHOT && ! $MB2_SELF_TEST_RUN ]]; then
 fi
 
 case "$1" in
-    make | install | rpm | deploy | prep )
-        cmd=run_$1
+    make | make-install | install | package | rpm | deploy | prepare | prep )
+        if [[ $1 == install ]]; then
+            notice "The 'install' command is deprecated. Use 'make-install' instead."
+            set -- make-install "${@:2}"
+        fi
+        if [[ $1 == rpm ]]; then
+            notice "The 'rpm' command is deprecated. Use 'package' instead."
+            set -- package "${@:2}"
+        fi
+        if [[ $1 == prep ]]; then
+            notice "The 'prep' command is deprecated. Use 'prepare' instead."
+            set -- prepare "${@:2}"
+        fi
+        cmd=run_${1//-/_}
         shift
         ;;
-    installdeps )
-        cmd=run_$1; shift
+    build-requires | installdeps )
+        if [[ $1 == installdeps ]]; then
+            notice "The 'installdeps' command is deprecated. Use 'build-requires' instead."
+        fi
+        cmd=run_build_requires; shift
         if [[ $OPT_SNAPSHOT ]]; then
-            INSTALLDEPS_NOREFRESH=1
+            BUILD_REQUIRES_NOREFRESH=1
         fi
         while [[ "$1" ]]; do
             case "$1" in
                 --refresh) shift
-                    INSTALLDEPS_NOREFRESH= ;;
+                    BUILD_REQUIRES_NOREFRESH= ;;
                 --no-refresh) shift
-                    INSTALLDEPS_NOREFRESH=1 ;;
-                --reset) shift
-                    if [[ ! $OPT_SNAPSHOT ]]; then
-                        fatal "Cannot do 'installdeps --reset' without '--snapshot'"
+                    BUILD_REQUIRES_NOREFRESH=1 ;;
+                reset|--reset)
+                    if [[ $1 == --reset ]]; then
+                        notice "The '--reset' option is deprecated. Use 'reset' (non-option) instead."
                     fi
-                    INSTALLDEPS_RESET=1 ;;
+                    shift
+                    if [[ ! $OPT_SNAPSHOT ]]; then
+                        fatal "Cannot do 'build-requires reset' without '--snapshot'"
+                    fi
+                    BUILD_REQUIRES_MODE=reset ;;
+                pull) shift
+                    BUILD_REQUIRES_MODE=pull ;;
                 *)
                     short_usage quit
                     ;;
             esac
         done
+        if [[ ! $BUILD_REQUIRES_MODE ]]; then
+            notice "Omitting 'pull' is deprecated. Pass 'pull' explicitly."
+            BUILD_REQUIRES_MODE=pull
+        fi
         ;;
     apply )
         cmd=run_$1; shift
@@ -1538,6 +1594,7 @@ case "$1" in
         if [[ "$OPT_DEVICE" ]]; then
             cmd="ssh_as $deviceuser"
         else
+            notice "Using the 'run' command without '--device' is deprecated"
             cmd=""
         fi
         ;;
@@ -1958,7 +2015,7 @@ set_up_ts sb2_arg_pass "Passing arguments to sb2"
 KNOWN_ISSUE "Does not disable debug by default (ignores --enable-debug)"
 KNOWN_ISSUE "Passes -j without argument"
 KNOWN_ISSUE "Silently ignores extra arguments"
-run_tc sb2_arg_pass "prep" \
+run_tc sb2_arg_pass "prepare" \
     "$(expect_args \
         -t "$DEFAULT_TARGET" rpmbuild --build-in-place --target= \
         --define '_smp_mflags -j' \
@@ -1968,7 +2025,7 @@ run_tc sb2_arg_pass "prep" \
         --buildroot=/tmp/@TMPDIR@/installroot \
         -bp --short-circuit \
         /tmp/@TMPDIR@/rpm/@TEST_SPEC@)" \
-    prep "a b" "c  d" e f
+    prepare "a b" "c  d" e f
 
 run_tc sb2_arg_pass "build" \
     "$(expect_args \
@@ -2020,7 +2077,7 @@ run_tc sb2_arg_pass "make" \
     make "a b" "c  d" e f
 
 KNOWN_ISSUE "Silently ignores extra arguments"
-run_tc sb2_arg_pass "install" \
+run_tc sb2_arg_pass "make-install" \
     "$(expect_args \
         -t "$DEFAULT_TARGET" rpmbuild --build-in-place --target= \
         --define 'noecho 1' \
@@ -2029,10 +2086,10 @@ run_tc sb2_arg_pass "install" \
         --buildroot='/tmp/@TMPDIR@/installroot' \
         -bi --short-circuit --nocheck \
         /tmp/@TMPDIR@/rpm/@TEST_SPEC@)" \
-    install "a b" "c  d" e f
+    make-install "a b" "c  d" e f
 
 KNOWN_ISSUE "Silently ignores extra arguments"
-run_tc sb2_arg_pass "rpm" \
+run_tc sb2_arg_pass "package" \
     "$(expect_args \
         -t "$DEFAULT_TARGET" rpmbuild --build-in-place --target= \
         --define 'noecho 1' \
@@ -2042,7 +2099,7 @@ run_tc sb2_arg_pass "rpm" \
         --buildroot='/tmp/@TMPDIR@/installroot' \
         -bb --noprep --nobuildstage --noclean \
         /tmp/@TMPDIR@/rpm/@TEST_SPEC@)" \
-    rpm "a b" "c  d" e f
+    package "a b" "c  d" e f
 
 tear_down_ts sb2_arg_pass
 
@@ -2511,9 +2568,9 @@ rpmbuild_phases_tc() {
 
     local actual=
     if arg_pass_stub_results my_setup &>/dev/null; then
-        actual="+prep"
+        actual="+prepare"
     else
-        actual="-prep"
+        actual="-prepare"
     fi
 
     if arg_pass_stub_results qmake &>/dev/null; then
@@ -2529,9 +2586,9 @@ rpmbuild_phases_tc() {
     fi
 
     if arg_pass_stub_results my_install &>/dev/null; then
-        actual="$actual +install"
+        actual="$actual +make-install"
     else
-        actual="$actual -install"
+        actual="$actual -make-install"
     fi
 
     if arg_pass_stub_results my_check &>/dev/null; then
@@ -2542,12 +2599,12 @@ rpmbuild_phases_tc() {
 
     if [[ -e RPMS/test-0.1-1.i486.rpm ]]; then
         if rpm -q --requires -p RPMS/test-0.1-1.i486.rpm |grep -q '^rpmlib(ShortCircuited)'; then
-            actual="$actual +rpm (short-circuited)"
+            actual="$actual +package (short-circuited)"
         else
-            actual="$actual +rpm"
+            actual="$actual +package"
         fi
     else
-        actual="$actual -rpm"
+        actual="$actual -package"
     fi
 
     if [[ $actual != "$expected" ]]; then
@@ -2565,20 +2622,20 @@ END
 
 set_up_ts rpmbuild_phases "Separating build phases"
 
-run_tc rpmbuild_phases "prep" \
-    "+prep -qmake -make -install -check -rpm" prep
+run_tc rpmbuild_phases "prepare" \
+    "+prepare -qmake -make -make-install -check -package" prepare
 run_tc rpmbuild_phases "build" \
-    "-prep +qmake +make +install +check +rpm" build
+    "-prepare +qmake +make +make-install +check +package" build
 run_tc rpmbuild_phases "build --doprep" \
-    "+prep +qmake +make +install +check +rpm" build --doprep
+    "+prepare +qmake +make +make-install +check +package" build --doprep
 run_tc rpmbuild_phases "qmake" \
-    "-prep +qmake -make -install -check -rpm" qmake
+    "-prepare +qmake -make -make-install -check -package" qmake
 run_tc rpmbuild_phases "make" \
-    "-prep -qmake +make -install -check -rpm" make
-run_tc rpmbuild_phases "install" \
-    "-prep -qmake -make +install -check -rpm" install
-run_tc rpmbuild_phases "rpm" \
-    "-prep -qmake -make +install +check +rpm" rpm
+    "-prepare -qmake +make -make-install -check -package" make
+run_tc rpmbuild_phases "make-install" \
+    "-prepare -qmake -make +make-install -check -package" make-install
+run_tc rpmbuild_phases "package" \
+    "-prepare -qmake -make +make-install +check +package" package
 
 tear_down_ts rpmbuild_phases
 
@@ -2665,7 +2722,7 @@ special_packaging_tc() {
     # PATCH: Create .spec with patches
     #   - N: No
     #   - APPLY: Yes, use 'mb2 apply' to apply them
-    #   - PREP: Yes, use 'mb2 prep' to apply them
+    #   - PREP: Yes, use 'mb2 prepare' to apply them
     #   - DOPREP: Yes, use 'mb2 build --doprep' to apply them
     local enable_patch=$([[ $3 == APPLY || $3 == PREP || $3 == DOPREP ]] && echo "$3")
 
@@ -2797,7 +2854,7 @@ END
                 cd "$srcdir" || return
                 echo "--- Preparing sources" >&2
                 set -x
-                "$SELF" ${spec_arg[@]:+"${spec_arg[@]}"} prep || return
+                "$SELF" ${spec_arg[@]:+"${spec_arg[@]}"} prepare || return
                 ) || return;;
             DOPREP)
                 maybe_doprep=--doprep
@@ -2815,11 +2872,11 @@ END
 
         (
             cd "$builddir" || return
-            echo "--- Running qmake/make/rpm" >&2
+            echo "--- Running qmake/make/package" >&2
             set -x
             "$SELF" ${spec_arg[@]:+"${spec_arg[@]}"} qmake ${project_on_cmdln:+"$project_on_cmdln"} || return
             "$SELF" ${spec_arg[@]:+"${spec_arg[@]}"} make || return
-            "$SELF" ${spec_arg[@]:+"${spec_arg[@]}"} rpm || return
+            "$SELF" ${spec_arg[@]:+"${spec_arg[@]}"} package || return
         ) || return
     )
 
@@ -2882,9 +2939,9 @@ run_tc special_packaging "Use apply" \
     N       N      APPLY  N       N        N
 run_tc special_packaging "Use apply (shadow)" \
     N       N      APPLY  Y       N        N
-run_tc special_packaging "Use prep" \
+run_tc special_packaging "Use prepare" \
     N       N      PREP   N       N        N
-run_tc special_packaging "Use prep (shadow)" \
+run_tc special_packaging "Use prepare (shadow)" \
     N       N      PREP   Y       N        N
 run_tc special_packaging "Use --doprep" \
     N       N      DOPREP N       N        N
@@ -2956,9 +3013,9 @@ run_tc special_packaging "Use apply" \
     Y       N      APPLY  N       N        N
 run_tc special_packaging "Use apply (shadow)" \
     Y       N      APPLY  Y       N        N
-run_tc special_packaging "Use prep" \
+run_tc special_packaging "Use prepare" \
     Y       N      PREP   N       N        N
-run_tc special_packaging "Use prep (shadow)" \
+run_tc special_packaging "Use prepare (shadow)" \
     Y       N      PREP   Y       N        N
 run_tc special_packaging "Use doprep" \
     Y       N      DOPREP N       N        N
