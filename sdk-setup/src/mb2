@@ -1305,7 +1305,7 @@ while [[ "$1" ]]; do
             OPT_TARGET="$1"; shift
             ;;
         "-f" | "--shared-folder") shift
-            OPT_SHARED_DIR="$1"; shift
+            OPT_SHARED_DIR="${1%%+(/)}"; shift
             ;;
         "-d" | "--device") shift
             OPT_DEVICE="$1"; shift
@@ -1315,15 +1315,15 @@ while [[ "$1" ]]; do
                 notice "The '$1' option is deprecated. Use '--output-dir' instead."
             fi
             shift
-            OPT_OUTPUTDIR="$1"; shift
-            [[ -d "$OPT_OUTPUTDIR" ]] || fatal "'$OPT_OUTPUTDIR' is not a directory"
+            [[ -d "$1" ]] || fatal "'$1' is not a directory"
+            OPT_OUTPUTDIR="${1%%+(/)}"; shift
             OPT_OUTPUT_PREFIX=
             OPT_CLEAN_OUTPUTDIR=
             OPT_SEARCH_OUTPUTDIR=1
             ;;
         "-O" | "--output-prefix") shift
-            OPT_OUTPUT_PREFIX="$1"; shift
-            [[ -d "$OPT_OUTPUT_PREFIX" ]] || fatal "'$OPT_OUTPUT_PREFIX' is not a directory"
+            [[ -d "$1" ]] || fatal "'$1' is not a directory"
+            OPT_OUTPUT_PREFIX="${1%%+(/)}"; shift
             OPT_OUTPUTDIR=
             OPT_CLEAN_OUTPUTDIR=
             OPT_SEARCH_OUTPUTDIR=1
@@ -1331,7 +1331,7 @@ while [[ "$1" ]]; do
         "-p" | "--projectdir")
             notice "The '$1' option is deprecated. Try '$ME --help' for more information."
             [[ -d "$2" ]] || fatal "'$2' is not a directory"
-            pro_file_or_dir="$2"
+            pro_file_or_dir="${2%%+(/)}"
             shift 2
             ;;
         "--search-output-dir") shift
@@ -1540,7 +1540,7 @@ case "$1" in
                     ;;
                 *)
                     if [[ -e $1 ]]; then
-                        pro_file_or_dir="$1"
+                        pro_file_or_dir="${1%%+(/)}"
                         shift
                     fi
                     break
@@ -1576,7 +1576,7 @@ case "$1" in
                     ;;
                 *)
                     if [[ -e $1 ]]; then
-                        pro_file_or_dir="$1"
+                        pro_file_or_dir="${1%%+(/)}"
                         shift
                     fi
                     break
