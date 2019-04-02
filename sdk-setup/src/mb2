@@ -830,7 +830,6 @@ END
 }
 
 switch_to_snapshot() {
-    OPT_ORIGINAL_TARGET=$OPT_TARGET
     OPT_SNAPSHOT_SUFFIX=${OPT_SNAPSHOT_SUFFIX//%{task\}/$OPT_TASK}
 
     if [[ $OPT_SNAPSHOT_SUFFIX ]]; then
@@ -1453,6 +1452,8 @@ if [[ ! "$OPT_TARGET" ]]; then
     fi
     [[ "$OPT_TARGET" ]] || fatal "You must specify an sb2 target or have a default configured"
 fi
+
+OPT_ORIGINAL_TARGET=$OPT_TARGET
 
 [[ -d ~/.scratchbox2/$OPT_TARGET ]] || fatal "$OPT_TARGET is an invalid sb2 target"
 
