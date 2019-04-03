@@ -83,6 +83,17 @@ Conflicts:  sdk-harbour-rpmvalidator < 1.49
 %description -n sdk-utils
 Contains some utility scripts to support Mer SDK development
 
+%package -n sdk-resize-rootfs
+Summary:    Service that expands root FS at system startup
+Group:      System/Base
+BuildArch:  noarch
+Requires:   util-linux
+Requires:   e2fsprogs
+
+%description -n sdk-resize-rootfs
+Provides a startup service that will automatically expand the root FS to utilize
+all space on the root partition if it was enlarged since the last run.
+
 %package -n sdk-mer-branding
 Summary:    Mer Branding for the SDK Engine
 Group:      System/Base
@@ -134,7 +145,6 @@ cp --no-dereference systemd/* %{buildroot}/%{_unitdir}/
 cp src/sdk-info %{buildroot}%{_bindir}/
 cp src/sdk-setup-enginelan %{buildroot}%{_bindir}/
 cp src/sdk-shutdown %{buildroot}%{_bindir}/
-install -D -m 755 src/resize-rootfs %{buildroot}%{_bindir}/resize-rootfs
 # This should really be %%{_unitdir}/default.target but systemd owns that :/
 mkdir -p %{buildroot}/%{_sysconfdir}/systemd/system/
 ln -sf %{_unitdir}/multi-user.target  %{buildroot}/%{_sysconfdir}/systemd/system/default.target
@@ -154,6 +164,9 @@ chmod 1777 %{buildroot}/home/deploy
 
 # Until login.prefs.systemd is ready
 cp etc/mersdk.env.systemd  %{buildroot}/%{_sysconfdir}/
+
+# sdk-resize-rootfs
+install -D -m 755 src/resize-rootfs %{buildroot}%{_bindir}/resize-rootfs
 
 # sdk-tooling-chroot
 cp src/mer-tooling-chroot %{buildroot}/
@@ -219,7 +232,6 @@ if ! rpm --quiet -q ca-certificates && [ -d /%{_sysconfdir}/ssl/certs ] ; then e
 %systemd_post sdk-enginelan.service
 %systemd_post sdk-refresh.service
 %systemd_post sdk-refresh.timer
-# systemd_post resize-rootfs.service
 # this could be mounted read-only so to avoid a
 # cpio: chmod failed - Read-only file system
 if [ $1 -eq 1 ] ; then
@@ -228,6 +240,9 @@ fi
 
 %postun -n sdk-vm
 %systemd_postun
+
+%post -n sdk-resize-rootfs
+%systemd_post resize-rootfs.service
 
 %files -n sdk-chroot
 %defattr(-,root,root,-)
@@ -246,7 +261,6 @@ fi
 %{_bindir}/sdk-info
 %{_bindir}/sdk-setup-enginelan
 %{_bindir}/sdk-shutdown
-%{_bindir}/resize-rootfs
 %{_unitdir}/information.service
 %{_unitdir}/sdk-enginelan.service
 %{_unitdir}/host_targets.service
@@ -255,7 +269,6 @@ fi
 %{_unitdir}/etc-ssh-authorized_keys.mount
 %{_unitdir}/sdk-refresh.service
 %{_unitdir}/sdk-refresh.timer
-%{_unitdir}/resize-rootfs.service
 %config %{_sysconfdir}/systemd/system/default.target
 %config %{_sysconfdir}/ssh/ssh-env.conf
 %config %{_sysconfdir}/ssh/sshd_config_engine
@@ -264,6 +277,11 @@ fi
 %{_sysconfdir}/mer-sdk-vbox
 %attr(-,mersdk,mersdk) %{_sysconfdir}/mersdk/
 %{_sysconfdir}/zypp/systemCheck.d/sdk-vm.check
+
+%files -n sdk-resize-rootfs
+%defattr(-,root,root,-)
+%{_bindir}/resize-rootfs
+%{_unitdir}/resize-rootfs.service
 
 %files -n sdk-tooling-chroot
 %defattr(-,root,root,-)
