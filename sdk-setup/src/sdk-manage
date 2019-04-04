@@ -1669,7 +1669,8 @@ reserve_target() {
         fi
 
         local snapshot=
-        snapshot=$(IFS=$'\n'; random_name "$snapshot_template" <<<"${pooled_targets[*]}") || return
+        snapshot=$(IFS=$'\n'; random_name "$snapshot_template" \
+            <<<"${pooled_targets[*]:+${pooled_targets[*]}}") || return
 
         # sb2-init would pollute stdout
         snapshot_target "$original" "$snapshot" >&2 || return
