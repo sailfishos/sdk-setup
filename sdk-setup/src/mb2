@@ -1638,9 +1638,9 @@ if [[ ! "$OPT_SPEC" ]]; then
         [[ $OPT_NEEDSPEC ]] && fatal "Too many spec files - please use -s to identify which one to use"
         echo "Too many spec files - not using any. Use -s to identify a specific one"
         # OPT_SPEC is not set
-    fi
-
-    if [[ $numspec -eq 0 ]]; then
+    elif [[ $numspec -eq 1 ]]; then
+        OPT_SPEC="${spec_files[0]?}"
+    else
         # No spec, try to find a yaml
         yaml_files=("$OPT_PKGDIR"/*.yaml)
         numyaml=${#yaml_files[@]}
@@ -1648,18 +1648,10 @@ if [[ ! "$OPT_SPEC" ]]; then
             theyaml=("$OPT_PKGDIR"/*.yaml)
             try_to_make_spec_from_yaml "${theyaml[0]}"
             spec_files=("$OPT_PKGDIR"/*.spec)
-            numspec=${#spec_files[@]}
+            OPT_SPEC="${spec_files[0]?}"
         else
             [[ $OPT_NEEDSPEC ]] && fatal "No spec file found in '$OPT_PKGDIR/' and couldn't make one from a yaml #1"
         fi
-    fi
-
-    if [[ $numspec -eq 1 ]]; then
-        thespec=("$OPT_PKGDIR"/*.spec)
-        OPT_SPEC="${thespec[0]}"
-    else
-        # this is because we did try_to_make_spec_from_yaml and failed
-        [[ $OPT_NEEDSPEC ]] && fatal "No spec file found in '$OPT_PKGDIR/' and couldn't make one from a yaml #2"
     fi
 
     # unset nullglob so that any further globbing works normally
