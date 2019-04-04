@@ -306,7 +306,7 @@ GLOBAL OPTIONS
 
     -x, --fix-version[=<tag>]
         This option is implied when used inside a Git working tree (use -X to
-        override). Within Application SDK it is only implied if the version
+        override). When used via Qt Creator, it is only implied if the version
         recorded in the .spec file is exactly "0".
 
         Use the latest tag from the current git branch as package version or
@@ -492,10 +492,10 @@ fix_package_version() {
     if [[ $OPT_NO_FIX_VERSION ]]; then
         return
     elif [[ ! $OPT_FIX_VERSION ]]; then
-        # When used inside a build engine VM, fixing version is enabled implicitly only if the
+        # When used behind Qt Creator, fixing version is enabled implicitly only if the
         # version in spec file is exactly "0" - this is because there is no UI in Qt Creator
         # that would allow to override this.
-        if inside_build_engine && [[ $version_in_spec != 0 ]]; then
+        if behind_qtcreator && [[ $version_in_spec != 0 ]]; then
             return
         fi
     fi
@@ -1152,6 +1152,14 @@ get_shared_dir() {
 inside_build_engine() [[ -f /etc/mer-sdk-vbox ]]
 inside_git_worktree() { git_ status &>/dev/null; }
 
+behind_qtcreator() {
+    # Consider this the default frontend for backward compatibility
+    inside_build_engine && [[ ! $SAILFISH_SDK_FRONTEND || $SAILFISH_SDK_FRONTEND == qtcreator ]]
+}
+behind_sfdk() {
+    inside_build_engine && [[ $SAILFISH_SDK_FRONTEND == sfdk ]]
+}
+
 # Symlink creation under VirtualBox shared folder shared from Windows requires special permissions
 # which are not always granted
 maybe_symlink_create() {
@@ -1418,7 +1426,13 @@ while [[ "$1" ]]; do
             OPT_NEEDSPEC=1;
             break
             ;;
-        qmake | make | run | ssh )
+        qmake | make )
+            if behind_sfdk; then
+                OPT_NEEDSPEC=1
+            fi
+            break
+            ;;
+        run | ssh )
             break
             ;;
         --version )
@@ -1595,7 +1609,11 @@ case "$1" in
         if [[ "$OPT_DEVICE" ]]; then
             cmd="ssh_as $deviceuser"
         else
-            notice "Using the 'run' command without '--device' is deprecated"
+            if behind_sfdk; then
+                fatal "No device specified"
+            else
+                notice "Using the 'run' command without '--device' is deprecated"
+            fi
             cmd=""
         fi
         ;;
