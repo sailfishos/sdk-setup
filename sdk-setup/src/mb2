@@ -383,7 +383,7 @@ try_to_make_spec() { # Tries to create a missing spec
     [[ -f "$1" ]] && return # It's not missing
     local yaml="${1%.spec}.yaml"
     [[ -f "$yaml" ]] || return # No yaml
-    ANSI_COLORS_DISABLED=1 specify -n -N "$yaml" || fatal "unable to convert yaml to spec"
+    ANSI_COLORS_DISABLED=1 specify -n -N "$yaml" || fatal "Failed to convert .yaml to .spec"
 }
 
 try_to_make_spec_from_yaml() {
@@ -400,34 +400,34 @@ try_to_make_changelog() {
     local changes_run_file=${OPT_SPEC%.spec}.changes.run
 
     if [[ $OPT_GIT_CHANGE_LOG ]]; then
-        notice "Auto generating changelog from Git history ..."
+        notice "Auto generating changelog from Git history…"
         echo "%changelog"
         git-change-log $OPT_GIT_CHANGE_LOG_ARGS |sanitize_changelog
     elif [[ -f $changes_file ]]; then
-        notice "Appending changelog entries to spec ..."
+        notice "Appending changelog entries to the .spec file…"
         echo "%changelog"
         cat $changes_file |sanitize_changelog
     elif [[ -f $changes_run_file ]]; then
-        notice "Generating changelog entries with $changes_run_file ..."
+        notice "Generating changelog entries with '$changes_run_file'…"
         local runner=
         # In build VM the shared filesystem is noexec
         if ! [[ -x $changes_run_file ]]; then
             if [[ $(head -c 3 <$changes_run_file |cat -v) == '#!/' ]]; then
                 runner=$(sed -n '1s/^#!//p' $changes_run_file)
             else
-                fatal "Not executable: $changes_run_file"
+                fatal "File is not executable: '$changes_run_file'"
             fi
         fi
         echo "%changelog"
         $runner $changes_run_file |sanitize_changelog
-        [[ ${PIPESTATUS[0]} -eq 0 ]] || fatal "unable to generate changelog entries"
+        [[ ${PIPESTATUS[0]} -eq 0 ]] || fatal "Failed to generate changelog entries"
     fi
 }
 
 ensure_spec_newer_than_yaml() {
     local yaml="${OPT_SPEC%.spec}.yaml"
     if [[ -f "$yaml" ]] && [[ "$yaml" -nt "$OPT_SPEC" ]]; then # -nt is newer than
-        ANSI_COLORS_DISABLED=1 specify -n -N "$yaml" || fatal "unable to convert yaml to spec"
+        ANSI_COLORS_DISABLED=1 specify -n -N "$yaml" || fatal "Failed to convert .yaml to .spec"
     fi
 
     # it's ok also not to have a yaml
@@ -634,14 +634,14 @@ get_device() {
 rsync_as() {
     local user="$1";shift
     local key=$(get_shared_dir)/${device_sshkeypath}/$user
-    [[ -f "$key" ]] || fatal "No key for user $user on $device_name given in devices.xml (rsync $key)"
+    [[ -f "$key" ]] || fatal "No key for user '$user' on '$device_name' given in devices.xml (rsync '$key')"
     RSYNC_RSH="ssh -F /etc/ssh/ssh_config.sdk -l $user -i \"$key\" -p $device_sshport" rsync "$@"
 }
 
 ssh_as() {
     local user="$1";shift
     local key=$(get_shared_dir)/${device_sshkeypath}/$user
-    [[ -f "$key" ]] || fatal "No key for user $user on $device_name given in devices.xml ($key)"
+    [[ -f "$key" ]] || fatal "No key for user '$user' on '$device_name' given in devices.xml ('$key')"
     ssh -F /etc/ssh/ssh_config.sdk -i "$key" -l $user $device_ip -p $device_sshport "$(quote "$@")"
 }
 
@@ -846,13 +846,13 @@ switch_to_snapshot() {
             "$OPT_ORIGINAL_TARGET.$SNAPSHOT_POOL_SUFFIX" "$lock" "$SNAPSHOT_POOL_SIZE") || return
     fi
 
-    notice "The '--snapshot' option is active - using the '$OPT_TARGET' snapshot of the target"
+    notice "Using the '$OPT_TARGET' snapshot of the build target"
 }
 
 run_build_requires() {
     if [[ $BUILD_REQUIRES_MODE == reset ]]; then
         if ! sdk-manage target snapshot --reset=force "$OPT_ORIGINAL_TARGET" "$OPT_SNAPSHOT"; then
-            fatal "Failed to reset snapshot '$OPT_SNAPSHOT' to '$OPT_ORIGINAL_TARGET'"
+            fatal "Failed to reset build target snapshot '$OPT_SNAPSHOT' to '$OPT_ORIGINAL_TARGET'"
         fi
     fi
     if [[ ! $BUILD_REQUIRES_NOREFRESH ]]; then
@@ -1093,9 +1093,8 @@ run_package() {
 }
 
 run_deploy() {
-    [[ "$device_type" ]] || fatal "deploy must have a valid --device"
-    local fail_text="deploy must use one of --pkcon, --rsync , --sdk or --zypper"
-    [[ -z ${1:-} ]] && fatal $fail_text
+    [[ $device_type ]] || fatal "No device specified"
+    [[ ${1:-} ]] || fatal "Argument expected"
 
     local retcode=0
 
@@ -1138,7 +1137,8 @@ run_deploy() {
                 retcode=$?
                 ;;
             *)
-                fatal $fail_text ;;
+                fatal "Unexpected argument: '$1'"
+                ;;
         esac
     done
 
@@ -1451,12 +1451,14 @@ done
 
 if [[ -n "$OPT_SPEC" ]]; then
     try_to_make_spec "$OPT_SPEC"
-    [[ -f "$OPT_SPEC" ]] || fatal "'$OPT_SPEC' doesn't exist (and could not be made from a yaml)"
+    [[ -f "$OPT_SPEC" ]] || fatal "'$OPT_SPEC' does not exist (and could not be made from a .yaml)"
 fi
 
 if [[ -n "$OPT_DEVICE" ]]; then
-    [[ -f $(get_shared_dir)/devices.xml ]] || fatal "Unable to open $(get_shared_dir)/devices.xml"
-    get_device "$OPT_DEVICE" < $(get_shared_dir)/devices.xml || fatal "'$OPT_DEVICE' not found in devices.xml"
+    [[ -f $(get_shared_dir)/devices.xml ]] || fatal "Unable to open '$(get_shared_dir)/devices.xml'"
+    if ! get_device "$OPT_DEVICE" < $(get_shared_dir)/devices.xml; then
+        fatal "'$OPT_DEVICE' is not a known device"
+    fi
 fi
 
 if [[ ! "$OPT_TARGET" ]]; then
@@ -1464,15 +1466,15 @@ if [[ ! "$OPT_TARGET" ]]; then
         . ~/.scratchbox2/config
         OPT_TARGET=$DEFAULT_TARGET
     fi
-    [[ "$OPT_TARGET" ]] || fatal "You must specify an sb2 target or have a default configured"
+    [[ "$OPT_TARGET" ]] || fatal "No build target specified and there is no default one"
 fi
 
 OPT_ORIGINAL_TARGET=$OPT_TARGET
 
-[[ -d ~/.scratchbox2/$OPT_TARGET ]] || fatal "$OPT_TARGET is an invalid sb2 target"
+[[ -d ~/.scratchbox2/$OPT_TARGET ]] || fatal "'$OPT_TARGET' is not a known build target"
 
 if [[ $OPT_SNAPSHOT ]]; then
-    switch_to_snapshot || fatal "Failed to init target snapshot"
+    switch_to_snapshot || fatal "Failed to init build target snapshot"
 elif [[ ! $OPT_NO_SNAPSHOT && ! $MB2_SELF_TEST_RUN ]]; then
     if [[ $(sdk-manage target list --snapshots-of "$OPT_TARGET") ]]; then
         echo >&2 "The '$OPT_TARGET' target has snapshots."
@@ -1635,7 +1637,7 @@ if [[ $OPT_SEARCH_OUTPUTDIR ]]; then
 fi
 
 if [[ $OPT_FIX_VERSION_HINT && ! $(git_ tag --list "$OPT_FIX_VERSION_HINT") ]]; then
-    fatal "'$OPT_FIX_VERSION_HINT' no such Git tag"
+    fatal "'$OPT_FIX_VERSION_HINT': no such Git tag"
 fi
 
 # spec rules are complex:
@@ -1653,8 +1655,8 @@ if [[ ! "$OPT_SPEC" ]]; then
     spec_files=("$OPT_PKGDIR"/*.spec)
     numspec=${#spec_files[@]}
     if [[ $numspec -gt 1 ]]; then
-        [[ $OPT_NEEDSPEC ]] && fatal "Too many spec files - please use -s to identify which one to use"
-        echo "Too many spec files - not using any. Use -s to identify a specific one"
+        [[ $OPT_NEEDSPEC ]] && fatal "Multiple spec files found - use --specfile to select one"
+        echo "Multiple spec files found - not using any. Use --specfile to select one"
         # OPT_SPEC is not set
     elif [[ $numspec -eq 1 ]]; then
         OPT_SPEC="${spec_files[0]?}"
@@ -1668,7 +1670,7 @@ if [[ ! "$OPT_SPEC" ]]; then
             spec_files=("$OPT_PKGDIR"/*.spec)
             OPT_SPEC="${spec_files[0]?}"
         else
-            [[ $OPT_NEEDSPEC ]] && fatal "No spec file found in '$OPT_PKGDIR/' and couldn't make one from a yaml #1"
+            [[ $OPT_NEEDSPEC ]] && fatal "No spec or yaml file found in '$OPT_PKGDIR/'"
         fi
     fi
 
