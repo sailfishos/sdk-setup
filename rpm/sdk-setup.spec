@@ -36,6 +36,7 @@ BuildArch:  noarch
 Requires:   sdk-utils == %{version}
 Requires:   sdk-welcome-message
 Requires:   connman >= 1.14
+Requires:   connman-tools
 Requires:   virtualbox-guest-tools
 Requires:   openssh-server
 Requires(post): /bin/ln
