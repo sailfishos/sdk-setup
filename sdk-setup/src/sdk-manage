@@ -1513,6 +1513,8 @@ snapshot_target() {
         object_config_set "target:$snapshot" "$SNAPSHOT_OF_KEY" "$original" || return
         ( cd "$MER_TARGETS/$snapshot" && sb2-init $sb2_init_args ) || return
         object_config_set "target:$snapshot" "$SNAPSHOT_TIME_KEY" "$(date -R)" || return
+        # Ensure snapshots can be removed by user
+        set_object_mode "target:$snapshot" "$MODE_USER" || return
     else
         local snapshot_of=
         snapshot_of=$(object_config_get "target:$snapshot" "$SNAPSHOT_OF_KEY") || return
