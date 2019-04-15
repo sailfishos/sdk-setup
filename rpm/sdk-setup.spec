@@ -127,6 +127,8 @@ rm -rf %{buildroot}
 # all sdks
 mkdir -p %{buildroot}%{_bindir}/
 cp src/sdk-version %{buildroot}%{_bindir}/
+mkdir %{buildroot}/home
+ln -s /var/cache/zypp %{buildroot}/home/.zypp-cache
 
 # sdk-chroot
 mkdir -p %{buildroot}/%{_sysconfdir}
@@ -250,6 +252,7 @@ fi
 /mer-sdk-chroot
 /mer-bash-setup
 %{_bindir}/sdk-version
+/home/.zypp-cache
 %{_sysconfdir}/mer-sdk-chroot
 %dir /srv/mer/targets
 %dir /srv/mer/toolings
@@ -262,6 +265,7 @@ fi
 %{_bindir}/sdk-info
 %{_bindir}/sdk-setup-enginelan
 %{_bindir}/sdk-shutdown
+/home/.zypp-cache
 %{_unitdir}/information.service
 %{_unitdir}/sdk-enginelan.service
 %{_unitdir}/host_targets.service
