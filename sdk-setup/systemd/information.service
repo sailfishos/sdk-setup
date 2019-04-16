@@ -3,7 +3,7 @@
 
 [Unit]
 Description=SDK Information
-Documentation=http://wiki.merproject.org/Platform_SDK
+Documentation=https://sailfishos.org/wiki/Platform_SDK
 After=systemd-user-sessions.service plymouth-quit-wait.service multi-user.target network.target
 
 [Service]
