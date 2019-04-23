@@ -956,14 +956,18 @@ manage_develpkgs() {
             assert_target_exists "$target" || return
             shift
             object_zypper "target:$target" --no-refresh install "$@" || return
-            [[ $INSIDE_VBOX ]] && synchronise_target "$target"
+            if [[ $INSIDE_VBOX ]] && ! target_is_snapshot "$target"; then
+                synchronise_target "$target"
+            fi
 	    ;;
 	?(--)remove ) shift
             local target=${1:-}
             assert_target_exists "$target" || return
             shift
             object_zypper "target:$target" --no-refresh remove "$@" || return
-            [[ $INSIDE_VBOX ]] && synchronise_target "$target"
+            if [[ $INSIDE_VBOX ]] && ! target_is_snapshot "$target"; then
+                synchronise_target "$target"
+            fi
 	    ;;
 	* )
             echo >&2 "unrecognized option '$1'"
@@ -987,6 +991,11 @@ target_exists() {
     local target=$1
     # sb2-config is verbose when no target exists
     sb2-config -f 2>/dev/null |grep -q -F --line-regexp "$target"
+}
+
+target_is_snapshot() {
+    local target=$1
+    [[ $(object_config_get "target:$target" "$SNAPSHOT_OF_KEY") ]]
 }
 
 check_target_visible() (
@@ -1118,6 +1127,12 @@ synchronise_target() {
         echo >&2 "No target called '$target'"
         return 1
     fi
+
+    if target_is_snapshot "$target"; then
+        echo >&2 "This operation is not meant to be used on target snapshots"
+        return 1
+    fi
+
     echo >&2 "Synchronising target to host"
     # The filter=". -" means to read filters from stdin (the <<EOF)
     rsync -a --no-devices --no-specials \
@@ -1513,6 +1528,8 @@ snapshot_target() {
         object_config_set "target:$snapshot" "$SNAPSHOT_OF_KEY" "$original" || return
         ( cd "$MER_TARGETS/$snapshot" && sb2-init $sb2_init_args ) || return
         object_config_set "target:$snapshot" "$SNAPSHOT_TIME_KEY" "$(date -R)" || return
+        # Ensure snapshots can be removed by user
+        set_object_mode "target:$snapshot" "$MODE_USER" || return
     else
         local snapshot_of=
         snapshot_of=$(object_config_get "target:$snapshot" "$SNAPSHOT_OF_KEY") || return
@@ -1684,6 +1701,7 @@ reserve_target() {
 remove_target() {
     local target=$1
     assert_name_valid "$target" || return
+    local is_snapshot=$(target_is_snapshot "$target" && echo 1)
     if [[ -d $SBOX2DIR/$target ]]; then
         local mode=$(get_object_mode "target:$target")
         if [[ $MODE != "$mode" ]]; then
@@ -1701,15 +1719,15 @@ remove_target() {
 
         rm -r "$SBOX2DIR/$target"
         sudo rm -rf "$MER_TARGETS/$target"
-	if [[ $INSIDE_VBOX ]]; then
+        if [[ $INSIDE_VBOX && ! $is_snapshot ]]; then
             rm -rf "$HOST_TARGETS/$target"
-	    echo >&2 "Notifying Qt Creator of removed target"
-	fi
+            echo >&2 "Notifying Qt Creator of removed target"
+        fi
     else
         echo >&2 "Note: target '$target' was not seen by sb2"
     fi
 
-    if [[ $INSIDE_VBOX ]]; then
+    if [[ $INSIDE_VBOX && ! $is_snapshot ]]; then
         # Notify Qt Creator always when we're in the VM to keep the
         # target information in sync
         updateQtCreatorTargets --delete --name "$target" --target-xml "$TARGETS_XML" || return
@@ -1757,6 +1775,10 @@ manage_targets() {
 	        echo >&2 "This operation is only valid for SDK in VirtualBox"
                 return 1
 	    fi
+            if target_is_snapshot "$target"; then
+                echo >&2 "This operation is not meant to be used on target snapshots"
+                return 1
+            fi
             synchronise_target "$@" || return
             updateQtCreatorTargets --name "$target" --target-xml "$TARGETS_XML"
 	    ;;
