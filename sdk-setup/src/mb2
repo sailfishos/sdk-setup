@@ -851,8 +851,8 @@ switch_to_snapshot() {
 
 run_build_requires() {
     if [[ $BUILD_REQUIRES_MODE == reset ]]; then
-        if ! sdk-manage target snapshot --reset=force "$OPT_ORIGINAL_TARGET" "$OPT_SNAPSHOT"; then
-            fatal "Failed to reset build target snapshot '$OPT_SNAPSHOT' to '$OPT_ORIGINAL_TARGET'"
+        if ! sdk-manage target snapshot --reset=force "$OPT_ORIGINAL_TARGET" "$OPT_TARGET"; then
+            fatal "Failed to reset build target snapshot '$OPT_TARGET' to '$OPT_ORIGINAL_TARGET'"
         fi
     fi
     if [[ ! $BUILD_REQUIRES_NOREFRESH ]]; then
