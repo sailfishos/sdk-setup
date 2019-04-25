@@ -1455,7 +1455,10 @@ if [[ -n "$OPT_SPEC" ]]; then
 fi
 
 if [[ -n "$OPT_DEVICE" ]]; then
-    [[ -f $(get_shared_dir)/devices.xml ]] || fatal "Unable to open '$(get_shared_dir)/devices.xml'"
+    if [[ ! -f $(get_shared_dir)/devices.xml ]]; then
+        fatal "Unable to open '$(get_shared_dir)/devices.xml'." \
+            "Please launch Qt Creator for the first time to finish the installation"
+    fi
     if ! get_device "$OPT_DEVICE" < $(get_shared_dir)/devices.xml; then
         fatal "'$OPT_DEVICE' is not a known device"
     fi
