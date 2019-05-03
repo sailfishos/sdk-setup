@@ -333,8 +333,9 @@ GLOBAL OPTIONS
 KNOWN ISSUES
 
 Build target snapshot is not reset automatically when the original target is
-changed just by removing packages. Package installation or update is needed to
-trigger the automatic reset.
+changed just by removing packages via plain RPM usage. Either use zypper for
+all package operations or use 'mb2 build-requires reset' to ensure snapshot is
+reset.
 EOF
 }
 

@@ -1578,23 +1578,39 @@ target_snapshot_needs_reset() {
 
     local snapshot_time=
     snapshot_time=$(object_config_get "target:$snapshot" "$SNAPSHOT_TIME_KEY") || return
+    # Convert date to unix seconds
+    snapshot_time=$(date --date "$snapshot_time" +%s) || return
 
     # Try to avoid querying RPM database as it takes considerable amount of time
     tmpfile=$(mktemp) || return
-    touch --date "$snapshot_time" "$tmpfile" || return
+    # --date "@value" passes value as unix seconds
+    touch --date "@$snapshot_time" "$tmpfile" || return
     local newer=
     newer=$(find "$MER_TARGETS/$original/var/lib/rpm" -newer "$tmpfile" -print -quit) || return
     if [[ ! $newer ]]; then
         return 1
     fi
 
-    # TODO how to determine recent package removal?
     local most_recent_install_time=
     most_recent_install_time=$(set -o pipefail; rpm --root="$MER_TARGETS/$original" -qa \
         --queryformat '%{installtime}\n' |sort -n |tail -n1) || return
-    local snapshot_time_s=$(date --date "$snapshot_time" +%s) || return
+    # Compare values in unix seconds
+    (( most_recent_install_time > snapshot_time )) && return
 
-    (( most_recent_install_time > snapshot_time_s ))
+    # The rpm database does not know about the most recent package removal, so
+    # parse the zypper install log. zypp/history looks like this:
+    # 2019-02-27 16:39:18|remove |droid-hal-mydevice-tools|0.0.6-201902271629|armv7hl|user@pc|
+    # But could also look like this:
+    # 2019-02-27 16:39:18|install|remove-my-pkg|0.0.6-201902271629|armv7hl|user@pc|
+    local most_recent_removal_time=$(set -o pipefail; \
+        tac "$MER_TARGETS/$original/var/log/zypp/history" \
+        |cut -d "|" -f "1,2" \
+        |grep -m 1 "|remove" \
+        |cut -d "|" -f 1 \
+    ) || return
+    most_recent_removal_time=$(date --date "$most_recent_removal_time" +%s) || return
+    # Compare values in unix seconds
+    (( most_recent_removal_time > snapshot_time )) && return
 }
 
 reserve_target() {
