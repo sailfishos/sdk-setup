@@ -724,6 +724,7 @@ remove_wrappers_dir() {
 # 1. Allows to pass extra arguments to qmake
 # 2. Enables shadow build by adding path prefix to the project file, or
 # 2.1 passing project directory path if the project file was not passed
+# 3. Populates variable cache used by Qt Creator to augment its project model
 init_qmake_wrapper() (
     local wrapper=$1
     local extra_args=("${@:2}")
@@ -760,6 +761,14 @@ init_qmake_wrapper() (
             set -- "${args[@]}"
         fi
 
+        assignments=()
+        for arg in "$@"; do
+            if [[ $arg =~ ^[a-zA-Z_][a-zA-Z0-9_]*= ]]; then
+                assignments+=("$arg")
+            fi
+        done
+        printf '%s\0' "${assignments[@]}" > "$VARIABLES_CACHE"
+
         echo "$self: Executing real $command:" >&2
 
         set -x
@@ -773,6 +782,7 @@ init_qmake_wrapper() (
 IS_SHADOW_BUILD=$(is_shadow_build && echo 1)
 BUILD_DIR=$(quote "$PWD")
 SRC_DIR=$(quote "${OPT_SRC_DIR:-$PWD}")
+VARIABLES_CACHE=$STATEDIR/qmake_variables.cache
 
 $(declare -f main)
 
