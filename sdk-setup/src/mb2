@@ -75,7 +75,9 @@ the "build" or "qmake" command:
 
 Limitations related to shadow builds:
 
-    1. Shadow build is only available for packages that use qmake.
+    1. Shadow build is only available for packages that use qmake and
+       their build and install procedure is fully realized using qmake
+       with no additional steps implemented at .spec level.
     2. The "--doprep" option to the "build" command cannot be used with shadow
        builds.
     3. If "prepare" or "apply" is needed, it must be used directly on the
