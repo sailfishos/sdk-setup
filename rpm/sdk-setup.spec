@@ -40,6 +40,7 @@ Requires:   connman-tools
 Requires:   virtualbox-guest-tools
 Requires:   openssh-server
 Requires(post): /bin/ln
+Requires(post): systemd
 Conflicts:  sdk-chroot
 
 %description -n sdk-vm
@@ -90,6 +91,7 @@ Group:      System/Base
 BuildArch:  noarch
 Requires:   util-linux
 Requires:   e2fsprogs
+Requires(post): systemd
 
 %description -n sdk-resize-rootfs
 Provides a startup service that will automatically expand the root FS to utilize
