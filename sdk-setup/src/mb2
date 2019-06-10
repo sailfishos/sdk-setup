@@ -920,19 +920,18 @@ run_build() {
     verify_target_dependencies
 
     increment_build_number;
-    local tmp_spec="$OPT_SPEC.$$"
     if [[ $BUILD_NOPREP ]]; then
-        sed -e '/^%patch/d' "$OPT_SPEC" > "$tmp_spec"
+        sed -e '/^%patch/d' "$OPT_SPEC" > "$TMP_SPEC"
     else
-        cp "$OPT_SPEC" "$tmp_spec"
+        cp "$OPT_SPEC" "$TMP_SPEC"
     fi
 
-    try_to_make_changelog >> "$tmp_spec"
+    try_to_make_changelog >> "$TMP_SPEC"
 
     # get rid of potential windows linefeeds
-    sed -i "s/\x0D$//g" "$tmp_spec"
+    sed -i "s/\x0D$//g" "$TMP_SPEC"
 
-    fix_package_version "$tmp_spec"
+    fix_package_version "$TMP_SPEC"
 
     local build_tgt=$(sb2 -t $OPT_TARGET gcc -dumpmachine)
     build_tgt=${build_tgt%-gnueabi}
@@ -954,11 +953,10 @@ run_build() {
             --buildroot="$buildroot" \
             "${BUILD_NOPREP[@]}" \
             -bb \
-            "$tmp_spec" \
+            "$TMP_SPEC" \
             "$@"
     )
     local rc=$?
-    rm -f "$tmp_spec"
     return $rc
 }
 
@@ -966,14 +964,13 @@ run_prepare() {
     verify_target_dependencies
 
     increment_build_number;
-    local tmp_spec="$OPT_SPEC.$$"
     # TODO maybe add toggle here for disabling patch applying?
-    cp "$OPT_SPEC" "$tmp_spec"
+    cp "$OPT_SPEC" "$TMP_SPEC"
 
     # get rid of potential windows linefeeds
-    sed -i "s/\x0D$//g" "$tmp_spec"
+    sed -i "s/\x0D$//g" "$TMP_SPEC"
 
-    fix_package_version "$tmp_spec"
+    fix_package_version "$TMP_SPEC"
 
     local build_tgt=$(sb2 -t $OPT_TARGET gcc -dumpmachine)
     build_tgt=${build_tgt%-gnueabi}
@@ -988,10 +985,9 @@ run_prepare() {
             --define "_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm" \
             --buildroot="$buildroot" \
             -bp --short-circuit \
-            "$tmp_spec"
+            "$TMP_SPEC"
     )
     local rc=$?
-    rm -f "$tmp_spec"
     return $rc
 }
 
@@ -1000,13 +996,12 @@ run_qmake() {
         local build_tgt=$(sb2 -t $OPT_TARGET gcc -dumpmachine)
         build_tgt=${build_tgt%-gnueabi}
 
-        local tmp_spec="$OPT_SPEC.$$"
-        cp -a "$OPT_SPEC" "$tmp_spec"
+        cp -a "$OPT_SPEC" "$TMP_SPEC"
 
         # get rid of potential windows linefeeds
-        sed -i "s/\x0D$//g" "$tmp_spec"
+        sed -i "s/\x0D$//g" "$TMP_SPEC"
 
-        fix_package_version "$tmp_spec"
+        fix_package_version "$TMP_SPEC"
 
         # This is a good time to verify the target dependencies as per mb
         verify_target_dependencies
@@ -1021,10 +1016,9 @@ run_qmake() {
                 --define "noecho 1" \
                 --define "_sourcedir $(dirname $OPT_SPEC)" \
                 -bc --short-circuit \
-                "$tmp_spec"
+                "$TMP_SPEC"
         )
         local rc=$?
-        rm -f "$tmp_spec"
         return $rc
     else
         sb2 -t $OPT_TARGET qmake "$@" ${OPT_PRO_FILE_OR_DIR:+"$OPT_PRO_FILE_OR_DIR"}
@@ -1034,13 +1028,12 @@ run_qmake() {
 run_make() {
     if [[ "$OPT_SPEC" ]]; then
 
-        local tmp_spec="$OPT_SPEC.$$"
-        cp -a "$OPT_SPEC" "$tmp_spec"
+        cp -a "$OPT_SPEC" "$TMP_SPEC"
 
         # get rid of potential windows linefeeds
-        sed -i "s/\x0D$//g" "$tmp_spec"
+        sed -i "s/\x0D$//g" "$TMP_SPEC"
 
-        fix_package_version "$tmp_spec"
+        fix_package_version "$TMP_SPEC"
 
         local build_tgt=$(sb2 -t $OPT_TARGET gcc -dumpmachine)
         build_tgt=${build_tgt%-gnueabi}
@@ -1055,10 +1048,9 @@ run_make() {
                 --define "noecho 1" \
                 --define "_sourcedir $(dirname $OPT_SPEC)" \
                 -bc --short-circuit \
-                "$tmp_spec"
+                "$TMP_SPEC"
         )
         local rc=$?
-        rm -f "$tmp_spec"
         return $rc
     else
         sb2 -t $OPT_TARGET make "$@"
@@ -1069,13 +1061,12 @@ run_make_install() {
     local build_tgt=$(sb2 -t $OPT_TARGET gcc -dumpmachine)
     build_tgt=${build_tgt%-gnueabi}
 
-    local tmp_spec="$OPT_SPEC.$$"
-    cp -a "$OPT_SPEC" "$tmp_spec"
+    cp -a "$OPT_SPEC" "$TMP_SPEC"
 
     # get rid of potential windows linefeeds
-    sed -i "s/\x0D$//g" "$tmp_spec"
+    sed -i "s/\x0D$//g" "$TMP_SPEC"
 
-    fix_package_version "$tmp_spec"
+    fix_package_version "$TMP_SPEC"
 
     # Install to buildroot which should be rsync'ed to /opt/sdk/$package on device
     (
@@ -1086,10 +1077,9 @@ run_make_install() {
             --define "_skip_install_processing 1" \
             --buildroot="$buildroot" \
             -bi --short-circuit --nocheck \
-            "$tmp_spec"
+            "$TMP_SPEC"
     )
     local rc=$?
-    rm -f "$tmp_spec"
     return $rc
 }
 
@@ -1097,15 +1087,14 @@ run_package() {
     local build_tgt=$(sb2 -t $OPT_TARGET gcc -dumpmachine)
     build_tgt=${build_tgt%-gnueabi}
 
-    local tmp_spec="$OPT_SPEC.$$"
-    cp -a "$OPT_SPEC" "$tmp_spec"
+    cp -a "$OPT_SPEC" "$TMP_SPEC"
 
-    try_to_make_changelog >> "$tmp_spec"
+    try_to_make_changelog >> "$TMP_SPEC"
 
     # get rid of potential windows linefeeds
-    sed -i "s/\x0D$//g" "$tmp_spec"
+    sed -i "s/\x0D$//g" "$TMP_SPEC"
 
-    fix_package_version "$tmp_spec"
+    fix_package_version "$TMP_SPEC"
 
     (
         increment_build_number;
@@ -1118,10 +1107,9 @@ run_package() {
             --define "_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm" \
             --buildroot="$buildroot" \
             -bb --noprep --nobuildstage --noclean \
-            "$tmp_spec"
+            "$TMP_SPEC"
     )
     local rc=$?
-    rm -f "$tmp_spec"
     return $rc
 }
 
@@ -1247,6 +1235,7 @@ OPT_WRAP=()
 deviceuser=nemo
 
 STATEDIR=$PWD/.mb2
+TMP_SPEC=$STATEDIR/spec
 SNAPSHOT_POOL_SUFFIX=mb2.XXX
 SNAPSHOT_POOL_SIZE=5
 
