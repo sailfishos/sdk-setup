@@ -316,12 +316,19 @@ GLOBAL OPTIONS
         override). When used via Qt Creator, it is only implied if the version
         recorded in the .spec file is exactly "0".
 
-        Use the latest tag from the current git branch as package version or
-        the given <tag>.  If the current HEAD, index or working tree differs
-        from the tree denoted by the tag, a suffix composed from the current
-        branch name, time stamp and a commit SHA1 will be added to the package
-        version.  If git-state is not clean a git-stash will be created and its
-        SHA1 will be used instead of HEAD.
+        With this option the version recorded in the .spec file will be
+        ignored.  Instead, package version will be derived from the name of the
+        latest tag in the current git branch or the selected tag <tag>.
+
+        If the current HEAD, index or working tree differs from the tree
+        denoted by the (latest or selected) tag, a suffix composed from the
+        current branch name, time stamp and a commit SHA1 will be added to the
+        package version. If git-state is not clean a git-stash will be created
+        and its SHA1 will be used.
+
+        It is recommended to store 'Version: 0' and 'Release: 1' in the .spec
+        file when this option is to be used; as a sign that the version
+        recorded there is not relevant.
 
     -X, --no-fix-version
         Override --fix-version option.
