@@ -1291,6 +1291,7 @@ run_package() {
 run_deploy() {
     [[ $device_type ]] || fatal "No device specified"
     [[ ${1:-} ]] || fatal "Argument expected"
+    [[ -e $STATEDIR/spec ]] || fatal "No previoud build found"
 
     local retcode=0
 
@@ -1306,7 +1307,7 @@ run_deploy() {
                 shift
                 run_package
                 [[ $? -ne 0 ]] && return 1
-                rpms=$(find $OPT_OUTPUTDIR -name '*.rpm' -a ! -name '*-debug*.rpm')
+                rpms=$(find_rpms "$OPT_OUTPUTDIR" "$STATEDIR/spec" '-debug(source|info)$')
                 rsync_as $deviceuser -av ${rpms} $device_ip:/home/$deviceuser/RPMS/
                 [[ $? -ne 0 ]] && return 1
                 device_rpms=$(sed "s,^$OPT_OUTPUTDIR/,RPMS/," <<<"$rpms")
@@ -1317,7 +1318,7 @@ run_deploy() {
             "--zypper" ) shift
                 run_package
                 [[ $? -ne 0 ]] && return 1
-                rpms=$(find $OPT_OUTPUTDIR -name '*.rpm' -a ! -name '*-debug*.rpm')
+                rpms=$(find_rpms "$OPT_OUTPUTDIR" "$STATEDIR/spec" '-debug(source|info)$')
                 rsync_as root -av ${rpms} $device_ip:/root/RPMS/
                 [[ $? -ne 0 ]] && return 1
                 device_rpms=$(sed "s,^$OPT_OUTPUTDIR/,RPMS/," <<<"$rpms")
