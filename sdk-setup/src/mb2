@@ -142,6 +142,46 @@ once at least one snapshot exists for a target.  Existing snapshots can be
 listed and removed using 'sdk-assistant'.
 
 
+QUALITY ASSURANCE
+
+Certain quality checks may be performed with the help of the 'check' command:
+
+    cd package
+    mb2 build
+    mb2 check
+
+The command enables execution of (pluggable) test suites, each realizing
+testing on one or more of the four recognized test levels:
+
+    1. Static testing (verification) performed on the source tree
+
+    2. Static testing (verification) performed on the build results (packages)
+
+    3. Dynamic testing (validation) performed at build host (unit testing)
+
+       Testing at this level is only supported with the built-in suite
+       'rpmspec', that executes the steps defined by the '%check' section of
+       the RPM .spec file if present.
+
+       Testing at this level is normally performed by the 'build' and
+       'package' commands (unless used with the '--nocheck' option) and so it
+       is not enabled by default for this command. Performed with this
+       command, it involves execution of the 'make-install' command.
+
+    4. Dynamic testing (validation) performed on a target device (system testing)
+
+       The 'check' command does not include the deployment step. Package(s)
+       need to be deployed to the device selected with the 'device'
+       configuration option beforehand, possibly with the 'deploy' command in
+       case of packages associated with the build tree under CWD.
+
+The available test suites may be listed with the '--list-suites' option to the
+'check' command.
+
+See the 'check' command to learn how to override the default selection of test
+levels, suites and artefacts.
+
+
 MAINTAINING CHANGELOGS
 
 If a file exists with '.changes' extension, otherwise matching the
@@ -202,6 +242,48 @@ COMMANDS
     package
         Run rpmbuild. Execute just the %install section of the .spec file, then
         build binary packages.
+
+    check --list-suites
+    check [-l|--levels [+|-]<level>...] [-s|--suites [+|-]<suite>...] [<artefact>]...
+        Perform quality checks.
+
+        By default, test suites operate on the artefacts associated with build
+        tree under CWD. Alternatively, single path to a source tree and/or one
+        or more package files may be specified as <artefact> on command line
+        (build tree is always looked for under CWD).
+
+        Each test suite realizes testing on one or more of the four recognized
+        test levels. This is indicated in the output produced with the
+        '--list-suites' option, using the keywords found in the first column
+        of the following table.
+
+        | Level          | Tested art. | Executed at   | Default |
+        |----------------+-------------+---------------+---------|
+        |    static      |             |               |         |
+        | 1. ├── source  | Sources     | Build host    | +       |
+        | 2. └── package | Packages    | Build host    | +       |
+        |    dynamic     |             |               |         |
+        | 3. ├── unit    | Build tree  | Build host    | -       |
+        | 4. └── system  | Packages    | Target device | -       |
+
+        (See also QUALITY ASSURANCE above.)
+
+        -l, --levels [+|-]<level>...
+            Select testing levels. Levels are selected using the keywords
+            'source', 'package', 'static', 'unit', 'system' and 'dynamic' as
+            described before.
+
+        --list-suites
+            List available test suites.
+
+        -s, --suites [+|-]<suite>...
+            Select test suites to use. By default all and only the essential
+            suites are selected. See '--list-suites'.
+
+        The '--levels' and '--suites' options may be passed multiple values,
+        separated with comma. If a name is prefixed with '+' or '-', the
+        effect is cumulative and persists until overriden with later name
+        prefixed with the opposite operator.
 
     deploy {--pkcon|--rsync|--sdk|--zypper}
         Deploy build results to a device. This implies also the "make-install"
@@ -377,6 +459,73 @@ if ! type readarray &>/dev/null; then
     }
 fi
 
+set_insert() {
+    eval local set=(\${$1[*]})
+    local item=$2
+
+    set=$(IFS=$'\n'; sort -u <<<"${set[*]}$IFS$item")
+
+    eval $1=\(\$set\)
+}
+
+set_remove() {
+    eval local set=(\${$1[*]})
+    local item=$2
+
+    set=$(IFS=$'\n'; grep --line-regexp -v -F "$item" <<<"${set[*]}")
+
+    eval $1=\(\$set\)
+}
+
+set_intersect() {
+    eval local set1=(\${$2[*]})
+    eval local set2=(\${$3[*]})
+    local out=()
+
+    set1=$(IFS=$'\n'; sort <<<"${set1[*]}")
+    set2=$(IFS=$'\n'; sort <<<"${set2[*]}")
+
+    out=$(join <(cat <<<"$set1") <(cat <<<"$set2"))
+
+    eval $1=\(\$out\)
+}
+
+# Usage: set_update <set> [+-]<item>...
+#
+# Update the set with the given items. If no item is prefixed with '+' or '-' it
+# will simply replace the content of the set. The effect of '+' and '-' persists
+# until overriden with later item prefixed with the opposite operator.
+set_update() {
+    eval local set=(\${$1[*]})
+    local items=("${@:2}")
+
+    local op= item=
+    for item in "${items[@]}"; do
+        if [[ $item == [+-]* ]]; then
+            op=${item:0:1}
+            item=${item:1}
+        fi
+        case $op in
+            # TODO with Bash 4 reimplement set_insert and set_remove so that they can be used here
+            +) set=($(IFS=$'\n'; sort -u <<<"${set[*]}$IFS$item"));;
+            -) set=($(IFS=$'\n'; grep --line-regexp -v -F "$item" <<<"${set[*]}"));;
+            '')
+                set=($item)
+                op=+
+                ;;
+        esac
+    done
+
+    eval $1=\(\${set[*]}\)
+}
+
+set_contains() {
+    eval local set=(\${$1[*]})
+    local item=$2
+
+    [[ " ${set[*]} " == *" $item "* ]]
+}
+
 git_() (
     # Cannot use the '-C' option - it requires newer Git.
     # Cannot use '--git-dir' + '--work-tree' options - they break at least git-stash.
@@ -446,6 +595,25 @@ ensure_spec_newer_than_yaml() {
     fi
 
     # it's ok also not to have a yaml
+}
+
+# Find binary rpms under <dir> built from the given <spec>, excluding those matching <filter>
+find_rpms()
+{
+    local dir=$1 spec=$2 filter=$3
+
+    local wanted_source_name= wanted_evr=
+    read wanted_source_name wanted_evr < <(rpmspec -q --srpm --queryformat '%{NAME} %{EVR}\n' "$spec")
+
+    local pkg=
+    while read -r pkg; do
+        local name= source_rpm= evr=
+        read name source_rpm evr < <(rpm -q --queryformat '%{NAME} %{SOURCERPM} %{EVR}\n' -p "$pkg")
+        local source_name=${source_rpm%-$evr.src.rpm}
+        if [[ ! ($name =~ $filter) && $source_name == $wanted_source_name && $evr == $wanted_evr ]]; then
+            printf '%s\n' "$pkg"
+        fi
+    done < <(find "$dir" -maxdepth 1 -name '*.rpm')
 }
 
 # Copy a repo excluding packages built from the given exclude_source_name package
@@ -920,19 +1088,18 @@ run_build() {
     verify_target_dependencies
 
     increment_build_number;
-    local tmp_spec="$OPT_SPEC.$$"
     if [[ $BUILD_NOPREP ]]; then
-        sed -e '/^%patch/d' "$OPT_SPEC" > "$tmp_spec"
+        sed -e '/^%patch/d' "$OPT_SPEC" > "$TMP_SPEC"
     else
-        cp "$OPT_SPEC" "$tmp_spec"
+        cp "$OPT_SPEC" "$TMP_SPEC"
     fi
 
-    try_to_make_changelog >> "$tmp_spec"
+    try_to_make_changelog >> "$TMP_SPEC"
 
     # get rid of potential windows linefeeds
-    sed -i "s/\x0D$//g" "$tmp_spec"
+    sed -i "s/\x0D$//g" "$TMP_SPEC"
 
-    fix_package_version "$tmp_spec"
+    fix_package_version "$TMP_SPEC"
 
     local build_tgt=$(sb2 -t $OPT_TARGET gcc -dumpmachine)
     build_tgt=${build_tgt%-gnueabi}
@@ -954,11 +1121,10 @@ run_build() {
             --buildroot="$buildroot" \
             "${BUILD_NOPREP[@]}" \
             -bb \
-            "$tmp_spec" \
+            "$TMP_SPEC" \
             "$@"
     )
     local rc=$?
-    rm -f "$tmp_spec"
     return $rc
 }
 
@@ -966,14 +1132,13 @@ run_prepare() {
     verify_target_dependencies
 
     increment_build_number;
-    local tmp_spec="$OPT_SPEC.$$"
     # TODO maybe add toggle here for disabling patch applying?
-    cp "$OPT_SPEC" "$tmp_spec"
+    cp "$OPT_SPEC" "$TMP_SPEC"
 
     # get rid of potential windows linefeeds
-    sed -i "s/\x0D$//g" "$tmp_spec"
+    sed -i "s/\x0D$//g" "$TMP_SPEC"
 
-    fix_package_version "$tmp_spec"
+    fix_package_version "$TMP_SPEC"
 
     local build_tgt=$(sb2 -t $OPT_TARGET gcc -dumpmachine)
     build_tgt=${build_tgt%-gnueabi}
@@ -988,10 +1153,9 @@ run_prepare() {
             --define "_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm" \
             --buildroot="$buildroot" \
             -bp --short-circuit \
-            "$tmp_spec"
+            "$TMP_SPEC"
     )
     local rc=$?
-    rm -f "$tmp_spec"
     return $rc
 }
 
@@ -1000,13 +1164,12 @@ run_qmake() {
         local build_tgt=$(sb2 -t $OPT_TARGET gcc -dumpmachine)
         build_tgt=${build_tgt%-gnueabi}
 
-        local tmp_spec="$OPT_SPEC.$$"
-        cp -a "$OPT_SPEC" "$tmp_spec"
+        cp -a "$OPT_SPEC" "$TMP_SPEC"
 
         # get rid of potential windows linefeeds
-        sed -i "s/\x0D$//g" "$tmp_spec"
+        sed -i "s/\x0D$//g" "$TMP_SPEC"
 
-        fix_package_version "$tmp_spec"
+        fix_package_version "$TMP_SPEC"
 
         # This is a good time to verify the target dependencies as per mb
         verify_target_dependencies
@@ -1021,10 +1184,9 @@ run_qmake() {
                 --define "noecho 1" \
                 --define "_sourcedir $(dirname $OPT_SPEC)" \
                 -bc --short-circuit \
-                "$tmp_spec"
+                "$TMP_SPEC"
         )
         local rc=$?
-        rm -f "$tmp_spec"
         return $rc
     else
         sb2 -t $OPT_TARGET qmake "$@" ${OPT_PRO_FILE_OR_DIR:+"$OPT_PRO_FILE_OR_DIR"}
@@ -1034,13 +1196,12 @@ run_qmake() {
 run_make() {
     if [[ "$OPT_SPEC" ]]; then
 
-        local tmp_spec="$OPT_SPEC.$$"
-        cp -a "$OPT_SPEC" "$tmp_spec"
+        cp -a "$OPT_SPEC" "$TMP_SPEC"
 
         # get rid of potential windows linefeeds
-        sed -i "s/\x0D$//g" "$tmp_spec"
+        sed -i "s/\x0D$//g" "$TMP_SPEC"
 
-        fix_package_version "$tmp_spec"
+        fix_package_version "$TMP_SPEC"
 
         local build_tgt=$(sb2 -t $OPT_TARGET gcc -dumpmachine)
         build_tgt=${build_tgt%-gnueabi}
@@ -1055,10 +1216,9 @@ run_make() {
                 --define "noecho 1" \
                 --define "_sourcedir $(dirname $OPT_SPEC)" \
                 -bc --short-circuit \
-                "$tmp_spec"
+                "$TMP_SPEC"
         )
         local rc=$?
-        rm -f "$tmp_spec"
         return $rc
     else
         sb2 -t $OPT_TARGET make "$@"
@@ -1066,16 +1226,22 @@ run_make() {
 }
 
 run_make_install() {
+    # Internal, intentionally undocumented
+    local maybe_nocheck=--nocheck
+    if [[ ${1:-} == --check ]]; then
+        local maybe_nocheck=
+        shift
+    fi
+
     local build_tgt=$(sb2 -t $OPT_TARGET gcc -dumpmachine)
     build_tgt=${build_tgt%-gnueabi}
 
-    local tmp_spec="$OPT_SPEC.$$"
-    cp -a "$OPT_SPEC" "$tmp_spec"
+    cp -a "$OPT_SPEC" "$TMP_SPEC"
 
     # get rid of potential windows linefeeds
-    sed -i "s/\x0D$//g" "$tmp_spec"
+    sed -i "s/\x0D$//g" "$TMP_SPEC"
 
-    fix_package_version "$tmp_spec"
+    fix_package_version "$TMP_SPEC"
 
     # Install to buildroot which should be rsync'ed to /opt/sdk/$package on device
     (
@@ -1085,11 +1251,10 @@ run_make_install() {
             --define "_sourcedir $(dirname $OPT_SPEC)" \
             --define "_skip_install_processing 1" \
             --buildroot="$buildroot" \
-            -bi --short-circuit --nocheck \
-            "$tmp_spec"
+            -bi --short-circuit $maybe_nocheck \
+            "$TMP_SPEC"
     )
     local rc=$?
-    rm -f "$tmp_spec"
     return $rc
 }
 
@@ -1097,15 +1262,14 @@ run_package() {
     local build_tgt=$(sb2 -t $OPT_TARGET gcc -dumpmachine)
     build_tgt=${build_tgt%-gnueabi}
 
-    local tmp_spec="$OPT_SPEC.$$"
-    cp -a "$OPT_SPEC" "$tmp_spec"
+    cp -a "$OPT_SPEC" "$TMP_SPEC"
 
-    try_to_make_changelog >> "$tmp_spec"
+    try_to_make_changelog >> "$TMP_SPEC"
 
     # get rid of potential windows linefeeds
-    sed -i "s/\x0D$//g" "$tmp_spec"
+    sed -i "s/\x0D$//g" "$TMP_SPEC"
 
-    fix_package_version "$tmp_spec"
+    fix_package_version "$TMP_SPEC"
 
     (
         increment_build_number;
@@ -1118,16 +1282,16 @@ run_package() {
             --define "_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm" \
             --buildroot="$buildroot" \
             -bb --noprep --nobuildstage --noclean \
-            "$tmp_spec"
+            "$TMP_SPEC"
     )
     local rc=$?
-    rm -f "$tmp_spec"
     return $rc
 }
 
 run_deploy() {
     [[ $device_type ]] || fatal "No device specified"
     [[ ${1:-} ]] || fatal "Argument expected"
+    [[ -e $STATEDIR/spec ]] || fatal "No previoud build found"
 
     local retcode=0
 
@@ -1143,7 +1307,7 @@ run_deploy() {
                 shift
                 run_package
                 [[ $? -ne 0 ]] && return 1
-                rpms=$(find $OPT_OUTPUTDIR -name '*.rpm' -a ! -name '*-debug*.rpm')
+                rpms=$(find_rpms "$OPT_OUTPUTDIR" "$STATEDIR/spec" '-debug(source|info)$')
                 rsync_as $deviceuser -av ${rpms} $device_ip:/home/$deviceuser/RPMS/
                 [[ $? -ne 0 ]] && return 1
                 device_rpms=$(sed "s,^$OPT_OUTPUTDIR/,RPMS/," <<<"$rpms")
@@ -1154,7 +1318,7 @@ run_deploy() {
             "--zypper" ) shift
                 run_package
                 [[ $? -ne 0 ]] && return 1
-                rpms=$(find $OPT_OUTPUTDIR -name '*.rpm' -a ! -name '*-debug*.rpm')
+                rpms=$(find_rpms "$OPT_OUTPUTDIR" "$STATEDIR/spec" '-debug(source|info)$')
                 rsync_as root -av ${rpms} $device_ip:/root/RPMS/
                 [[ $? -ne 0 ]] && return 1
                 device_rpms=$(sed "s,^$OPT_OUTPUTDIR/,RPMS/," <<<"$rpms")
@@ -1176,6 +1340,145 @@ run_deploy() {
     done
 
     [[ $retcode -eq 0 ]] || { echo "Deploy failed"; return 1; }
+}
+
+run_check__process_args() {
+    local check_levels=$1
+    local check_suites=$2
+    local check_artefacts=("${@:3}")
+
+    CHECK_SOURCE_ARTEFACT=
+    CHECK_PACKAGE_ARTEFACTS=()
+    for artefact in ${check_artefacts:+"${check_artefacts[@]}"}; do
+        if [[ ! -e $artefact ]]; then
+            fatal "No such file or directory: '$artefact'"
+        fi
+        if [[ $artefact == *.rpm && -f $artefact ]]; then
+            CHECK_PACKAGE_ARTEFACTS+=("$artefact")
+        elif [[ -d $artefact ]]; then
+            if [[ $CHECK_SOURCE_ARTEFACT ]]; then
+                fatal "Multiple artefacts of type 'source tree' specified"
+            fi
+            CHECK_SOURCE_ARTEFACT=$artefact
+        else
+            fatal "Unhandled type of artefact '$artefact'"
+        fi
+    done
+
+    if [[ $CHECK_SOURCE_ARTEFACT && ${#CHECK_PACKAGE_ARTEFACTS[*]} -eq 0 ]]; then
+        CHECK_LEVELS=($CHECK_LEVEL_SOURCE)
+    elif [[ ! $CHECK_SOURCE_ARTEFACT && ${#CHECK_PACKAGE_ARTEFACTS[*]} -ne 0 ]]; then
+        CHECK_LEVELS=($CHECK_LEVEL_PACKAGE)
+    else
+        CHECK_LEVELS=($CHECK_LEVEL_SOURCE $CHECK_LEVEL_PACKAGE)
+    fi
+    if [[ $check_levels ]]; then
+        local expanded_check_levels=() level=
+        for level in ${check_levels//,/ }; do
+            local op=
+            if [[ $level = [-+]* ]]; then
+                op=${level:0:1}
+                level=${level:1}
+            fi
+            case $level in
+                $CHECK_LEVEL_STATIC)
+                    expanded_check_levels+=($op$CHECK_LEVEL_SOURCE $op$CHECK_LEVEL_PACKAGE) ;;
+                $CHECK_LEVEL_DYNAMIC)
+                    expanded_check_levels+=($op$CHECK_LEVEL_UNIT $op$CHECK_LEVEL_SYSTEM) ;;
+                $CHECK_LEVEL_SOURCE|$CHECK_LEVEL_PACKAGE|$CHECK_LEVEL_UNIT|$CHECK_LEVEL_SYSTEM)
+                    expanded_check_levels+=($op$level) ;;
+                *)
+                    fatal "Not a recognized test level '$level'" ;;
+            esac
+        done
+        set_update CHECK_LEVELS ${expanded_check_levels[*]}
+    fi
+    if [[ ${#CHECK_LEVELS[*]} -eq 0 ]]; then
+        fatal "No test level selected"
+    fi
+
+    local rpmvalidation_suites_info=$(rpmvalidation --target "$OPT_TARGET" --list-suites)
+    RPMVALIDATION_ALL_SUITES=($(awk '{print $1}' <<<"$rpmvalidation_suites_info"))
+    local rpmvalidation_essential_suites=($(awk -v essential="$CHECK_ESSENTIAL" \
+        '($2 == essential) { print $1 }' <<<"$rpmvalidation_suites_info"))
+    CHECK_SUITES=($CHECK_RPMSPEC ${rpmvalidation_essential_suites[*]})
+    if [[ $check_suites ]]; then
+        for suite in ${check_suites//[,+-]/ }; do
+            if [[ $suite != $CHECK_RPMSPEC ]] && ! set_contains RPMVALIDATION_ALL_SUITES "$suite"; then
+                fatal "Not a known test suite '$suite'"
+            fi
+        done
+        set_update CHECK_SUITES ${check_suites//,/ }
+    fi
+    if [[ ${#CHECK_SUITES[*]} -eq 0 ]]; then
+        fatal "No test suite selected"
+    fi
+}
+
+run_check() {
+    if [[ $CHECK_LIST_SUITES ]]; then
+        local US=$'\x1F'
+        print_suite() ( IFS=$US; printf '%s\n' "$*"; )
+        local raw=$(
+            print_suite NAME ESSENTIAL LEVELS URL DESCRIPTION
+            {
+                print_suite "$CHECK_RPMSPEC" "$CHECK_ESSENTIAL" "$CHECK_LEVEL_UNIT" "-" \
+                    "Execute the %check section of the .spec file"
+
+                local name= essential= url= description=
+                rpmvalidation --target "$OPT_TARGET" --list-suites \
+                    |while read name essential url description; do
+                        print_suite "$name" "$essential" "$CHECK_LEVEL_PACKAGE" "$url" "$description"
+                    done
+            } |sort --field-separator "$US" --key 1,1
+        )
+
+        local odd=$(cut -d "$US" -f 1-4 <<<"$raw" |column --table --separator "$US")
+        local even=$(cut -d "$US" -f 5 <<<"$raw")
+        paste -d $'\n' <(cat <<<"$odd") <(cat <<<"$even") |sed '2~2s/^/    /; 2d'
+        return
+    fi
+
+    local rc=0 done_count=0
+
+    if set_contains CHECK_LEVELS "$CHECK_LEVEL_UNIT"; then
+        if set_contains CHECK_SUITES "$CHECK_RPMSPEC"; then
+            let done_count++
+            run_make_install --check || rc=1
+        fi
+    fi
+    if set_contains CHECK_LEVELS "$CHECK_LEVEL_PACKAGE"; then
+        local selected_rpmvalidation_suites=()
+        set_intersect selected_rpmvalidation_suites RPMVALIDATION_ALL_SUITES CHECK_SUITES
+        selected_rpmvalidation_suites=$(IFS=,; printf '%s' "${selected_rpmvalidation_suites[*]}")
+        if [[ $selected_rpmvalidation_suites ]]; then
+            local packages=(${CHECK_PACKAGE_ARTEFACTS:+"${CHECK_PACKAGE_ARTEFACTS[@]}"})
+            if [[ ${#packages[*]} -eq 0 ]]; then
+                if [[ ! -e $STATEDIR/spec ]]; then
+                    notice "No previous build found and no package to verify specified explicitly"
+                else
+                    packages=($(find_rpms "$OPT_OUTPUTDIR" "$STATEDIR/spec" '-debug(source|info)$'))
+                    if [[ ${#packages[*]} -eq 0 ]]; then
+                        notice "No packages found and none specified explicitly"
+                    fi
+                fi
+            fi
+            local package=
+            for package in "${packages[@]}"; do
+                let done_count++
+                rpmvalidation -t "$OPT_TARGET" --suites "$selected_rpmvalidation_suites" "$package" \
+                    || rc=1
+            done
+        fi
+    fi
+
+    # The other levels are currently unimplemented
+
+    if [[ $done_count -eq 0 ]]; then
+        fatal "None of the selected test suites operate on the selected test levels. Nothing to do."
+    fi
+
+    return $rc
 }
 
 get_shared_dir() {
@@ -1247,8 +1550,21 @@ OPT_WRAP=()
 deviceuser=nemo
 
 STATEDIR=$PWD/.mb2
+TMP_SPEC=$STATEDIR/spec
 SNAPSHOT_POOL_SUFFIX=mb2.XXX
 SNAPSHOT_POOL_SIZE=5
+
+CHECK_LEVEL_SOURCE=source
+CHECK_LEVEL_PACKAGE=package
+CHECK_LEVEL_STATIC=static
+CHECK_LEVEL_UNIT=unit
+CHECK_LEVEL_SYSTEM=system
+CHECK_LEVEL_DYNAMIC=dynamic
+
+CHECK_ESSENTIAL=Essential
+CHECK_OPTIONAL=Optional
+
+CHECK_RPMSPEC=rpmspec
 
 # The working directory inside build engine is noexec and symlink creation under VirtualBox
 # shared folder shared from Windows requires special permissions
@@ -1473,7 +1789,7 @@ while [[ "$1" ]]; do
             fi
             break
             ;;
-        run | ssh )
+        run | ssh | check )
             break
             ;;
         --version )
@@ -1661,6 +1977,53 @@ case "$1" in
                 notice "Using the 'run' command without '--device' is deprecated"
             fi
             cmd=""
+        fi
+        ;;
+    check )
+        cmd=run_$1; shift
+        CHECK_LIST_SUITES=
+        check_levels=
+        check_suites=
+        check_artefacts=()
+        while [[ "$1" ]]; do
+            case "$1" in
+                --list-suites) shift
+                    CHECK_LIST_SUITES=1
+                    ;;
+                -l|--levels) shift
+                    [[ $1 ]] || short_usage quit
+                    check_levels=$1
+                    shift
+                    ;;
+                -s|--suites) shift
+                    [[ $1 ]] || short_usage quit
+                    check_suites=$1
+                    shift
+                    ;;
+                --) shift
+                    check_artefacts+=(${@:+"$@"})
+                    break
+                    ;;
+                -*)
+                    short_usage quit
+                    ;;
+                *)
+                    check_artefacts+=("$1")
+                    shift
+                    ;;
+            esac
+        done
+
+        if [[ ! $CHECK_LIST_SUITES ]]; then
+            run_check__process_args "$check_levels" "$check_suites" ${check_artefacts:+"${check_artefacts[@]}"}
+
+            notice "Testing on levels: ${CHECK_LEVELS[*]}"
+            notice "Testing with suites: ${CHECK_SUITES[*]}"
+
+            if set_contains CHECK_LEVELS "$CHECK_LEVEL_PACKAGE" && [[ ${#CHECK_PACKAGE_ARTEFACTS[*]} -eq 0 ]] \
+                || set_contains CHECK_LEVELS "$CHECK_LEVEL_UNIT"; then
+                OPT_NEEDSPEC=1
+            fi
         fi
         ;;
     *)
