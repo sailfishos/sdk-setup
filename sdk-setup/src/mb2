@@ -306,6 +306,11 @@ GLOBAL OPTIONS
     --no-task
         Override --task option
 
+    --wrap <command>:<wrapper>
+        Instruct rpmbuild to use the given <wrapper> as a replacement for the
+        <command>. <command> must be a valid file name, without directory part
+        while <wrapper> must be specified as an absolute file path.
+
     -x, --fix-version[=<tag>]
         This option is implied when used inside a Git working tree (use -X to
         override). When used via Qt Creator, it is only implied if the version
@@ -716,11 +721,19 @@ rpm_quote() {
 
 init_wrappers_dir() {
     [[ -e $WRAPPERSDIR ]] || mkdir -p "$WRAPPERSDIR"
+    [[ -e $USERWRAPPERSDIR ]] || mkdir -p "$USERWRAPPERSDIR"
+    local user_wrapper= command= wrapper=
+    for user_wrapper in "${OPT_WRAP[@]}"; do
+        command=${user_wrapper%%:*}
+        wrapper=${user_wrapper#*:}
+        ln -s "$wrapper" "$USERWRAPPERSDIR/$command"
+    done
 }
 
 remove_wrappers_dir() {
     # Better be paranoid than sorry. And quieten the unnecessary verbose 'rmdir --parents'
     rm -f "$WRAPPERSDIR"/* && rmdir --parents "$WRAPPERSDIR" &>/dev/null
+    rm -f "$USERWRAPPERSDIR"/* && rmdir --parents "$USERWRAPPERSDIR" &>/dev/null
 }
 
 # 1. Allows to pass extra arguments to qmake
@@ -924,7 +937,7 @@ run_build() {
     (
         cd_to_spec_setup_dir;
         [[ $OPT_CLEAN_OUTPUTDIR ]] && rm -f "$OPT_OUTPUTDIR/"*.rpm;
-        sb2 -t $OPT_TARGET env PATH="$WRAPPERSDIR:$PATH" rpmbuild \
+        sb2 -t $OPT_TARGET env PATH="$WRAPPERSDIR:$USERWRAPPERSDIR:$PATH" rpmbuild \
             --build-in-place --target=$build_tgt \
             "${BUILD_DEBUG[@]}" \
             --define "_smp_mflags -j$(rpm_quote "$BUILD_JOBS")" \
@@ -996,7 +1009,7 @@ run_qmake() {
 
         (
             cd_to_spec_setup_dir;
-            sb2 -t $OPT_TARGET env PATH="$WRAPPERSDIR:$PATH" rpmbuild \
+            sb2 -t $OPT_TARGET env PATH="$WRAPPERSDIR:$USERWRAPPERSDIR:$PATH" rpmbuild \
                 --build-in-place --target=$build_tgt \
                 --define "noecho 1" \
                 --define "_sourcedir $(dirname $OPT_SPEC)" \
@@ -1030,7 +1043,7 @@ run_make() {
 
         (
             cd_to_spec_setup_dir;
-            sb2 -t $OPT_TARGET env PATH="$WRAPPERSDIR:$PATH" rpmbuild \
+            sb2 -t $OPT_TARGET env PATH="$WRAPPERSDIR:$USERWRAPPERSDIR:$PATH" rpmbuild \
                 --build-in-place --target=$build_tgt \
                 --define "noecho 1" \
                 --define "_sourcedir $(dirname $OPT_SPEC)" \
@@ -1223,6 +1236,7 @@ OPT_GIT_CHANGE_LOG_ARGS=
 OPT_SHARED_DIR=/etc/mersdk/share
 OPT_INC_BUILD_NUMBER=0
 OPT_NO_DEPS=
+OPT_WRAP=()
 deviceuser=nemo
 
 STATEDIR=$PWD/.mb2
@@ -1233,8 +1247,10 @@ SNAPSHOT_POOL_SIZE=5
 # shared folder shared from Windows requires special permissions
 if inside_build_engine; then
     WRAPPERSDIR=$HOME/.mb2/wrappers${PWD#"$HOME"}
+    USERWRAPPERSDIR=$HOME/.mb2/user-wrappers${PWD#"$HOME"}
 else
     WRAPPERSDIR=$STATEDIR/wrappers
+    USERWRAPPERSDIR=$STATEDIR/user-wrappers
 fi
 
 # Virtualbox environment will install in this hardcoded location
@@ -1395,6 +1411,11 @@ while [[ "$1" ]]; do
             ;;
         "--no-task" ) shift
             OPT_TASK=
+            ;;
+        "--wrap" )
+            [[ $2 == *?:?* ]] || fatal "The '$1' options requires an argument"
+            OPT_WRAP+=("$2")
+            shift 2
             ;;
         "-i" | "--increment" ) shift
             OPT_INC_BUILD_NUMBER=1
