@@ -2411,8 +2411,7 @@ sb2_arg_pass_tc() {
     actual=$(sed -e 's,/home/mersdk/.mb2/wrappers/tmp/tmp\.[[:alnum:]]\+,/tmp/@TMPDIR@/.mb2/wrappers,g' \
                  -e 's,/home/mersdk/.mb2/user-wrappers/tmp/tmp\.[[:alnum:]]\+,/tmp/@TMPDIR@/.mb2/user-wrappers,g' \
                  -e 's,/tmp\.[[:alnum:]]\+,/@TMPDIR@,g' \
-                 -e "s,/home/deploy,/tmp/@TMPDIR@,g" \
-                 -e 's,/test\.spec\.[^/]\+,/@TEST_SPEC@,g' <<<"$actual_raw")
+                 -e "s,/home/deploy,/tmp/@TMPDIR@,g" <<<"$actual_raw")
     if ! diff=$(diff <(cat <<<"$expected") <(cat <<<"$actual")); then
         cat <<END
 Test case failed: $TC_NAME
@@ -2448,7 +2447,7 @@ run_tc sb2_arg_pass "prepare" \
         --define '_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm' \
         --buildroot=/tmp/@TMPDIR@/installroot \
         -bp --short-circuit \
-        /tmp/@TMPDIR@/rpm/@TEST_SPEC@)" \
+        /tmp/@TMPDIR@/.mb2/spec)" \
     prepare "a b" "c  d" e f
 
 run_tc sb2_arg_pass "build" \
@@ -2462,7 +2461,7 @@ run_tc sb2_arg_pass "build" \
         --define '_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm' \
         --buildroot=/tmp/@TMPDIR@/installroot \
         -bb \
-        /tmp/@TMPDIR@/rpm/@TEST_SPEC@ \
+        /tmp/@TMPDIR@/.mb2/spec \
         "a b" "c  d" e f)" \
     build --doprep -j "bad  1" "a b" "c  d" e f
 
@@ -2476,7 +2475,7 @@ run_tc sb2_arg_pass "build with debug" \
         --define '_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm' \
         --buildroot=/tmp/@TMPDIR@/installroot \
         -bb \
-        /tmp/@TMPDIR@/rpm/@TEST_SPEC@ \
+        /tmp/@TMPDIR@/.mb2/spec \
         "a b" "c  d" e f)" \
     build --doprep --enable-debug -j "bad  1" "a b" "c  d" e f
 
@@ -2487,7 +2486,7 @@ run_tc sb2_arg_pass "qmake" \
         --define 'noecho 1' \
         --define '_sourcedir /tmp/@TMPDIR@/rpm' \
         -bc --short-circuit \
-        /tmp/@TMPDIR@/rpm/@TEST_SPEC@)" \
+        /tmp/@TMPDIR@/.mb2/spec)" \
     qmake "a b" "c  d" e f
 
 run_tc sb2_arg_pass "make" \
@@ -2497,7 +2496,7 @@ run_tc sb2_arg_pass "make" \
         --define 'noecho 1' \
         --define '_sourcedir /tmp/@TMPDIR@/rpm' \
         -bc --short-circuit \
-        /tmp/@TMPDIR@/rpm/@TEST_SPEC@)" \
+        /tmp/@TMPDIR@/.mb2/spec)" \
     make "a b" "c  d" e f
 
 KNOWN_ISSUE "Silently ignores extra arguments"
@@ -2509,7 +2508,7 @@ run_tc sb2_arg_pass "make-install" \
         --define '_skip_install_processing 1' \
         --buildroot='/tmp/@TMPDIR@/installroot' \
         -bi --short-circuit --nocheck \
-        /tmp/@TMPDIR@/rpm/@TEST_SPEC@)" \
+        /tmp/@TMPDIR@/.mb2/spec)" \
     make-install "a b" "c  d" e f
 
 KNOWN_ISSUE "Silently ignores extra arguments"
@@ -2522,7 +2521,7 @@ run_tc sb2_arg_pass "package" \
         --define '_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm' \
         --buildroot='/tmp/@TMPDIR@/installroot' \
         -bb --noprep --nobuildstage --noclean \
-        /tmp/@TMPDIR@/rpm/@TEST_SPEC@)" \
+        /tmp/@TMPDIR@/.mb2/spec)" \
     package "a b" "c  d" e f
 
 tear_down_ts sb2_arg_pass
