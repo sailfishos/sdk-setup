@@ -1038,7 +1038,6 @@ switch_to_snapshot() {
         sdk-manage target snapshot --reset=outdated "$OPT_ORIGINAL_TARGET" "$OPT_TARGET" || return
     else
         local lock=$STATEDIR/snapshot.lock
-        mkdir -p "$STATEDIR" || return
         exec 10> "$lock" || return
         if ! flock --nonblock 10; then
             fatal "Failed to flock '$lock'"
@@ -1600,7 +1599,6 @@ if [[ $1 != --self-test ]]; then  ###  M A I N  EXECUTION BEGINS HERE  #########
 handle_pro_file_or_dir_option() {
     local pro_file_or_dir=$1
 
-    mkdir -p "$STATEDIR"
     rm -f "$STATEDIR/src"
 
     if [[ ! $pro_file_or_dir ]]; then
@@ -1805,6 +1803,8 @@ while [[ "$1" ]]; do
             ;;
     esac
 done
+
+mkdir -p "$STATEDIR" || exit
 
 if [[ -n "$OPT_SPEC" ]]; then
     try_to_make_spec "$OPT_SPEC"
