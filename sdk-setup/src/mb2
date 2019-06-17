@@ -2386,6 +2386,8 @@ run_tc rpm_quote "Test RPM macro escaping"
 sb2_arg_pass_ts_set_up() {
     arg_pass_stub_create sb2 || return
 
+    WRAPPERS_PATH="/tmp/@TMPDIR@/.mb2/wrappers:/tmp/@TMPDIR@/.mb2/user-wrappers"
+
     # Create an empty spec file
     mkdir rpm || return
     : >rpm/test.spec || return
@@ -2395,6 +2397,7 @@ sb2_arg_pass_ts_tear_down() {
     arg_pass_stub_remove sb2 || return
     rm -f rpm/test.spec || return
     rmdir rpm || return
+    unset WRAPPERS_PATH
 }
 
 sb2_arg_pass_tc() {
@@ -2406,6 +2409,7 @@ sb2_arg_pass_tc() {
     local actual_raw= actual= diff=
     actual_raw=$(arg_pass_stub_results sb2) || return
     actual=$(sed -e 's,/home/mersdk/.mb2/wrappers/tmp/tmp\.[[:alnum:]]\+,/tmp/@TMPDIR@/.mb2/wrappers,g' \
+                 -e 's,/home/mersdk/.mb2/user-wrappers/tmp/tmp\.[[:alnum:]]\+,/tmp/@TMPDIR@/.mb2/user-wrappers,g' \
                  -e 's,/tmp\.[[:alnum:]]\+,/@TMPDIR@,g' \
                  -e "s,/home/deploy,/tmp/@TMPDIR@,g" \
                  -e 's,/test\.spec\.[^/]\+,/@TEST_SPEC@,g' <<<"$actual_raw")
@@ -2449,7 +2453,7 @@ run_tc sb2_arg_pass "prepare" \
 
 run_tc sb2_arg_pass "build" \
     "$(expect_args \
-        -t "$DEFAULT_TARGET" env PATH="/tmp/@TMPDIR@/.mb2/wrappers:/tmp/@TMPDIR@/stubs:$ORIG_PATH" rpmbuild \
+        -t "$DEFAULT_TARGET" env PATH="$WRAPPERS_PATH:/tmp/@TMPDIR@/stubs:$ORIG_PATH" rpmbuild \
         --build-in-place --target= \
         --define 'debug_package %{nil}' \
         --define "_smp_mflags -j$(rpm_quote "bad  1")" \
@@ -2464,7 +2468,7 @@ run_tc sb2_arg_pass "build" \
 
 run_tc sb2_arg_pass "build with debug" \
     "$(expect_args \
-        -t "$DEFAULT_TARGET" env PATH="/tmp/@TMPDIR@/.mb2/wrappers:/tmp/@TMPDIR@/stubs:$ORIG_PATH" rpmbuild \
+        -t "$DEFAULT_TARGET" env PATH="$WRAPPERS_PATH:/tmp/@TMPDIR@/stubs:$ORIG_PATH" rpmbuild \
         --build-in-place --target= \
         --define "_smp_mflags -j$(rpm_quote "bad  1")" \
         --define '_rpmdir /tmp/@TMPDIR@/RPMS' \
@@ -2478,7 +2482,7 @@ run_tc sb2_arg_pass "build with debug" \
 
 run_tc sb2_arg_pass "qmake" \
     "$(expect_args \
-        -t "$DEFAULT_TARGET" env PATH="/tmp/@TMPDIR@/.mb2/wrappers:/tmp/@TMPDIR@/stubs:$ORIG_PATH" rpmbuild \
+        -t "$DEFAULT_TARGET" env PATH="$WRAPPERS_PATH:/tmp/@TMPDIR@/stubs:$ORIG_PATH" rpmbuild \
         --build-in-place --target= \
         --define 'noecho 1' \
         --define '_sourcedir /tmp/@TMPDIR@/rpm' \
@@ -2488,7 +2492,7 @@ run_tc sb2_arg_pass "qmake" \
 
 run_tc sb2_arg_pass "make" \
     "$(expect_args \
-        -t "$DEFAULT_TARGET" env PATH="/tmp/@TMPDIR@/.mb2/wrappers:/tmp/@TMPDIR@/stubs:$ORIG_PATH" rpmbuild \
+        -t "$DEFAULT_TARGET" env PATH="$WRAPPERS_PATH:/tmp/@TMPDIR@/stubs:$ORIG_PATH" rpmbuild \
         --build-in-place --target= \
         --define 'noecho 1' \
         --define '_sourcedir /tmp/@TMPDIR@/rpm' \
