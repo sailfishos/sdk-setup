@@ -1038,7 +1038,6 @@ switch_to_snapshot() {
         sdk-manage target snapshot --reset=outdated "$OPT_ORIGINAL_TARGET" "$OPT_TARGET" || return
     else
         local lock=$STATEDIR/snapshot.lock
-        mkdir -p "$STATEDIR" || return
         exec 10> "$lock" || return
         if ! flock --nonblock 10; then
             fatal "Failed to flock '$lock'"
@@ -1600,7 +1599,6 @@ if [[ $1 != --self-test ]]; then  ###  M A I N  EXECUTION BEGINS HERE  #########
 handle_pro_file_or_dir_option() {
     local pro_file_or_dir=$1
 
-    mkdir -p "$STATEDIR"
     rm -f "$STATEDIR/src"
 
     if [[ ! $pro_file_or_dir ]]; then
@@ -1805,6 +1803,8 @@ while [[ "$1" ]]; do
             ;;
     esac
 done
+
+mkdir -p "$STATEDIR" || exit
 
 if [[ -n "$OPT_SPEC" ]]; then
     try_to_make_spec "$OPT_SPEC"
@@ -2386,6 +2386,8 @@ run_tc rpm_quote "Test RPM macro escaping"
 sb2_arg_pass_ts_set_up() {
     arg_pass_stub_create sb2 || return
 
+    WRAPPERS_PATH="/tmp/@TMPDIR@/.mb2/wrappers:/tmp/@TMPDIR@/.mb2/user-wrappers"
+
     # Create an empty spec file
     mkdir rpm || return
     : >rpm/test.spec || return
@@ -2395,6 +2397,7 @@ sb2_arg_pass_ts_tear_down() {
     arg_pass_stub_remove sb2 || return
     rm -f rpm/test.spec || return
     rmdir rpm || return
+    unset WRAPPERS_PATH
 }
 
 sb2_arg_pass_tc() {
@@ -2406,9 +2409,9 @@ sb2_arg_pass_tc() {
     local actual_raw= actual= diff=
     actual_raw=$(arg_pass_stub_results sb2) || return
     actual=$(sed -e 's,/home/mersdk/.mb2/wrappers/tmp/tmp\.[[:alnum:]]\+,/tmp/@TMPDIR@/.mb2/wrappers,g' \
+                 -e 's,/home/mersdk/.mb2/user-wrappers/tmp/tmp\.[[:alnum:]]\+,/tmp/@TMPDIR@/.mb2/user-wrappers,g' \
                  -e 's,/tmp\.[[:alnum:]]\+,/@TMPDIR@,g' \
-                 -e "s,/home/deploy,/tmp/@TMPDIR@,g" \
-                 -e 's,/test\.spec\.[^/]\+,/@TEST_SPEC@,g' <<<"$actual_raw")
+                 -e "s,/home/deploy,/tmp/@TMPDIR@,g" <<<"$actual_raw")
     if ! diff=$(diff <(cat <<<"$expected") <(cat <<<"$actual")); then
         cat <<END
 Test case failed: $TC_NAME
@@ -2444,12 +2447,12 @@ run_tc sb2_arg_pass "prepare" \
         --define '_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm' \
         --buildroot=/tmp/@TMPDIR@/installroot \
         -bp --short-circuit \
-        /tmp/@TMPDIR@/rpm/@TEST_SPEC@)" \
+        /tmp/@TMPDIR@/.mb2/spec)" \
     prepare "a b" "c  d" e f
 
 run_tc sb2_arg_pass "build" \
     "$(expect_args \
-        -t "$DEFAULT_TARGET" env PATH="/tmp/@TMPDIR@/.mb2/wrappers:/tmp/@TMPDIR@/stubs:$ORIG_PATH" rpmbuild \
+        -t "$DEFAULT_TARGET" env PATH="$WRAPPERS_PATH:/tmp/@TMPDIR@/stubs:$ORIG_PATH" rpmbuild \
         --build-in-place --target= \
         --define 'debug_package %{nil}' \
         --define "_smp_mflags -j$(rpm_quote "bad  1")" \
@@ -2458,13 +2461,13 @@ run_tc sb2_arg_pass "build" \
         --define '_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm' \
         --buildroot=/tmp/@TMPDIR@/installroot \
         -bb \
-        /tmp/@TMPDIR@/rpm/@TEST_SPEC@ \
+        /tmp/@TMPDIR@/.mb2/spec \
         "a b" "c  d" e f)" \
     build --doprep -j "bad  1" "a b" "c  d" e f
 
 run_tc sb2_arg_pass "build with debug" \
     "$(expect_args \
-        -t "$DEFAULT_TARGET" env PATH="/tmp/@TMPDIR@/.mb2/wrappers:/tmp/@TMPDIR@/stubs:$ORIG_PATH" rpmbuild \
+        -t "$DEFAULT_TARGET" env PATH="$WRAPPERS_PATH:/tmp/@TMPDIR@/stubs:$ORIG_PATH" rpmbuild \
         --build-in-place --target= \
         --define "_smp_mflags -j$(rpm_quote "bad  1")" \
         --define '_rpmdir /tmp/@TMPDIR@/RPMS' \
@@ -2472,28 +2475,28 @@ run_tc sb2_arg_pass "build with debug" \
         --define '_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm' \
         --buildroot=/tmp/@TMPDIR@/installroot \
         -bb \
-        /tmp/@TMPDIR@/rpm/@TEST_SPEC@ \
+        /tmp/@TMPDIR@/.mb2/spec \
         "a b" "c  d" e f)" \
     build --doprep --enable-debug -j "bad  1" "a b" "c  d" e f
 
 run_tc sb2_arg_pass "qmake" \
     "$(expect_args \
-        -t "$DEFAULT_TARGET" env PATH="/tmp/@TMPDIR@/.mb2/wrappers:/tmp/@TMPDIR@/stubs:$ORIG_PATH" rpmbuild \
+        -t "$DEFAULT_TARGET" env PATH="$WRAPPERS_PATH:/tmp/@TMPDIR@/stubs:$ORIG_PATH" rpmbuild \
         --build-in-place --target= \
         --define 'noecho 1' \
         --define '_sourcedir /tmp/@TMPDIR@/rpm' \
         -bc --short-circuit \
-        /tmp/@TMPDIR@/rpm/@TEST_SPEC@)" \
+        /tmp/@TMPDIR@/.mb2/spec)" \
     qmake "a b" "c  d" e f
 
 run_tc sb2_arg_pass "make" \
     "$(expect_args \
-        -t "$DEFAULT_TARGET" env PATH="/tmp/@TMPDIR@/.mb2/wrappers:/tmp/@TMPDIR@/stubs:$ORIG_PATH" rpmbuild \
+        -t "$DEFAULT_TARGET" env PATH="$WRAPPERS_PATH:/tmp/@TMPDIR@/stubs:$ORIG_PATH" rpmbuild \
         --build-in-place --target= \
         --define 'noecho 1' \
         --define '_sourcedir /tmp/@TMPDIR@/rpm' \
         -bc --short-circuit \
-        /tmp/@TMPDIR@/rpm/@TEST_SPEC@)" \
+        /tmp/@TMPDIR@/.mb2/spec)" \
     make "a b" "c  d" e f
 
 KNOWN_ISSUE "Silently ignores extra arguments"
@@ -2505,7 +2508,7 @@ run_tc sb2_arg_pass "make-install" \
         --define '_skip_install_processing 1' \
         --buildroot='/tmp/@TMPDIR@/installroot' \
         -bi --short-circuit --nocheck \
-        /tmp/@TMPDIR@/rpm/@TEST_SPEC@)" \
+        /tmp/@TMPDIR@/.mb2/spec)" \
     make-install "a b" "c  d" e f
 
 KNOWN_ISSUE "Silently ignores extra arguments"
@@ -2518,7 +2521,7 @@ run_tc sb2_arg_pass "package" \
         --define '_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm' \
         --buildroot='/tmp/@TMPDIR@/installroot' \
         -bb --noprep --nobuildstage --noclean \
-        /tmp/@TMPDIR@/rpm/@TEST_SPEC@)" \
+        /tmp/@TMPDIR@/.mb2/spec)" \
     package "a b" "c  d" e f
 
 tear_down_ts sb2_arg_pass
