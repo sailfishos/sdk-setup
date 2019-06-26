@@ -1805,6 +1805,7 @@ while [[ "$1" ]]; do
 done
 
 mkdir -p "$STATEDIR" || exit
+echo '*' > "$STATEDIR/.gitignore"
 
 if [[ -n "$OPT_SPEC" ]]; then
     try_to_make_spec "$OPT_SPEC"

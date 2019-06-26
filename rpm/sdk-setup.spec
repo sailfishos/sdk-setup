@@ -195,6 +195,7 @@ cp src/sdk-motd %{buildroot}%{_bindir}/
 cp src/rpmvalidation %{buildroot}%{_bindir}/
 ln -sf rpmvalidation %{buildroot}%{_bindir}/rpmvalidation.sh
 cp src/git-lltb %{buildroot}%{_bindir}/
+cp src/sdk-init %{buildroot}%{_bindir}/
 
 # update version info to scripts
 sed -i "s/VERSION_FROM_SPEC/%{version}/" %{buildroot}%{_bindir}/mb2
@@ -224,6 +225,7 @@ if ! rpm --quiet -q ca-certificates && [ -d /%{_sysconfdir}/ssl/certs ] ; then e
 %systemd_preun home-mersdk.service
 %systemd_preun etc-mersdk-share.service
 %systemd_preun etc-ssh-authorized_keys.mount
+%systemd_preun host_install.service
 %systemd_preun host_targets.service
 %systemd_preun information.service
 %systemd_preun sdk-enginelan.service
@@ -232,6 +234,7 @@ if ! rpm --quiet -q ca-certificates && [ -d /%{_sysconfdir}/ssl/certs ] ; then e
 %systemd_post home-mersdk.service
 %systemd_post etc-mersdk-share.service
 %systemd_post etc-ssh-authorized_keys.mount
+%systemd_post host_install.service
 %systemd_post host_targets.service
 %systemd_post information.service
 %systemd_post sdk-enginelan.service
@@ -270,6 +273,7 @@ fi
 /home/.zypp-cache
 %{_unitdir}/information.service
 %{_unitdir}/sdk-enginelan.service
+%{_unitdir}/host_install.service
 %{_unitdir}/host_targets.service
 %{_unitdir}/home-mersdk.service
 %{_unitdir}/etc-mersdk-share.service
@@ -312,6 +316,7 @@ fi
 %{_bindir}/rpmvalidation.sh
 %{_bindir}/rpmvalidation
 %{_bindir}/git-lltb
+%{_bindir}/sdk-init
 %config %{_sysconfdir}/ssh/ssh_config.sdk
 %config %{_sysconfdir}/bash_completion.d/mb2.bash
 %config %{_sysconfdir}/bash_completion.d/sdk-assistant.bash

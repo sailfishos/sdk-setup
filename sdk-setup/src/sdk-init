@@ -1,0 +1,377 @@
+#!/bin/bash
+#
+# Initialize a project
+#
+# Copyright (C) 2019 Jolla Ltd.
+# Contact: Martin Kampas <martin.kampas@jolla.com>
+# All rights reserved.
+#
+# You may use this file under the terms of BSD license as follows:
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+#   * Redistributions of source code must retain the above copyright
+#     notice, this list of conditions and the following disclaimer.
+#   * Redistributions in binary form must reproduce the above copyright
+#     notice, this list of conditions and the following disclaimer in the
+#     documentation and/or other materials provided with the distribution.
+#   * Neither the name of the Jolla Ltd nor the
+#     names of its contributors may be used to endorse or promote products
+#     derived from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+# ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+# WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+# DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS OR CONTRIBUTORS BE LIABLE FOR
+# ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+# (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+# LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+# ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+# SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+#
+
+set -o nounset
+set -o pipefail
+shopt -s extglob
+
+synopsis()
+{
+    cat <<END
+usage: sdk-init -t|--type <type> [<name>]
+       sdk-init -l|--list-types
+END
+}
+
+short_usage()
+{
+    cat <<END
+$(synopsis)
+
+Try 'sdk-init --help' for more information.
+END
+}
+
+usage()
+{
+    less --quit-if-one-screen <<END
+$(synopsis)
+
+Initialize a new project under current working directory. Project <name> will
+figure e.g. as the main package name and it defaults to the directory name.
+
+OPTIONS
+    --force
+        Normally sdk-init refuses to do its job if the directory is not empty.
+        This option can be used to bypass this requirement
+
+    -l, --list-types
+        List the known project types
+
+    -t, --type <type>
+        Choose the <type> of the project to create
+
+    --sdk-root <path>
+        Path to the (application) SDK installation directory. Only needed if
+        custom installation directory was chosen during installation
+END
+}
+
+warning()
+{
+    printf 'sdk-init: warning: %s\n' "$*" >&2
+}
+
+fatal()
+{
+    printf 'sdk-init: fatal: %s\n' "$*" >&2
+}
+
+bad_usage()
+{
+    fatal "$*"
+    short_usage >&2
+}
+
+inside_build_engine() [[ -f /etc/mer-sdk-vbox ]]
+
+list_types()
+{
+    echo "$DEF_TEMPLATE_NAME ... Qt Quick Application"
+}
+
+install_template()
+{
+    local source=$1
+    local target=$2
+
+    target=${target//%ProjectName%/$OPT_NAME}
+
+    install -D --no-target-directory "$source" "./$target" || return
+    # For the double backslash processing see Utils::TemplateEngine::processText in Qt Creator
+    # sources
+    sed -i "./$target" \
+        -e "s/%ProjectName%/$OPT_NAME/g" \
+        -e "s/%Summary%/My $OPT_NAME application/g" \
+        -e 's/%Version%/0/g' \
+        -e 's/\\\\/\\/g' \
+        || return
+}
+
+# Read wizards.xml, print table of source and target paths, columns separated with <separator>
+parse_wizard_xml()
+{
+    local separator=$1
+
+    local raw_file_info=
+    raw_file_info=$(xmllint --xpath '//file/@source | //file/@target' -) || return
+
+    eval local file_info=($raw_file_info)
+
+    local attribute= source= target=
+    for attribute in "${file_info[@]}"; do
+        if [[ $attribute == target=* ]]; then
+            target=${attribute#target=}
+            printf "%s$separator" "$source" "$target"
+            printf '\n'
+            source=
+            target=
+            continue
+        elif [[ $attribute == source=* ]]; then
+            if [[ $source ]]; then
+                target=$source
+                printf "%s$separator" "$source" "$target"
+                printf '\n'
+            fi
+            source=${attribute#source=}
+            target=
+        else
+            fatal "Parsed invalid attribute '${attribute#*=}' in wizard.xml"
+            return 1
+        fi
+    done
+
+    if [[ $source ]]; then
+        target=$source
+        printf "%s$separator" "$source" "$target"
+        printf '\n'
+    fi
+}
+
+instantiate()
+{
+    local template=$OPT_SDK_ROOT/$DEF_TEMPLATE_PATH
+
+    local separator=';'
+
+    local file_info=
+    file_info=$(parse_wizard_xml "$separator" <"$template/wizard.xml") || return
+
+    local source= target=
+    while IFS="$separator" read source target <&3; do
+        install_template "$template/$source" "$target" || return
+    done 3<<<"$file_info"
+}
+
+set_defaults()
+{
+    DEF_TEMPLATE_NAME=qtquick
+    DEF_TEMPLATE_PATH=share/qtcreator/templates/wizards/sailfishos-qtquick2app
+
+    OPT_SHORT_USAGE=
+    OPT_USAGE=
+
+    OPT_FORCE=
+    OPT_LIST_TYPES=
+    OPT_NAME=$(basename "$PWD")
+    OPT_TYPE=
+
+    if inside_build_engine; then
+        OPT_SDK_ROOT=/host_install
+    else
+        OPT_SDK_ROOT=$HOME/SailfishOS
+    fi
+}
+
+parse_opts()
+{
+    local positionals=()
+
+    while (( $# > 0 )); do
+        case $1 in
+            -h)
+                OPT_SHORT_USAGE=1
+                return
+                ;;
+            --help)
+                OPT_USAGE=1
+                return
+                ;;
+            --force)
+                OPT_FORCE=1
+                ;;
+            -l|--list-types)
+                OPT_LIST_TYPES=1
+                break
+                ;;
+            --sdk-root)
+                if [[ ! ${2:-} ]]; then
+                    bad_usage "Option requires an argument: $1"
+                    return 1
+                elif [[ ! -d $2 ]]; then
+                    bad_usage "Not a directory: $2"
+                    return 1
+                elif [[ ! -f $2/sdk-release ]]; then
+                    bad_usage "Does not look like an (application) SDK installation directory: $2"
+                    return 1
+                fi
+                OPT_SDK_ROOT=$2
+                shift
+                ;;
+            -t|--type)
+                if [[ ! ${2:-} ]]; then
+                    bad_usage "Option requires an argument: $1"
+                    return 1
+                fi
+                OPT_TYPE=$2
+                shift
+                ;;
+            -*)
+                bad_usage "Unrecognized option: '$1'"
+                return 1
+                ;;
+            *)
+                positionals+=("$1")
+                ;;
+        esac
+        shift
+    done
+
+    if [[ ! -f $OPT_SDK_ROOT/sdk-release ]]; then
+        bad_usage "The (application) SDK is not available from the default location" \
+            "'$OPT_SDK_ROOT'. Please use the '--sdk-root' option."
+        return 1
+    fi
+
+    if [[ $OPT_LIST_TYPES && $OPT_TYPE ]]; then
+        bad_usage "Cannot combine '--list-types' and '--type'"
+        return 1
+    fi
+
+    if [[ ! $OPT_LIST_TYPES && ! $OPT_TYPE ]]; then
+        bad_usage "One of '--list-types' or '--type' required"
+        return 1
+    fi
+
+    if [[ $OPT_LIST_TYPES ]]; then
+        if (( ${#positionals[*]} > 0 )); then
+            bad_usage "No positional argument expected"
+            return 1
+        fi
+    elif (( ${#positionals[*]} > 1 )); then
+        bad_usage "Up to one positional argument expected"
+        return 1
+    elif (( ${#positionals[*]} == 1 )); then
+        OPT_NAME=${positionals[0]}
+    fi
+}
+
+
+main()
+{
+    set_defaults || return
+    parse_opts "$@" || return
+
+    if [[ $OPT_SHORT_USAGE ]]; then
+        short_usage
+        return
+    fi
+
+    if [[ $OPT_USAGE ]]; then
+        usage
+        return
+    fi
+
+    if [[ $OPT_LIST_TYPES ]]; then
+        list_types
+    else
+        if [[ ! $OPT_FORCE && $(ls -A) ]]; then
+            warning "Refusing to initialize non-empty directory. Use '--force' to disobey."
+            return 1
+        fi
+        instantiate
+    fi
+}
+
+if [[ ${1:-} != --self-test ]]; then
+    main "$@"
+    exit
+fi
+
+##############################################################################
+# S E L F - T E S T  EXECUTION BEGINS HERE
+
+set_defaults || exit
+OPT_NAME="my-name"
+
+some_failed=
+verify()
+{
+    local command=("$@") expected=$(cat <&42)
+    local command_quoted=$(printf '%q ' "${command[@]}")
+
+    local actual=
+    if ! actual=$("${command[@]}" 2>&1); then
+        cat <<END
+*** FAIL Command exited with non zero:
+  Command: \`$command_quoted\`
+  Output: {{{
+$actual
+}}}
+
+END
+        some_failed=1
+        return
+    fi
+
+    if [[ $actual != "$expected" ]]; then
+        cat <<END
+*** FAIL Command produced unexpected output:
+  Command: \`$command_quoted\`
+  Expected: {{{
+$expected
+}}}
+  Actual: {{{
+$actual
+}}}
+
+END
+        some_failed=1
+        return
+    fi
+}
+
+WIZARD_XML='<?xml version="1.0" encoding="UTF-8"?>
+<wizard>
+    <files>
+        <file source="src/template.cpp" target="src/%ProjectName%.cpp" />
+        <file source="README.txt" />
+        <file source="template.desktop" target="%ProjectName%.desktop" foo="bar" />
+        <file source="LICENSE.txt" foo="bar" />
+    </files>
+</wizard>
+'
+
+verify parse_wizard_xml ';' <<<"$WIZARD_XML" 42<<'END'
+src/template.cpp;src/%ProjectName%.cpp;
+README.txt;README.txt;
+template.desktop;%ProjectName%.desktop;
+LICENSE.txt;LICENSE.txt;
+END
+
+if [[ $some_failed ]]; then
+    echo "Some tests failed"
+    exit 1
+else
+    echo "All tests passed"
+fi
