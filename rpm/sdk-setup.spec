@@ -69,6 +69,7 @@ Contains the sdk-build and sdk-install mode symlinks for scratchbox2.
 Summary:    Mer SDK utility scripts
 Group:      System/Base
 BuildArch:  noarch
+Requires:   createrepo_c
 Requires:   libxml2
 Requires:   rpm-build
 Requires:   python-lxml
