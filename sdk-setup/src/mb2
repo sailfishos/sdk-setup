@@ -632,6 +632,8 @@ filter_repo()
         [[ $source_name != $exclude_source_name ]] || continue
         ln -s --target-directory="$output" "$pkg"
     done < <(find "$repo" -maxdepth 1 -name '*.rpm')
+
+    createrepo_c "$output"
 }
 
 verify_target_dependencies() {
