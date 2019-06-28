@@ -27,6 +27,8 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
+shopt -s extglob
+
 synopsis() {
     cat <<EOF
 usage: $ME [global-opts] <command> [command-opts]
@@ -832,11 +834,11 @@ ssh_as() {
 
 cd_to_spec_setup_dir() {
     # avoid spawning another process for | cut -s -f2 -d '/'
-    local setup_dir=$(grep -Po '%setup.*-n[[:space:]]+[^[:space:]]+' "$OPT_SPEC")
+    local setup_dir=$(grep -Po '%(auto)?setup.*-n[[:space:]]+[^[:space:]]+' "$OPT_SPEC")
     # if setup_dir has '/' return the part after it
     setup_dir=${setup_dir/#*\//}
     # if it did not have a '/' then we got the original match => erase it
-    setup_dir=${setup_dir/#%setup*/}
+    setup_dir=${setup_dir/#%?(auto)setup*/}
 
     if [[ -n "$setup_dir" ]]; then
         # in case we got a spec %{tag} out of this, try to expand it
@@ -1064,25 +1066,41 @@ run_build_requires() {
     verify_target_dependencies
 }
 
-run_apply() (
-    rpm_dir="$(dirname "$OPT_SPEC")"
-    cd_to_spec_setup_dir
-    reverse="cat"
-    if [ "$APPLY_REVERSE" -eq 1 ]; then
-        reverse="tac"
+run_apply() {
+    local message="Applying"
+    local common_op=()
+    if [[ $APPLY_REVERSE ]]; then
+        message="Reversing"
+        common_op+=(-R)
     fi
-    for p in $(sed -e '/^%patch/!d' -e 's/^%patch\([0-9]*\).*/\1/' "$OPT_SPEC" | $reverse); do
-        op="$(grep "^%patch${p}" "$OPT_SPEC" | awk '{print $2}')"
-        patch_file="$(grep "^Patch$p:" "$OPT_SPEC" | awk '{print $2}')"
-        if [ "$APPLY_REVERSE" -eq 1 ]; then
-            echo "Reversing $patch_file" >&2
-            patch -R $op < "$rpm_dir/$patch_file" >&2
-        else
-            echo "Applying $patch_file" >&2
-            patch $op < "$rpm_dir/$patch_file" >&2
-        fi
-    done
-)
+
+    local to_apply=
+    local auto_applied=$(grep -q "^%autosetup" "$OPT_SPEC" \
+        && ! grep -q "^%patch[0-9]" "$OPT_SPEC" \
+        && echo 1)
+    if [[ $auto_applied ]]; then
+        to_apply=$(sed -n 's/^Patch\([0-9]*\):.*/\1/p' "$OPT_SPEC")
+        common_op+=($(sed -n 's/^%autosetup\( .*\) \(-p *[0-9]\+\).*/\2/p' "$OPT_SPEC"))
+    else
+        to_apply=$(sed -n 's/^%patch\([0-9]*\).*/\1/p' "$OPT_SPEC")
+    fi
+
+    if [[ $APPLY_REVERSE ]]; then
+        to_apply=$(tac <<<"$to_apply")
+    fi
+
+    (
+        cd_to_spec_setup_dir
+        for p in $to_apply; do
+            if [[ ! $auto_applied ]]; then
+                op="$(sed -n "s/^%patch$p \+\(.*\)/\1/p" "$OPT_SPEC")"
+            fi
+            patch_file="$(sed -n "s/^Patch$p: \+\(.*\)/\1/p" "$OPT_SPEC")"
+            echo "$message $patch_file" >&2
+            patch "${common_op[@]}" $op < "$(dirname "$OPT_SPEC")/$patch_file" >&2
+        done
+    )
+}
 
 run_build() {
     # intended to provide mb build behaviour
@@ -1900,7 +1918,7 @@ case "$1" in
         ;;
     apply )
         cmd=run_$1; shift
-        APPLY_REVERSE=0
+        APPLY_REVERSE=
         while [[ "$1" ]]; do
             case "$1" in
                 -R) shift
@@ -3132,7 +3150,7 @@ special_packaging_ts_tear_down() {
     rm -f "$STUBS_DIR/qmake" || return
 }
 
-# Accepts 6 arguments described inline
+# Accepts 7 arguments described inline
 special_packaging_tc() {
     # SUBDIR: Put sources under subdirectory
     #   - N: No
@@ -3179,6 +3197,17 @@ special_packaging_tc() {
         OTHER) project_on_cmdln=${maybe_subdir:+$maybe_subdir/}other.pro;;
     esac
 
+    # AUTO SETUP: Use %autosetup
+    #   - Y/N
+    local setup_method="setup -q"
+    local enable_patch_auto=
+    local enable_patch_explicit=$enable_patch
+    if [[ $7 == Y ]]; then
+        local setup_method="autosetup"
+        local enable_patch_auto=$enable_patch_explicit
+        enable_patch_explicit=
+    fi
+
     local srcdir=test
     local builddir=test
 
@@ -3224,14 +3253,17 @@ Group:      Qt/Qt
 License:    LICENSE
 URL:        http://example.org/
 Source0:    %{name}-%{version}.tar.bz2
-${enable_patch:+Patch0:  test-fix.patch}
+# rpmbuild applies patches in the order they appear here, ignoring their numbering
+${enable_patch:+Patch1:  test-fix-1.patch}
+${enable_patch:+Patch0:  test-fix-2.patch}
 
 %description
 Test
 
 %prep
-%setup -q -n %{name}-%{version}${maybe_setupdir}
-${enable_patch:+%patch0 -p1}
+%${setup_method} -n %{name}-%{version}${maybe_setupdir}${enable_patch_auto+ -p1}
+${enable_patch_explicit:+%patch1 -p1}
+${enable_patch_explicit:+%patch0 -p1}
 
 %build
 %qmake5 ${maybe_project_in_spec}
@@ -3256,11 +3288,18 @@ END
     fi
 
     if [[ $enable_patch ]]; then
-        cat >"$srcdir/rpm/test-fix.patch" <<END || return
+        cat >"$srcdir/rpm/test-fix-1.patch" <<END || return
 --- a/test.pro
 +++ b/test.pro
 @@ -1 +1 @@
 -TARGET=foo
++TARGET=foo-patched-xxx
+END
+        cat >"$srcdir/rpm/test-fix-2.patch" <<END || return
+--- a/test.pro
++++ b/test.pro
+@@ -1 +1 @@
+-TARGET=foo-patched-xxx
 +TARGET=foo-patched
 END
     fi
@@ -3321,130 +3360,162 @@ special_packaging_tc_tear_down() {
     rm -rf ./test ./test-build || return
 }
 
-#   SUBDIR  MULTI  PATCH  SHADOW  PROJECT  PROJECT
-#                         BUILD   IN SPEC  ON CMDLN
+#   SUBDIR  MULTI  PATCH  SHADOW  PROJECT  PROJECT   AUTO
+#                         BUILD   IN SPEC  ON CMDLN  SETUP
 
 set_up_ts special_packaging "Compatibility / Flat package"
 run_tc special_packaging "Basic" \
-    N       N      N      N       N        N
+    N       N      N      N       N        N         N
 run_tc special_packaging "Basic (shadow)" \
-    N       N      N      Y       N        N
+    N       N      N      Y       N        N         N
 run_tc special_packaging "Pass .pro file in spec" \
-    N       N      N      N       Y        N
+    N       N      N      N       Y        N         N
 run_tc special_packaging "Pass .pro file in spec (shadow)" \
-    N       N      N      Y       Y        N
+    N       N      N      Y       Y        N         N
 run_tc special_packaging "Pass .pro file on cmdline" \
-    N       N      N      N       N        FILE
+    N       N      N      N       N        FILE      N
 run_tc special_packaging "Pass .pro file in spec and on cmdline (shadow)" \
-    N       N      N      Y       Y        FILE
+    N       N      N      Y       Y        FILE      N
 tear_down_ts special_packaging
 
-#   SUBDIR  MULTI  PATCH  SHADOW  PROJECT  PROJECT
-#                         BUILD   IN SPEC  ON CMDLN
+#   SUBDIR  MULTI  PATCH  SHADOW  PROJECT  PROJECT   AUTO
+#                         BUILD   IN SPEC  ON CMDLN  SETUP
 
 set_up_ts special_packaging "Compatibility / Flat package / Multiple configs"
 run_tc special_packaging "Basic" \
-    N       Y      N      N       Y        N
+    N       Y      N      N       Y        N         N
 run_tc special_packaging "Basic (shadow)" \
-    N       Y      N      Y       Y        N
+    N       Y      N      Y       Y        N         N
 run_tc special_packaging "Pass .pro file" \
-    N       Y      N      N       Y        FILE
+    N       Y      N      N       Y        FILE      N
 run_tc special_packaging "Pass .pro file (shadow)" \
-    N       Y      N      Y       Y        FILE
+    N       Y      N      Y       Y        FILE      N
 run_tc special_packaging "Pass other .pro file" \
-    N       Y      N      N       Y        OTHER
+    N       Y      N      N       Y        OTHER     N
 run_tc special_packaging "Pass other .pro file (shadow)" \
-    N       Y      N      Y       Y        OTHER
+    N       Y      N      Y       Y        OTHER     N
 tear_down_ts special_packaging
 
-#   SUBDIR  MULTI  PATCH  SHADOW  PROJECT  PROJECT
-#                         BUILD   IN SPEC  ON CMDLN
+#   SUBDIR  MULTI  PATCH  SHADOW  PROJECT  PROJECT   AUTO
+#                         BUILD   IN SPEC  ON CMDLN  SETUP
 
 set_up_ts special_packaging "Compatibility / Flat package / With patches"
 run_tc special_packaging "Use apply" \
-    N       N      APPLY  N       N        N
+    N       N      APPLY  N       N        N         N
 run_tc special_packaging "Use apply (shadow)" \
-    N       N      APPLY  Y       N        N
+    N       N      APPLY  Y       N        N         N
 run_tc special_packaging "Use prepare" \
-    N       N      PREP   N       N        N
+    N       N      PREP   N       N        N         N
 run_tc special_packaging "Use prepare (shadow)" \
-    N       N      PREP   Y       N        N
+    N       N      PREP   Y       N        N         N
 run_tc special_packaging "Use --doprep" \
-    N       N      DOPREP N       N        N
+    N       N      DOPREP N       N        N         N
 tear_down_ts special_packaging
 
-#   SUBDIR  MULTI  PATCH  SHADOW  PROJECT  PROJECT
-#                         BUILD   IN SPEC  ON CMDLN
+#   SUBDIR  MULTI  PATCH  SHADOW  PROJECT  PROJECT   AUTO
+#                         BUILD   IN SPEC  ON CMDLN  SETUP
+
+set_up_ts special_packaging "Compatibility / Flat package / With patches and %autosetup"
+run_tc special_packaging "Use apply" \
+    N       N      APPLY  N       N        N         Y
+run_tc special_packaging "Use apply (shadow)" \
+    N       N      APPLY  Y       N        N         Y
+run_tc special_packaging "Use prepare" \
+    N       N      PREP   N       N        N         Y
+run_tc special_packaging "Use prepare (shadow)" \
+    N       N      PREP   Y       N        N         Y
+run_tc special_packaging "Use --doprep" \
+    N       N      DOPREP N       N        N         Y
+tear_down_ts special_packaging
+
+#   SUBDIR  MULTI  PATCH  SHADOW  PROJECT  PROJECT   AUTO
+#                         BUILD   IN SPEC  ON CMDLN  SETUP
 
 set_up_ts special_packaging "Compatibility / Subtree package"
 run_tc special_packaging "Basic" \
-    Y       N      N      N       N        N
+    Y       N      N      N       N        N         N
 run_tc special_packaging "Basic (shadow)" \
-    Y       N      N      Y       N        N
+    Y       N      N      Y       N        N         N
 run_tc special_packaging "Pass .pro file" \
-    Y       N      N      N       N        FILE
+    Y       N      N      N       N        FILE      N
 run_tc special_packaging "Pass .pro file (shadow)" \
-    Y       N      N      Y       N        FILE
+    Y       N      N      Y       N        FILE      N
 run_tc special_packaging "Pass .pro dir" \
-    Y       N      N      N       N        DIR
+    Y       N      N      N       N        DIR       N
 run_tc special_packaging "Pass .pro dir (shadow)" \
-    Y       N      N      Y       N        DIR
+    Y       N      N      Y       N        DIR       N
 tear_down_ts special_packaging
 
-#   SUBDIR  MULTI  PATCH  SHADOW  PROJECT  PROJECT
-#                         BUILD   IN SPEC  ON CMDLN
+#   SUBDIR  MULTI  PATCH  SHADOW  PROJECT  PROJECT   AUTO
+#                         BUILD   IN SPEC  ON CMDLN  SETUP
 
 set_up_ts special_packaging "Compatibility / Subtree package / Without %setup subdir"
 run_tc special_packaging "Basic" \
-    NOSET   N      N      N       Y        N
+    NOSET   N      N      N       Y        N         N
 run_tc special_packaging "Basic (shadow)" \
-    NOSET   N      N      Y       Y        N
+    NOSET   N      N      Y       Y        N         N
 run_tc special_packaging "Pass .pro file" \
-    NOSET   N      N      N       Y        FILE
+    NOSET   N      N      N       Y        FILE      N
 run_tc special_packaging "Pass .pro file (shadow)" \
-    NOSET   N      N      Y       Y        FILE
+    NOSET   N      N      Y       Y        FILE      N
 run_tc special_packaging "Pass .pro dir" \
-    NOSET   N      N      N       Y        DIR
+    NOSET   N      N      N       Y        DIR       N
 run_tc special_packaging "Pass .pro dir (shadow)" \
-    NOSET   N      N      Y       Y        DIR
+    NOSET   N      N      Y       Y        DIR       N
 tear_down_ts special_packaging
 
-#   SUBDIR  MULTI  PATCH  SHADOW  PROJECT  PROJECT
-#                         BUILD   IN SPEC  ON CMDLN
+#   SUBDIR  MULTI  PATCH  SHADOW  PROJECT  PROJECT   AUTO
+#                         BUILD   IN SPEC  ON CMDLN  SETUP
 
 set_up_ts special_packaging "Compatibility / Subtree package / Multiple configs"
 run_tc special_packaging "Basic" \
-    Y       Y      N      N       Y        N
+    Y       Y      N      N       Y        N         N
 run_tc special_packaging "Basic (shadow)" \
-    Y       Y      N      Y       Y        N
+    Y       Y      N      Y       Y        N         N
 run_tc special_packaging "Pass .pro file" \
-    Y       Y      N      N       Y        FILE
+    Y       Y      N      N       Y        FILE      N
 run_tc special_packaging "Pass .pro file (shadow)" \
-    Y       Y      N      Y       Y        FILE
+    Y       Y      N      Y       Y        FILE      N
 run_tc special_packaging "Pass .pro dir" \
-    Y       Y      N      N       Y        DIR
+    Y       Y      N      N       Y        DIR       N
 run_tc special_packaging "Pass .pro dir (shadow)" \
-    Y       Y      N      Y       Y        DIR
+    Y       Y      N      Y       Y        DIR       N
 run_tc special_packaging "Pass other .pro file" \
-    Y       Y      N      N       Y        OTHER
+    Y       Y      N      N       Y        OTHER     N
 run_tc special_packaging "Pass other .pro file (shadow)" \
-    Y       Y      N      Y       Y        OTHER
+    Y       Y      N      Y       Y        OTHER     N
 tear_down_ts special_packaging
 
-#   SUBDIR  MULTI  PATCH  SHADOW  PROJECT  PROJECT
-#                         BUILD   IN SPEC  ON CMDLN
+#   SUBDIR  MULTI  PATCH  SHADOW  PROJECT  PROJECT   AUTO
+#                         BUILD   IN SPEC  ON CMDLN  SETUP
 
 set_up_ts special_packaging "Compatibility - Subtree package / With patches"
 run_tc special_packaging "Use apply" \
-    Y       N      APPLY  N       N        N
+    Y       N      APPLY  N       N        N         N
 run_tc special_packaging "Use apply (shadow)" \
-    Y       N      APPLY  Y       N        N
+    Y       N      APPLY  Y       N        N         N
 run_tc special_packaging "Use prepare" \
-    Y       N      PREP   N       N        N
+    Y       N      PREP   N       N        N         N
 run_tc special_packaging "Use prepare (shadow)" \
-    Y       N      PREP   Y       N        N
+    Y       N      PREP   Y       N        N         N
 run_tc special_packaging "Use doprep" \
-    Y       N      DOPREP N       N        N
+    Y       N      DOPREP N       N        N         N
+tear_down_ts special_packaging
+
+#   SUBDIR  MULTI  PATCH  SHADOW  PROJECT  PROJECT   AUTO
+#                         BUILD   IN SPEC  ON CMDLN  SETUP
+
+set_up_ts special_packaging "Compatibility - Subtree package / With patches and %autosetup"
+run_tc special_packaging "Use apply" \
+    Y       N      APPLY  N       N        N         Y
+run_tc special_packaging "Use apply (shadow)" \
+    Y       N      APPLY  Y       N        N         Y
+run_tc special_packaging "Use prepare" \
+    Y       N      PREP   N       N        N         Y
+run_tc special_packaging "Use prepare (shadow)" \
+    Y       N      PREP   Y       N        N         Y
+run_tc special_packaging "Use doprep" \
+    Y       N      DOPREP N       N        N         Y
 tear_down_ts special_packaging
 
 ################################################################################
