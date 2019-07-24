@@ -39,6 +39,8 @@ Requires:   connman >= 1.14
 Requires:   connman-tools
 Requires:   virtualbox-guest-tools
 Requires:   openssh-server
+Requires:   kbd
+Requires:   ncurses
 Requires(post): /bin/ln
 Requires(post): systemd
 Conflicts:  sdk-chroot
