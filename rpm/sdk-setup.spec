@@ -39,6 +39,8 @@ Requires:   connman >= 1.14
 Requires:   connman-tools
 Requires:   virtualbox-guest-tools
 Requires:   openssh-server
+Requires:   kbd
+Requires:   ncurses
 Requires(post): /bin/ln
 Requires(post): systemd
 Conflicts:  sdk-chroot
@@ -157,6 +159,8 @@ ln -sf %{_unitdir}/multi-user.target  %{buildroot}/%{_sysconfdir}/systemd/system
 echo "This file serves for detection that this is a VirtualBox SDK installation" > %{buildroot}/%{_sysconfdir}/mer-sdk-vbox
 mkdir -p %{buildroot}%{_sysconfdir}/zypp/systemCheck.d
 cp etc/sdk-vm.check %{buildroot}%{_sysconfdir}/zypp/systemCheck.d/
+mkdir -p %{buildroot}%{_sysconfdir}/modprobe.d
+cp etc/blacklist-vboxvideo.conf %{buildroot}%{_sysconfdir}/modprobe.d/
 
 mkdir -p %{buildroot}/%{_sysconfdir}/mersdk
 
@@ -289,6 +293,7 @@ fi
 %{_sysconfdir}/mer-sdk-vbox
 %attr(-,mersdk,mersdk) %{_sysconfdir}/mersdk/
 %{_sysconfdir}/zypp/systemCheck.d/sdk-vm.check
+%{_sysconfdir}/modprobe.d/blacklist-vboxvideo.conf
 
 %files -n sdk-resize-rootfs
 %defattr(-,root,root,-)
