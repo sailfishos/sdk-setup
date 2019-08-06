@@ -58,6 +58,12 @@ Usage:
                               When updating a target the tooling used
                               by the target will be updated first.
 
+    $(basename $0) [tooling|target] register [--user <user>
+                   [--password <password>]] {--all | <name>}
+                            : register the single named or all sb2 toolings
+                              and/or targets. User name and password will be
+                              queried interactively if omitted.
+
     $(basename $0) [tooling|target] remove <name>
                             : remove the given sb2 tooling or target
 
@@ -124,15 +130,19 @@ have() {
     sdk-manage "$type" list |grep -q -F --line-regexp "$name"
 }
 
+OPT_ALL=
 OPT_CREATE=
 OPT_DRY_RUN=
 OPT_LIST=
 OPT_NAME=
+OPT_PASSWORD=
+OPT_REGISTER=
 OPT_REMOVE=
 OPT_SLOW=
 OPT_TOOLING_NAME=
 OPT_TYPE=
 OPT_UPDATE=
+OPT_USER=
 OPT_URL=
 OPT_YES=
 
@@ -147,6 +157,19 @@ while [[ ${1:-} ]]; do
             ;;
         --slow )
             OPT_SLOW=1
+            ;;
+        --user )
+            [[ $# -ge 2 && $2 ]] || fail "$1: argument required"
+            OPT_USER=$2
+            shift
+            ;;
+        --password )
+            [[ $# -ge 2 && $2 ]] || fail "$1: argument required"
+            OPT_PASSWORD=$2
+            shift
+            ;;
+        --all )
+            OPT_ALL=1
             ;;
         -h | --help )
             usage quit
@@ -186,6 +209,14 @@ case $1 in
         OPT_NAME=$2
         shift 2
         ;;
+    register )
+        OPT_REGISTER=1
+        if [[ $# -ge 2 && $2 ]]; then
+            OPT_NAME=$2
+            shift
+        fi
+        shift
+        ;;
     remove )
         OPT_REMOVE=1
         [[ $# -ge 2 && $2 ]] || fail "remove: ${OPT_TYPE:+$OPT_TYPE }name required"
@@ -205,6 +236,18 @@ esac
 
 if [[ $OPT_SLOW && ! $OPT_LIST ]]; then
     fail "The '--slow' option can only be used with the 'list' command"
+fi
+
+if [[ $OPT_USER && ! $OPT_REGISTER ]]; then
+    fail "The '--user' option can only be used with the 'register' command"
+fi
+
+if [[ $OPT_PASSWORD && ! $OPT_REGISTER ]]; then
+    fail "The '--password' option can only be used with the 'register' command"
+fi
+
+if [[ $OPT_ALL && ! $OPT_REGISTER ]]; then
+    fail "The '--all' option can only be used with the 'register' command"
 fi
 
 if [[ $EUID -eq 0 ]]; then
@@ -242,7 +285,7 @@ Using tarball [$OPT_URL]
 EOF
 fi
 
-if [[ $OPT_UPDATE || $OPT_REMOVE ]]; then
+if [[ $OPT_UPDATE || $OPT_REMOVE || ($OPT_REGISTER && $OPT_NAME) ]]; then
     if [[ ! $OPT_TYPE ]]; then
         if have tooling "$OPT_NAME"; then
             OPT_TYPE=tooling
@@ -271,6 +314,25 @@ if [[ $OPT_UPDATE ]]; then
         fi
     else
         echo "Going to update the tooling [$OPT_NAME]"
+    fi
+fi
+
+if [[ $OPT_REGISTER ]]; then
+    if [[ $OPT_ALL && $OPT_NAME ]]; then
+        fail "Cannot use both '--all' and a name"
+    elif [[ $OPT_ALL ]]; then
+        if [[ $OPT_TYPE ]]; then
+            echo "Going to register all ${OPT_TYPE}s"
+        else
+            echo "Going to register all toolings and targets"
+        fi
+    elif [[ $OPT_NAME ]]; then
+        echo "Going to register the $OPT_TYPE [$OPT_NAME]"
+    else
+        fail "Either use '--all' or pass a name"
+    fi
+    if [[ $OPT_PASSWORD && ! $OPT_USER ]]; then
+        fail "Cannot use '--password' without '--user'"
     fi
 fi
 
@@ -312,6 +374,16 @@ if [[ $OPT_UPDATE ]]; then
     echo "Updating the $OPT_TYPE '$OPT_NAME'..."
     _ sdk-manage "$OPT_TYPE" refresh "$OPT_NAME" || exit
     _ sdk-manage "$OPT_TYPE" update "$OPT_NAME"
+    exit
+fi
+
+if [[ $OPT_REGISTER ]]; then
+    common_options=(${OPT_USER:+--user "$OPT_USER"} ${OPT_PASSWORD:+--password "$OPT_PASSWORD"} --force)
+    if [[ ! $OPT_TYPE && $OPT_ALL ]]; then
+        _ sdk-manage register-all "${common_options[@]}" --no-sdk
+    else
+        _ sdk-manage "$OPT_TYPE" register "${common_options[@]}" ${OPT_ALL:+--all} ${OPT_NAME:+"$OPT_NAME"}
+    fi
     exit
 fi
 
