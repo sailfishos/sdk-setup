@@ -46,11 +46,12 @@ _() {
 
 usage() {
     cat <<EOF
-SDK assistant script
+SDK assistant tool
 
 Usage:
-    $(basename $0) [tooling|target] create [OPTION] <name> <URL>
-                            : create a new sb2 tooling or target.
+    $(basename $0) [tooling|target] create <name> <URL>
+                            : create a new sb2 tooling or target <name>,
+                              using the image at <URL>.
 
     $(basename $0) [tooling|target] update <name>
                             : update the given sb2 tooling or target.
@@ -60,17 +61,15 @@ Usage:
     $(basename $0) [tooling|target] remove <name>
                             : remove the given sb2 tooling or target
 
-    $(basename $0) [tooling|target] list
+    $(basename $0) [tooling|target] list [--slow]
                             : list available sb2 toolings and/or targets.
                               In the combined listing targets are grouped
-                              by toolings they use
+                              by toolings they use. With '--slow' the state
+                              is checked more thoroughly.
 
-Options:
-    <name>                  : name of the sb2 tooling or target
-    <URL>                   : a tarball URL or a local file
+Common options:
     -y | --non-interactive  : do not ask questions
     -z | --dry-run          : do nothing, just print out what would happen
-    --slow                  : with 'list', check the state more thoroughly
     -h | --help             : show this help
 
 EOF
