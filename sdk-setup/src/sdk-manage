@@ -62,9 +62,9 @@ usage:
     $SELF sdk status
     $SELF sdk register [--user <user> [--password <password>]] [--force]
 
-    $SELF refresh-all
+    $SELF refresh-all [--no-sdk]
 
-    $SELF register-all [--user <user> [--password <password>]] [--force]
+    $SELF register-all [--user <user> [--password <password>]] [--force] [--no-sdk]
 
     $SELF --version
 
@@ -531,11 +531,14 @@ register_all() {
 
     set -- ${other[@]:+"${other[@]}"}
 
-    local force=
+    local force= no_sdk=
     while [[ $# -gt 0 ]]; do
         case $1 in
             --force)
                 force=1
+                ;;
+            --no-sdk)
+                no_sdk=1
                 ;;
             *)
                 echo >&2 "unrecognized option '$1'"
@@ -548,7 +551,7 @@ register_all() {
 
     set -- --user "$username" --password "$password" ${force:+--force}
 
-    manage_sdk register "$@" || return
+    [[ $no_sdk ]] || manage_sdk register "$@" || return
     manage_toolings register "$@" --all || return
     manage_targets register "$@" --all
 }
@@ -2054,7 +2057,7 @@ case $1 in
     ?(--)refresh-all ) shift
         manage_targets refresh --all || exit
         manage_toolings refresh --all || exit
-	manage_sdk refresh
+        [[ ${1:-} == --no-sdk ]] || manage_sdk refresh
 	;;
     ?(--)register-all ) shift
         register_all "$@"
