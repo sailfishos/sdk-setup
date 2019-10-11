@@ -311,7 +311,7 @@ prepare_etc() {
 
 ensure_machine_id() {
     setarch i386 chroot ${sdkroot} /bin/systemd-machine-id-setup
-    setarch i386 chroot ${sdkroot} /bin/dbus-uuidgen --ensure
+    setarch i386 chroot ${sdkroot} /usr/bin/dbus-uuidgen --ensure
 }
 
 ################
