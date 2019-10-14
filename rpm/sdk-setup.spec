@@ -83,6 +83,7 @@ Requires:   ssu >= 0.43.2
 Requires:   git
 Requires:   tar
 Requires:   p7zip-full
+Requires:   gnu-cpio
 Conflicts:  sdk-harbour-rpmvalidator < 1.49
 
 %description -n sdk-utils
