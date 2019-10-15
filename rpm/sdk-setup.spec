@@ -83,6 +83,7 @@ Requires:   ssu >= 0.43.2
 Requires:   git
 Requires:   tar
 Requires:   p7zip-full
+Requires:   gnu-cpio
 Conflicts:  sdk-harbour-rpmvalidator < 1.49
 
 %description -n sdk-utils
@@ -225,6 +226,10 @@ chmod 755 %{buildroot}%{_bindir}/*
 
 %pre -n sdk-chroot
 if ! rpm --quiet -q ca-certificates && [ -d /%{_sysconfdir}/ssl/certs ] ; then echo "Cleaning up copied ssl certs. ca-certificates should now install"; rm -rf /%{_sysconfdir}/ssl/certs ;fi
+rm -Rf /home/.zypp-cache
+
+%pre -n sdk-vm
+rm -Rf /home/.zypp-cache
 
 %preun -n sdk-vm
 %systemd_preun home-mersdk.service
