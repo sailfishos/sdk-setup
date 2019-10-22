@@ -250,6 +250,7 @@ rm -Rf /home/.zypp-cache
 %systemd_post sdk-enginelan.service
 %systemd_post sdk-refresh.service
 %systemd_post sdk-refresh.timer
+%systemd_post sshd.socket
 # this could be mounted read-only so to avoid a
 # cpio: chmod failed - Read-only file system
 if [ $1 -eq 1 ] ; then
