@@ -101,12 +101,12 @@ branch - check '--task' for more details:
     alias mb2='mb2 --output-prefix ~/RPMS --task'
 
     cd packageA
-    git checkout -b jbXXXXX
+    git checkout -b bugXXXXX
     mb2 -t target build
     cd ../packageB
-    git checkout -b jbXXXXX
+    git checkout -b bugXXXXX
     mb2 -t target build
-    rsync -av ~/RPMS/jbXXXXX-target/ device:RPMS \\
+    rsync -av ~/RPMS/bugXXXXX-target/ device:RPMS \\
         && ssh device zypper -p RPMS -v dup
 
 With these options the output directory is also searched for build-time
@@ -386,6 +386,8 @@ GLOBAL OPTIONS
         regular expression <regex> both as a condition to enable this option
         and as a mean to select substring of the branch name to be used as
         the task name.  Defaults to '$DEF_TASK'.
+        The default expression is suitable to look for a leading bug reference
+        in the branch name.  E.g. 'bug1234' in 'bug1234-quickfix'.
 
     --no-task
         Override --task option
@@ -1538,7 +1540,7 @@ maybe_symlink_read() {
 # this is same as basename $0
 ME=${0/#*\//}
 
-DEF_TASK='git:^jb[0-9]+'
+DEF_TASK='git:^[[:alpha:]]{2,5}[[:digit:]]{3,}'
 
 # option variables
 OPT_SPEC=
