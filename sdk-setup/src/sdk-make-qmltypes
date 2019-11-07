@@ -440,6 +440,17 @@ is_vm_off()
     ! grep -q '^SessionName=' <<<"$info"
 }
 
+default_emulator()
+{
+    local name=
+    name=$(vboxmanage_ list -l vms |sed -n 's/^Name:\s*\(Sailfish OS Emulator.*\)/\1/p')
+    if [[ $? -ne 0 || ! $name ]]; then
+        fatal "Failed to determine default emulator name"
+        return 1
+    fi
+    printf '%s\n' "$name"
+}
+
 start_emulator()
 {
     local ok=
@@ -1421,9 +1432,13 @@ parse_options()
         shift
     done
 
+    set -- "${positional_args[@]}"
+
+    configure || return
+
     OPT_VMSHARE=$OPT_APP_SDK_DIR/vmshare
     OPT_DEVICES_XML=$OPT_VMSHARE/devices.xml
-    OPT_EMULATOR='Sailfish OS Emulator'
+    OPT_EMULATOR=$(default_emulator) || return
     OPT_EMULATOR_USER=nemo
     OPT_EMULATOR_PORT=2223
     OPT_EMULATOR_DEPS=(make qt5-qtdeclarative-devel-tools qtchooser zypper)
@@ -1434,10 +1449,6 @@ parse_options()
     if [[ $OPT_H || $OPT_HELP ]]; then
         return
     fi
-
-    set -- "${positional_args[@]}"
-
-    configure || return
 
     if [[ $OPT_RESTORE_EMULATOR ]]; then
         return
