@@ -736,7 +736,9 @@ init_wrappers()
 # nemo-qml-plugin-messages-internal-qt5 inside emulator with stdout redirected
 # to a file on the vboxsf filesystem.
 
-real=$(which --all qmlplugindump |sed -n 2p)
+path=$(dirname "$(readlink -f "$0")")
+PATH=${PATH/$path:/}
+real=$(which qmlplugindump)
 if [[ ! $real ]]; then
     # Be verbose
     PATH=''
