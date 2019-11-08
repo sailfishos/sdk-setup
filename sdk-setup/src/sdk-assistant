@@ -219,30 +219,36 @@ case $1 in
         OPT_NAME=$2
         OPT_URL=$3
         shift 3
+        [[ $# -eq 0 ]] || fail "create: unexpected argument: '$1'"
         ;;
     update )
         OPT_UPDATE=1
         [[ $# -ge 2 && $2 ]] || fail "update: ${OPT_TYPE:+$OPT_TYPE }name required"
         OPT_NAME=$2
         shift 2
+        [[ $# -eq 0 ]] || fail "update: unexpected argument: '$1'"
         ;;
     register )
         OPT_REGISTER=1
-        if [[ $# -ge 2 && $2 ]]; then
+        if [[ $# -ge 2 ]]; then
+            [[ $2 ]] || fail "register: name must not be empty"
             OPT_NAME=$2
             shift
         fi
         shift
+        [[ $# -eq 0 ]] || fail "register: unexpected argument: '$1'"
         ;;
     remove )
         OPT_REMOVE=1
         [[ $# -ge 2 && $2 ]] || fail "remove: ${OPT_TYPE:+$OPT_TYPE }name required"
         OPT_NAME=$2
         shift 2
+        [[ $# -eq 0 ]] || fail "remove: unexpected argument: '$1'"
         ;;
     list )
         OPT_LIST=1
         shift
+        [[ $# -eq 0 ]] || fail "list: unexpected argument: '$1'"
         ;;
     package-list )
         OPT_PACKAGE_LIST=1
