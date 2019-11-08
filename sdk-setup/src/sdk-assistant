@@ -73,6 +73,18 @@ Usage:
                               by toolings they use. With '--slow' the state
                               is checked more thoroughly.
 
+    $(basename $0) [tooling|target] package-list <name> [<pattern>...]
+                            : list packages inside the sb2 tooling or target
+                              identified by <name>, installed and available.
+
+    $(basename $0) [tooling|target] package-install <name> <package-name>...
+                            : install packages into the sb2 tooling or target
+                              identified by <name>
+
+    $(basename $0) [tooling|target] package-remove <name> <package-name>...
+                            : remove packages from the sb2 tooling or target
+                              identified by <name>
+
 Common options:
     -y | --non-interactive  : do not ask questions
     -z | --dry-run          : do nothing, just print out what would happen
@@ -135,6 +147,11 @@ OPT_CREATE=
 OPT_DRY_RUN=
 OPT_LIST=
 OPT_NAME=
+OPT_PACKAGE_LIST=
+OPT_PACKAGE_INSTALL=
+OPT_PACKAGE_NAME_PATTERNS=
+OPT_PACKAGE_NAMES=
+OPT_PACKAGE_REMOVE=
 OPT_PASSWORD=
 OPT_REGISTER=
 OPT_REMOVE=
@@ -227,6 +244,27 @@ case $1 in
         OPT_LIST=1
         shift
         ;;
+    package-list )
+        OPT_PACKAGE_LIST=1
+        [[ $# -ge 2 && $2 ]] || fail "package-list: ${OPT_TYPE:+$OPT_TYPE }name required"
+        OPT_NAME=$2
+        OPT_PACKAGE_NAME_PATTERNS=("${@:3}")
+        shift $#
+        ;;
+    package-install )
+        OPT_PACKAGE_INSTALL=1
+        [[ $# -ge 3 && $2 && $3 ]] || fail "package-install: ${OPT_TYPE:+$OPT_TYPE }name and package-name required"
+        OPT_NAME=$2
+        OPT_PACKAGE_NAMES=("${@:3}")
+        shift $#
+        ;;
+    package-remove )
+        OPT_PACKAGE_REMOVE=1
+        [[ $# -ge 3 && $2 && $3 ]] || fail "package-install: ${OPT_TYPE:+$OPT_TYPE }name and package-name required"
+        OPT_NAME=$2
+        OPT_PACKAGE_NAMES=("${@:3}")
+        shift $#
+        ;;
     * )
         fail "$1: unrecognized command"
         ;;
@@ -285,7 +323,8 @@ Using tarball [$OPT_URL]
 EOF
 fi
 
-if [[ $OPT_UPDATE || $OPT_REMOVE || ($OPT_REGISTER && $OPT_NAME) ]]; then
+if [[ $OPT_UPDATE || $OPT_REMOVE || ($OPT_REGISTER && $OPT_NAME) \
+        || $OPT_PACKAGE_LIST || $OPT_PACKAGE_INSTALL || $OPT_PACKAGE_REMOVE ]]; then
     if [[ ! $OPT_TYPE ]]; then
         if have tooling "$OPT_NAME"; then
             OPT_TYPE=tooling
@@ -300,6 +339,13 @@ if [[ $OPT_UPDATE || $OPT_REMOVE || ($OPT_REGISTER && $OPT_NAME) ]]; then
             fail "$OPT_NAME: No such tooling or target"
         fi
     fi
+fi
+
+if [[ $OPT_PACKAGE_LIST ]]; then
+    # list packages requested, just do it
+    sdk-manage "$OPT_TYPE" package-list "$OPT_NAME" --long \
+        ${OPT_PACKAGE_NAME_PATTERNS[@]:+"${OPT_PACKAGE_NAME_PATTERNS[@]}"}
+    exit
 fi
 
 if [[ $OPT_UPDATE ]]; then
@@ -338,6 +384,14 @@ fi
 
 if [[ $OPT_REMOVE ]]; then
     echo "Going to remove the $OPT_TYPE [$OPT_NAME]"
+fi
+
+if [[ $OPT_PACKAGE_INSTALL ]]; then
+    echo "Going to install package(s) [${OPT_PACKAGE_NAMES[*]}] into the $OPT_TYPE [$OPT_NAME]"
+fi
+
+if [[ $OPT_PACKAGE_REMOVE ]]; then
+    echo "Going to remove package(s) [${OPT_PACKAGE_NAMES[*]}] from the $OPT_TYPE [$OPT_NAME]"
 fi
 
 [[ $OPT_DRY_RUN ]] && echo "[only print out what would be done]"
@@ -389,6 +443,16 @@ fi
 
 if [[ $OPT_REMOVE ]]; then
     _ sdk-manage "$OPT_TYPE" remove "$OPT_NAME"
+    exit
+fi
+
+if [[ $OPT_PACKAGE_INSTALL ]]; then
+    _ sdk-manage "$OPT_TYPE" package-install "$OPT_NAME" "${OPT_PACKAGE_NAMES[@]}"
+    exit
+fi
+
+if [[ $OPT_PACKAGE_REMOVE ]]; then
+    _ sdk-manage "$OPT_TYPE" package-remove "$OPT_NAME" "${OPT_PACKAGE_NAMES[@]}"
     exit
 fi
 
