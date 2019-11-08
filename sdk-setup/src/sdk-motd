@@ -103,6 +103,12 @@ MOTD FILE FORMAT
     it is an older-than requirement. Otherwise the MOTD will be displayed with
     message that the SDK must be upgraded to enable the mentioned feature.
 
+ENVIRONMENT VARIABLES
+    SDK_MOTD_MAX_REFRESH_TIME
+        The maximum time (seconds) the refresh operation may take.  With very
+        bad network connection, you may need to increase the limit or you will
+        never receive any update.  Defaults to $DEFAULT_MAX_REFRESH_TIME seconds.
+
 REFERENCES
     1. $DEFAULT_PAGE_RELEASE
        $DEFAULT_PAGE_PRERELEASE
@@ -133,7 +139,7 @@ download_page()
 {
     local url=$1
 
-    curl --silent --fail "$url?action=raw"
+    curl --silent --fail --max-time "$OPT_MAX_REFRESH_TIME" "$url?action=raw"
 }
 
 with_tmp_file()
@@ -489,6 +495,8 @@ set_defaults()
 {
     DEFAULT_PAGE_PRERELEASE="https://sailfishos.org/wiki/SDK_Tips_-_Prerelease"
     DEFAULT_PAGE_RELEASE="https://sailfishos.org/wiki/SDK_Tips"
+    DEFAULT_MAX_REFRESH_TIME=5
+    OPT_MAX_REFRESH_TIME=${SDK_MOTD_MAX_REFRESH_TIME:-$DEFAULT_MAX_REFRESH_TIME}
     CACHE_FILE=$XDG_CACHE_HOME/$SELF
     RECENT_FILE=$XDG_DATA_HOME/$SELF
     # When --daily is used and no unread messages are available, prolong the
