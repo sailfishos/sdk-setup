@@ -725,7 +725,8 @@ fix_package_version() {
             local head=${stash:-$(git rev-parse HEAD)}
             if [[ $head != $sha1 ]]; then
                 local short=$(git rev-list --max-count=1 --abbrev-commit "$head")
-                echo -n "+$name.$short"
+                local time=$(git log --max-count=1 --pretty=%ct "$head")
+                printf '%s %s %s\n' "$name" "$short" "$time"
             fi
         }
         git_ submodule --quiet foreach --recursive \
@@ -736,9 +737,22 @@ fix_package_version() {
 
     if [[ $(git_ rev-parse "$tag^{}") != "$head" || $modified_submodules ]]; then
         local branch=$(git_ rev-parse --abbrev-ref HEAD)
-        local timestamp=$(TZ=UTC date --date=@$(git_ log --max-count=1 --pretty=%ct "$head") +%Y%m%d%H%M%S)
+
+        local time=$(git_ log --max-count=1 --pretty=%ct "$head")
+        local submodule_info=
+        if [[ $modified_submodules ]]; then
+            local subname= subsha1= subtime=
+            while read subname subsha1 subtime; do
+                submodule_info+=+$subname.$subsha1
+                if (( subtime > time )); then
+                    time=$subtime
+                fi
+            done <<<"$modified_submodules"
+        fi
+
+        local timestamp=$(TZ=UTC date --date=@"$time" +%Y%m%d%H%M%S)
         local sha1sum=$(git_ rev-list --max-count=1 --abbrev-commit "$head")
-        version=$version+$branch.$timestamp.$sha1sum$modified_submodules
+        version=$version+$branch.$timestamp.$sha1sum$submodule_info
     fi
 
     version=${version//[^+_[:alnum:]]/.} # replace characters not allowed in the version field
