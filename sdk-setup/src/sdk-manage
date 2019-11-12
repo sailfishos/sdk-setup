@@ -29,6 +29,9 @@ usage:
     $SELF tooling update <name>
     $SELF tooling register [--user <user> [--password <password>]] [--force]
     $____                  {--all | <name>...}
+    $SELF tooling package-list <name> [-l|--long] [<pattern>...]
+    $SELF tooling package-install <name> <package-name>...
+    $SELF tooling package-remove <name> <package-name>...
     $SELF tooling uuidgen {--all | <name>...}
 
     $SELF target list [-l|--long] [--tooling <name>] [--snapshots-of <name>]
@@ -45,6 +48,9 @@ usage:
     $SELF target import <name>
     $SELF target register [--user <user> [--password <password>]] [--force]
     $____                 {--all | <name>...}
+    $SELF target package-list <name> [-l|--long] [<pattern>...]
+    $SELF target package-install <name> <package-name>...
+    $SELF target package-remove <name> <package-name>...
     $SELF target uuidgen {--all | <name>...}
 
     $SELF toolchain list <tooling>
@@ -865,6 +871,15 @@ manage_toolings() {
         ?(--)register ) shift
             register_object tooling "$@"
             ;;
+        ?(--)package-list ) shift
+            list_object_packages tooling "$@"
+            ;;
+        ?(--)package-install ) shift
+            manage_object_packages install tooling "$@"
+            ;;
+        ?(--)package-remove ) shift
+            manage_object_packages remove tooling "$@"
+            ;;
         ?(--)uuidgen ) shift
             reset_machine_id tooling "$@"
             ;;
@@ -938,14 +953,81 @@ enter_target() {
     sb2 -t "$target" -m sdk-install -R "$@"
 }
 
-get_develpkgs() {
-    local target=$1 search=$2
-    # do not include sourcepackages to the list (-t package -t pattern)
-    object_zypper "target:$target" --no-refresh search -t package -t pattern -- ${search:+"$search"} 2>&1 | \
-	sed '0,/---------/d' | while IFS='| ' read installed pkg dummy; do
-	echo "${pkg},${installed}"
+list_object_packages() {
+    local type=$1
+
+    shift
+    local long=
+    local positional_args=()
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -l|--long)
+                long=1
+                ;;
+            --)
+                shift
+                positional_args+=("$@")
+                break
+                ;;
+            -*)
+                echo >&2 "unrecognized option '$1'"
+                usage
+                return 1
+                ;;
+            *)
+                positional_args+=("$1")
+                ;;
+        esac
+        shift
     done
+
+    set -- ${positional_args[@]:+"${positional_args[@]}"}
+
+    if [[ $# -lt 1 ]]; then
+        echo >&2 "$type name expected"
+        return 1
+    fi
+
+    local object=$1 search=("${@:2}")
+
+    assert_object_exists "$type:$object" || return
+
+    local separator= format=
+    if [[ $long ]]; then
+        separator='\\| '
+        format='{
+            status = $1 ~ "i" ? "installed" : "available";
+            name = $2; // keep the padding
+            description = $3; sub(/ *$/, "", description); // strip the padding
+            print name, status "  " description
+        }'
+    else
+        separator=' *\\| *'
+        format='{print $2 "," $1}'
+    fi
+
+    # do not include sourcepackages to the list (-t package -t pattern)
+    object_zypper "$type:$object" --no-refresh search -t package -t pattern \
+            -- ${search[@]:+"${search[@]}"} 2>&1 \
+        |sed '0,/---------/d' \
+        |awk -F "$separator" "$format"
     return ${PIPESTATUS[0]}
+}
+
+manage_object_packages() {
+    local action=$1 type=$2 object=${3:-} packages=("${@:4}")
+
+    assert_object_exists "$type:$object" || return
+
+    if [[ ${#packages[@]} -eq 0 ]]; then
+        echo >&2 "no package name given"
+        return 1
+    fi
+
+    object_zypper "$type:$object" --no-refresh "$action" "${packages[@]}" || return
+    if [[ $INSIDE_VBOX && $type == target ]] && ! target_is_snapshot "$object"; then
+        synchronise_target "$object"
+    fi
 }
 
 manage_develpkgs() {
@@ -956,27 +1038,13 @@ manage_develpkgs() {
 
     case $1 in
 	?(--)list ) shift
-            local target=${1:-} search=${2:-}
-            assert_target_exists "$target" || return
-            get_develpkgs "$target" "$search"
+            list_object_packages target "$@"
 	    ;;
 	?(--)install ) shift
-            local target=${1:-}
-            assert_target_exists "$target" || return
-            shift
-            object_zypper "target:$target" --no-refresh install "$@" || return
-            if [[ $INSIDE_VBOX ]] && ! target_is_snapshot "$target"; then
-                synchronise_target "$target"
-            fi
+            manage_object_packages install target "$@" || return
 	    ;;
 	?(--)remove ) shift
-            local target=${1:-}
-            assert_target_exists "$target" || return
-            shift
-            object_zypper "target:$target" --no-refresh remove "$@" || return
-            if [[ $INSIDE_VBOX ]] && ! target_is_snapshot "$target"; then
-                synchronise_target "$target"
-            fi
+            manage_object_packages remove target "$@" || return
 	    ;;
 	* )
             echo >&2 "unrecognized option '$1'"
@@ -1818,6 +1886,15 @@ manage_targets() {
 	?(--)register ) shift
             register_object target "$@"
 	    ;;
+        ?(--)package-list ) shift
+            list_object_packages target "$@"
+            ;;
+        ?(--)package-install ) shift
+            manage_object_packages install target "$@"
+            ;;
+        ?(--)package-remove ) shift
+            manage_object_packages remove target "$@"
+            ;;
         ?(--)uuidgen ) shift
             reset_machine_id target "$@"
             ;;
