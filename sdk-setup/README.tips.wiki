@@ -1,0 +1,110 @@
+<!--
+ATTENTION: This page serves as an input for the `sdk-motd` tool from the Platform SDK.
+Certain conventions must be followed while editing this page.
+Try `sdk-motd --help` within the Platform SDK for more information.
+-->
+
+'''''Known issue: GitHub does not render HTML entities (<code>&lt;</code>, <code>&gt;</code>, etc.) correctly.'''''
+
+
+__TOC__
+
+== SDK Maintenance ==
+
+
+=== Updating SDK Target and Tooling with single command ===
+
+You should always update the corresponding SDK Tooling prior to updating an SDK Target. This can be done with single command <code>sdk-assistant update &lt;target&gt;</code>. It can also save you from some known issues with the upgrading process so keep the SDK up to date as well!
+
+
+=== SSU registering everything with single command ===
+
+You can SSU register all SDK Targets, Toolings and the SDK itself with the <code>sdk-manage register-all</code> command. You may need to use <code>--force</code> and if you need more flexibility e.g. to change the flavour, you can find <code>sdk-foreach-su</code> helpful.
+
+
+=== Accelerating ARM builds ===
+
+Compared to build tools from SDK Target, those from SDK Tooling run without QEMU emulation. There is a chance to speed up your ARM builds by installing more tools in the SDK Tooling used by your SDK Target. Maintain it with <code>/srv/mer/toolings/&lt;tooling&gt;/mer-tooling-chroot</code>.
+
+
+=== On the importance of keeping the SDK chroot up to date ===
+
+Currently we miss a mechanism that would enforce a minimum SDK chroot version prior to installing or updating an SDK Tooling or Target. Save yourself from troubles by updating the SDK chroot frequently.
+
+
+While the SDK Chroot preserves backward compatibility with older SDK Toolings and Targets, SDK Toolings and Targets may require as recent SDK chroot as they are. Failure to meet this requirement can affect core components of an SDK Target such as the package management software, rendering the Target unusable.
+
+
+Should you hit such a condition try to fix your SDK by upgrading the SDK Chroot first, then using <code>sdk-assistant update &lt;target&gt;</code> to update the Target and the Tooling used by the target.
+
+
+== Software Development ==
+
+
+=== Using shared directory for related RPMs (sdk-utils>=1.2.44) ===
+
+To make deployment easier, <code>mb2</code> can use a shared output directory.  Add yourself <code>alias mb2='mb2 --output-prefix &lt;path&gt;'</code> to <code>~/.mersdk.profile</code> to achieve this. Add <code>--task</code> as well to let it further adjust the output path based on your Git branch name.
+
+
+When the <code>--output-prefix</code> option is used, the output directory is also searched for build-time dependencies by default, so if <code>packageB</code> requires another locally built <code>packageA</code> at build time, it is not necessary to install <code>packageA</code> manually to the build target.
+
+
+The default behavior of the <code>--task</code> option is to consider Git branches matched by the regular expression <code>^jb[0-9]+</code>. The task name is then determined as the matching part of the branch name, so having a branch checked out whose name is <code>jb12345-2nd-try</code> would lead to the task name <code>jb12345</code>.
+
+
+See <code>mb2 --help</code> and [https://sailfishos.org/wiki/Building_packages#Building_Packages_Locally Building Packages Locally] for more information.
+
+
+=== Deploying without force ===
+
+Deploying with <code>rpm -Uvh --force</code> can hide bugs. <code>mb2</code> produces evergrowing version numbers unless told otherwise, so <code>zypper -p &lt;rpms-dir&gt; -v dup</code> usually works well and obeys the dependencies.
+
+
+See [https://sailfishos.org/wiki/Deploying_packages#Deploying_Local_RPMs Deploying Local RPMs] for more information.
+
+
+=== Cleaning ===
+
+Sometimes <code>mb2 make clean</code> may be more convenient than <code>git clean -xfd</code> for cleaning a project directory.
+
+
+The usage of <code>clean</code> in <code>mb2 make clean</code> is not a construct processed by <code>mb2</code>. Is just an argument that <code>mb2</code> forwards to the <code>make</code> command, invoking the <code>clean</code> target in this particular case. Any other argument recognized by <code>make</code> is applicable here.
+
+
+=== Preparing sources ===
+
+By default <code>mb2</code> skips the <code>%prep</code> section of an RPM spec file. The <code>--doprep</code> (short <code>-p</code>) option or the <code>prep</code> and <code>apply</code> commands may help you in case of a non-trivial <code>%prep</code> section.
+
+
+The effect of the <code>apply</code> command can be reverted executing again with the <code>-R</code> option.
+
+
+=== Shadow builds (sdk-utils>=1.2.32) ===
+
+<code>mb2</code> can do shadow builds conveniently now - simply pass the path to the sources like in <code>mb2 build ../src</code> or <code>mb2 qmake ../src && mb2 make && mb2 rpm</code>.
+
+
+The path to the sources needs only to be passed to the <code>build</code> and <code>qmake</code> commands (like with plain <code>qmake</code> + <code>make</code> usage):
+
+
+    git clone &lt;repo-url&gt; ./sources
+    mkdir build && cd build
+    mb2 build ../sources
+    # or with each step invoked manually...
+    mb2 qmake ../sources
+    mb2 make
+    mb2 rpm
+
+
+See <code>mb2 --help</code> for more information.
+
+
+=== Keeping build targets clean (sdk-utils>=1.2.40) ===
+
+You can preserve clean state of your build targets by using <code>mb2</code> with its <code>--snapshot</code> option.
+
+
+Packages may have their specific build-time dependencies an mixing build-time dependencies of different packages may not be desired. At least it may hide bugs like a missing <code>BuildRequires</code> in package <code>.spec</code> file. With the <code>--snapshot</code> option the build target is not used directly. Instead a snapshot is taken and the build is done using the snapshot of the build target.
+
+
+See <code>mb2 --help</code> for more information.

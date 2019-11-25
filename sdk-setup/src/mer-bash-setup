@@ -20,7 +20,8 @@ done
 unset mer_check_locale
 
 (
-    motd=$(sdk-motd --daily) || exit
+    declare -p SDK_MOTD_OPTIONS &>/dev/null || SDK_MOTD_OPTIONS=(--daily --no-refresh)
+    motd=$(sdk-motd ${SDK_MOTD_OPTIONS:+"${SDK_MOTD_OPTIONS[@]}"}) || exit
     if [[ $motd ]]; then
         printf '\nDid you know…?\n\n%s\n' "$motd"
     fi

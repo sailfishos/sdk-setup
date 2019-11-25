@@ -168,10 +168,6 @@ with_tmp_file()
 
 refresh()
 {
-    if ! [[ -e "$CACHE_FILE" ]]; then
-        mkdir -p "$(dirname "$CACHE_FILE")" || return
-    fi
-
     # Update the timestamp unconditionally to avoid refreshing repeatedly on
     # failure
     touch "$CACHE_FILE" || return
@@ -497,6 +493,7 @@ set_defaults()
     DEFAULT_PAGE_RELEASE="https://sailfishos.org/wiki/SDK_Tips"
     DEFAULT_MAX_REFRESH_TIME=5
     OPT_MAX_REFRESH_TIME=${SDK_MOTD_MAX_REFRESH_TIME:-$DEFAULT_MAX_REFRESH_TIME}
+    SYSTEM_CACHE_FILE=/usr/share/sdk-setup/README.tips.wiki
     CACHE_FILE=$XDG_CACHE_HOME/$SELF
     RECENT_FILE=$XDG_DATA_HOME/$SELF
     # When --daily is used and no unread messages are available, prolong the
@@ -595,6 +592,13 @@ main()
     if [[ $OPT_USAGE ]]; then
         usage
         return
+    fi
+
+    if ! [[ -e "$CACHE_FILE" ]]; then
+        mkdir -p "$(dirname "$CACHE_FILE")" || return
+        cp "$SYSTEM_CACHE_FILE" "$CACHE_FILE" || return
+        # Do not delay daily refresh in case it is desired
+        touch --date "2 days ago" "$CACHE_FILE"
     fi
 
     if [[ $OPT_RECENT ]]; then
