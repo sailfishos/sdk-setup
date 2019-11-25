@@ -202,6 +202,8 @@ cp src/rpmvalidation %{buildroot}%{_bindir}/
 ln -sf rpmvalidation %{buildroot}%{_bindir}/rpmvalidation.sh
 cp src/git-lltb %{buildroot}%{_bindir}/
 cp src/sdk-init %{buildroot}%{_bindir}/
+mkdir -p %{buildroot}%{_datadir}/%{name}
+cp README.tips.wiki %{buildroot}%{_datadir}/%{name}/
 
 # update version info to scripts
 sed -i "s/VERSION_FROM_SPEC/%{version}/" %{buildroot}%{_bindir}/mb2
@@ -332,6 +334,7 @@ fi
 %config %{_sysconfdir}/ssh/ssh_config.sdk
 %config %{_sysconfdir}/bash_completion.d/mb2.bash
 %config %{_sysconfdir}/bash_completion.d/sdk-assistant.bash
+%{_datadir}/%{name}/README.tips.wiki
 
 %files -n sdk-mer-branding
 %defattr(-,root,root,-)
