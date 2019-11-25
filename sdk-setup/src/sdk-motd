@@ -110,9 +110,8 @@ ENVIRONMENT VARIABLES
         never receive any update.  Defaults to $DEFAULT_MAX_REFRESH_TIME seconds.
 
 REFERENCES
-    1. $DEFAULT_PAGE_RELEASE
-       $DEFAULT_PAGE_PRERELEASE
-       Default Wiki pages to use as a source of MOTDs
+    1. $DEFAULT_PAGE
+       Default Wiki page to use as a source of MOTDs
 
     2. https://meta.wikimedia.org/wiki/Help:Piped_link
        MediaWiki's Piped links
@@ -139,7 +138,7 @@ download_page()
 {
     local url=$1
 
-    curl --silent --fail --max-time "$OPT_MAX_REFRESH_TIME" "$url?action=raw"
+    curl -L --silent --fail --max-time "$OPT_MAX_REFRESH_TIME" "${url/blob/raw}"
 }
 
 with_tmp_file()
@@ -489,8 +488,7 @@ add_recent()
 
 set_defaults()
 {
-    DEFAULT_PAGE_PRERELEASE="https://sailfishos.org/wiki/SDK_Tips_-_Prerelease"
-    DEFAULT_PAGE_RELEASE="https://sailfishos.org/wiki/SDK_Tips"
+    DEFAULT_PAGE="https://github.com/sailfishos/sdk-setup/blob/master/sdk-setup/README.tips.wiki"
     DEFAULT_MAX_REFRESH_TIME=5
     OPT_MAX_REFRESH_TIME=${SDK_MOTD_MAX_REFRESH_TIME:-$DEFAULT_MAX_REFRESH_TIME}
     SYSTEM_CACHE_FILE=/usr/share/sdk-setup/README.tips.wiki
@@ -511,11 +509,7 @@ set_defaults()
     OPT_DAILY=
     OPT_NO_RECORD=
     OPT_NO_REFRESH=
-    if [[ $domain == jolla ]]; then
-        OPT_PAGE=$DEFAULT_PAGE_PRERELEASE
-    else
-        OPT_PAGE=$DEFAULT_PAGE_RELEASE
-    fi
+    OPT_PAGE=$DEFAULT_PAGE
     OPT_RECENT=
     OPT_REFRESH=
     OPT_SHORT_USAGE=
