@@ -560,6 +560,11 @@ set_up_emulator()
         fi
     fi
 
+    if is_vm_off "$OPT_EMULATOR"; then
+        start_emulator || return
+        emulator_started=1
+    fi
+
     # Catch "Warning: Permanently added ... to the list of known hosts." on first connection
     ssh_emulator "true" &>/dev/null
 
