@@ -1468,6 +1468,10 @@ install_target() {
 
     local transparency= compiler=
     case $target_arch in
+        aarch64)
+            transparency="/usr/bin/qemu-aarch64-dynamic"
+            compiler="/opt/cross/bin/aarch64-meego-linux-gnu-gcc"
+	    ;;
         arm*)
             transparency="/usr/bin/qemu-arm-dynamic"
             compiler="/opt/cross/bin/${target_arch}-meego-linux-gnueabi-gcc"
