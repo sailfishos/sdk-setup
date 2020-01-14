@@ -4,6 +4,7 @@
 # in MerSDK
 #
 # Copyright (C) 2014-2018 Jolla Ltd.
+# Copyright (C) 2020 Open Mobile Platform LLC.
 # Contact: Martin Kampas <martin.kampas@jolla.com>
 # All rights reserved.
 #
@@ -35,7 +36,8 @@
 set -o nounset
 
 fail() {
-    echo "FAIL: $@"
+    echo "sdk-assistant: $@" 1>&2
+    echo "Try 'sdk-assistant --help' for usage information" 1>&2
     exit 1
 }
 
@@ -92,8 +94,13 @@ Common options:
 
 EOF
 
-    # exit if any argument is given
-    [[ -n "$1" ]] && exit 0
+    # exit with error if any argument is given
+    if [[ $# -ne 0 ]]; then
+        echo "sdk-assistant: $@"
+        exit 1
+    else
+        exit 0
+    fi
 }
 
 guess_type() (
@@ -176,12 +183,12 @@ while [[ ${1:-} ]]; do
             OPT_SLOW=1
             ;;
         --user )
-            [[ $# -ge 2 && $2 ]] || fail "$1: argument required"
+            [[ $# -ge 2 && $2 ]] || fail "missing argument for $1"
             OPT_USER=$2
             shift
             ;;
         --password )
-            [[ $# -ge 2 && $2 ]] || fail "$1: argument required"
+            [[ $# -ge 2 && $2 ]] || fail "missing argument for $1"
             OPT_PASSWORD=$2
             shift
             ;;
@@ -189,10 +196,10 @@ while [[ ${1:-} ]]; do
             OPT_ALL=1
             ;;
         -h | --help )
-            usage quit
+            usage
             ;;
         -* )
-            fail "unknown option $1"
+            fail "unknown option: $1"
             ;;
         * )
             positional_args+=("$1")
@@ -210,7 +217,7 @@ case ${1:-} in
         ;;
 esac
 
-[[ $# -gt 0 ]] || fail "command expected"
+[[ $# -gt 0 ]] || usage "Command expected" >&2
 
 case $1 in
     create )
