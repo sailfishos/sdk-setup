@@ -1,6 +1,7 @@
 #!/bin/bash
 #
-# Copyright (C) 2013 - 2016 Jolla Ltd.
+# Copyright (C) 2013 - 2020 Jolla Ltd.
+# Copyright (C) 2019 - 2020 Open Mobile Platform LLC.
 # Contact: David Greaves <david.greaves@jollamobile.com>
 # All rights reserved.
 #
@@ -238,6 +239,12 @@ COMMANDS
         the current working directory is treated as the project directory. (The
         file name part is ignored - project file selection is done by qmake call
         inside the .spec file.)
+
+    cmake [<cmake-args>] [[--] <build-tool-args>]
+        Run rpmbuild by calling "cmake --build . --target all". Run direct CMake
+        commands by using any other CMake arguments. If path to a <project-dir>
+        is passed as a CMake argument, shadow build will be done. Otherwise the
+        current working directory is treated as the project directory.
 
     make [<make-extra-args>]
         Run rpmbuild. Execute just the %build section of the .spec file,
@@ -1191,6 +1198,66 @@ END
     chmod +x "$wrapper"
 )
 
+# 1. Allows to pass extra arguments to cmake
+# 2. Enables shadow build by adding path prefix to the project file, or
+# 2.1 passing project directory path if the project file was not passed
+init_cmake_wrapper() (
+    local wrapper=$1
+    local extra_args=("${@:2}")
+
+    main() {
+        self=${0#$PWD/}
+        command=${0##*/}
+        NBSP=$'\xC2\xA0'
+
+        path=${0%/*}
+        PATH=${PATH/$path:/}
+
+        real=$(which "$command")
+        if [[ ! $real || $real == "$0" ]]; then
+            echo "$self: Cannot find real $command" >&2
+            exit 1
+        fi
+
+        if [[ $IS_SHADOW_BUILD ]]; then
+            subdir=${PWD#$BUILD_DIR}
+            src_dir=$SRC_DIR${subdir:+/$subdir}
+            args=()
+            for arg in "$@"; do
+                args+=("$arg")
+            done
+            set -- "${args[@]}"
+        fi
+
+        assignments=()
+        for arg in "$@"; do
+            if [[ $arg =~ ^[a-zA-Z_][a-zA-Z0-9_]*= ]]; then
+                assignments+=("$arg")
+            fi
+        done
+
+        # NBSP used to prevent Qt Creator treating this as an error when issued for 'cmake'
+        echo "$self:${NBSP}Executing real $command:" >&2
+
+        set -x
+        "$real" "$@"
+    }
+
+    init_wrappers_dir
+    cat <<END >"$wrapper"
+#!/bin/bash
+
+IS_SHADOW_BUILD=$(is_shadow_build && echo 1)
+BUILD_DIR=$(quote "$PWD")
+SRC_DIR=$(quote "${OPT_SRC_DIR:-$PWD}")
+
+$(declare -f main)
+
+main "\$@" $(quote "${extra_args[@]}")
+END
+    chmod +x "$wrapper"
+)
+
 init_simple_wrapper() {
     local wrapper=$1
     local extra_args=("${@:2}")
@@ -1383,6 +1450,83 @@ run_prepare() {
             "$TMP_SPEC"
     )
     local rc=$?
+    return $rc
+}
+
+cmake_post_cleanup() {
+    # Handle path changes for Qt Creator
+    local cmakefiles="CMakeCache.txt"
+
+    cp -p CMakeCache.txt CMakeCache.txt.qtccache
+
+    for cbpfile in *.cbp; do
+        cp -p "$cbpfile" "$cbpfile.qtccache"
+        cmakefiles="$cmakefiles $cbpfile"
+    done
+
+    if [[ "$STATEDIR" == "/home/mersdk/share"* ]]; then
+        sed -i "s|/home/mersdk/share|$MER_SSH_HOST_SHARED_HOME|g" $cmakefiles
+    elif [[ "$STATEDIR" == "/home/src1"* ]]; then
+        sed -i "s|/home/src1|$MER_SSH_HOST_SHARED_SRC|g" $cmakefiles
+    else
+        echo "Failed to set CMake paths for Qt Creator"
+        rm *.qtccache
+    fi
+}
+
+cmake_pre_setup() {
+    # Undo path changes for Qt Creator
+    if [[ -f "CMakeCache.txt.qtccache" ]]; then
+        mv CMakeCache.txt.qtccache CMakeCache.txt
+        for cbp_file in *.cbp.qtccache; do
+            mv $cbp_file ${cbp_file%.qtccache}
+        done
+    fi
+}
+
+run_cmake() {
+    local rpmbuild="--build . --target all"
+    local sb2args=( -t "$OPT_TARGET" env PATH="${WRAPPERSDIR}:${USERWRAPPERSDIR}:${PATH}" )
+
+    # CMake projects need to have dependencies installed before running
+    # any CMake commands
+    if [[ $OPT_SPEC ]]; then
+        verify_target_dependencies
+    fi
+
+    if [[ " $* " == *"$rpmbuild"* && $OPT_SPEC ]]; then
+        local build_tgt=$(sb2 -t $OPT_TARGET gcc -dumpmachine)
+        build_tgt=${build_tgt%-gnueabi}
+
+        cp -a "$OPT_SPEC" "$TMP_SPEC"
+
+        # get rid of potential windows linefeeds
+        sed -i "s/\x0D$//g" "$TMP_SPEC"
+
+        fix_package_version "$TMP_SPEC"
+
+        eval "set -- $(printf "%q " "$@" |sed "s/ $rpmbuild / /")"
+        init_cmake_wrapper $WRAPPERSDIR/cmake "$@" "$OPT_SRC_DIR"
+        init_simple_wrapper $WRAPPERSDIR/make
+
+        cd_to_spec_setup_dir
+        sb2args+=(rpmbuild \
+                    --build-in-place \
+                    --target=$build_tgt \
+                    --define "noecho 1" \
+                    --define "_sourcedir $(dirname $OPT_SPEC)" \
+                    -bc --short-circuit "$TMP_SPEC")
+    elif [[ $OPT_PRO_FILE_OR_DIR ]]; then
+        init_cmake_wrapper $WRAPPERSDIR/cmake "$@" "$OPT_PRO_FILE_OR_DIR"
+        sb2args+=( cmake )
+    else
+        init_cmake_wrapper $WRAPPERSDIR/cmake "$@"
+        sb2args+=( cmake )
+    fi
+
+    sb2 "${sb2args[@]}"
+    local rc=$?
+
     return $rc
 }
 
@@ -2020,10 +2164,26 @@ if [[ $1 != --self-test ]]; then  ###  M A I N  EXECUTION BEGINS HERE  #########
 # If this is called with an empty argument, the default settings is restored.
 handle_pro_file_or_dir_option() {
     local pro_file_or_dir=$1
+    local cmakecache_file="CMakeCache.txt"
+    local read_from_cmakecache=
 
     rm -f "$STATEDIR/src"
 
-    if [[ ! $pro_file_or_dir ]]; then
+    # Read the project source path from the CMakeCache file, if the path hasn't
+    # been passed as an argument and the CMakeCache exists.
+    if [[ ! $pro_file_or_dir && -f "$cmakecache_file" ]]; then
+        read_from_cmakecache=1
+
+        # The unmodified build engine paths should be in this file, if it exists.
+        if [[ -f "$cmakecache_file.qtccache" ]]; then
+            cmakecache_file="$cmakecache_file.qtccache"
+        fi
+
+        pro_file_or_dir=$(sed -n "s/^CMAKE_HOME_DIRECTORY=//p" "$cmakecache_file")
+    fi
+
+    # Stop if the filepath is empty or doesn't exist in the system.
+    if [[ ! $pro_file_or_dir || ! -e $pro_file_or_dir ]]; then
         return
     fi
 
@@ -2057,8 +2217,10 @@ handle_pro_file_or_dir_option() {
     # without spec file
     : ${src_dir:=$pro_dir}
 
-    # Remember that for the plain qmake/make usage
-    OPT_PRO_FILE_OR_DIR=$pro_file_or_dir
+    # Remember that for the plain cmake/qmake/make usage
+    if [[ ! $read_from_cmakecache ]]; then
+        OPT_PRO_FILE_OR_DIR=$pro_file_or_dir
+    fi
 
     # The project file/directory might be specified explicitly for non-shadow builds as well
     if [[ $src_dir != "$(readlink -f "$PWD")" ]]; then
@@ -2203,7 +2365,7 @@ while [[ "$1" ]]; do
             OPT_NEEDSPEC=1;
             break
             ;;
-        qmake | make )
+        qmake | cmake | make )
             if behind_sfdk; then
                 OPT_NEEDSPEC=1
             fi
@@ -2339,7 +2501,7 @@ case "$1" in
             esac
         done
         ;;
-    qmake )
+    qmake | cmake )
         cmd=run_$1; shift
         while [[ "$1" ]]; do
             case "$1" in
@@ -2525,7 +2687,17 @@ fi
 
 remove_wrappers_dir
 
+if [[ -f "CMakeCache.txt" ]]; then
+    cmake_pre_setup
+fi
+
 $cmd "$@"
+
+if [[ -f "CMakeCache.txt"
+        && -n "$MER_SSH_HOST_SHARED_HOME"
+        && -n "$MER_SSH_HOST_SHARED_SRC" ]]; then
+    cmake_post_cleanup
+fi
 
 ##############################################################################
 exit; fi ###  S E L F - T E S T  EXECUTION BEGINS HERE #######################
