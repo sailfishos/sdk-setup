@@ -1,7 +1,7 @@
 #!/bin/bash
 #
-# Copyright (C) 2013-2019 Jolla Ltd.
-# Copyright (C) 2019-2020 Open Mobile Platform LLC.
+# Copyright (C) 2013 - 2020 Jolla Ltd.
+# Copyright (C) 2019 - 2020 Open Mobile Platform LLC.
 # Contact: http://jolla.com/
 # All rights reserved.
 #
@@ -240,9 +240,26 @@ COMMANDS
         file name part is ignored - project file selection is done by qmake call
         inside the .spec file.)
 
+    cmake <project-dir> [[--] <cmake-extra-args>]
+    cmake --build . [<cmake-extra-args>] [-- <make-extra-args>]
+        Run rpmbuild. Execute just the %build section of the .spec file,
+        suppressing any "cmake" invocation figuring in that section, that does
+        not match the execution form used here, i.e., does not trigger the
+        desired action, namely 1) generate a project buildsystem or
+        2) build the project.
+
+        Additionally, any plain "make" invocation will be recognized as
+        implementing the "build the project" action and will be treated
+        accordingly. Any possible <cmake-extra-args> will be silently ignored
+        in that case.
+
     make [<make-extra-args>]
         Run rpmbuild. Execute just the %build section of the .spec file,
-        suppressing any "qmake" invocation figuring in that section.
+        suppressing any command figuring in that section, that is recognized
+        as a command to generate project buildsystem.
+
+        In case of CMake based project this is equivalent to the "mb2 cmake
+        --build . -- <make-extra-args>" command.
 
     make-install
         Run rpmbuild. Execute just the %install section of the .spec file.
@@ -1195,6 +1212,131 @@ END
     chmod +x "$wrapper"
 )
 
+# 1. Allows to pass extra arguments to cmake
+# 2. Enables shadow build by adding path prefix to the project-dir argument
+# 3. Allows to suppress cmake not invoked in the desired mode
+init_cmake_wrapper() (
+    local wrapper=$1
+
+    do_configure() {
+        if [[ $IS_SHADOW_BUILD ]]; then
+            subdir=${PWD#$BUILD_DIR}
+            src_dir=$SRC_DIR${subdir:+/$subdir}
+            args=()
+            pro_passed=
+            for arg in "$@"; do
+                if [[ -f $src_dir/$arg/CMakeLists.txt ]]; then
+                    args+=("$src_dir/$arg")
+                    pro_passed=1
+                else
+                    args+=("$arg")
+                fi
+            done
+            if [[ ! $pro_passed ]]; then
+                echo "$self: Failed to adjust project directory path"
+                exit 1
+            fi
+            set -- "${args[@]}"
+        fi
+
+        # NBSP used to prevent Qt Creator treating this as an error when issued for 'cmake'
+        echo "$self:${NBSP}Executing real $command:" >&2
+
+        set -x
+        "$real" "$@" "${EXTRA_CONFIGURE_ARGS[@]}"
+    }
+
+    do_build() {
+        local args=() build_tool_args=()
+        while [[ $# -gt 0 ]]; do
+            case $1 in
+                --build)
+                    if [[ $2 != . ]]; then
+                        echo "$self: The argument to '--build' passed in .spec must be '.' (literally)" >&2
+                        exit 1
+                    fi
+                    args+=("$1" "$2")
+                    shift
+                    ;;
+                --target)
+                    if [[ $2 != "$MAKE_TARGET" ]]; then
+                        echo "$self: Argument to '--target' passed on command line does not march the argument passed in .spec" >&2
+                        exit 1
+                    fi
+                    args+=("$1" "$2")
+                    shift
+                    ;;
+                --)
+                    shift
+                    build_tool_args=("$@")
+                    shift $#
+                    break
+                    ;;
+                *)
+                    args+=("$1")
+                    ;;
+            esac
+            shift
+        done
+
+        # NBSP used to prevent Qt Creator treating this as an error when issued for 'cmake'
+        echo "$self:${NBSP}Executing real $command:" >&2
+
+        set -x
+        "$real" "${args[@]}" "${EXTRA_BUILD_ARGS[@]}" -- "${build_tool_args[@]}" "${EXTRA_BUILD_TOOL_ARGS[@]}"
+    }
+
+    main() {
+        self=${0#$PWD/}
+        command=${0##*/}
+        NBSP=$'\xC2\xA0'
+
+        path=${0%/*}
+        PATH=${PATH/$path:/}
+
+        real=$(which "$command")
+        if [[ ! $real || $real == "$0" ]]; then
+            echo "$self: Cannot find real $command" >&2
+            exit 1
+        fi
+
+        if [[ $1 != --build ]]; then
+            if [[ ! $ALLOWED_MODE || $ALLOWED_MODE == configure ]]; then
+                do_configure "$@"
+            else
+                # NBSP used to prevent Qt Creator treating this as an error when issued for 'cmake'
+                echo "$self:${NBSP}Ignoring $command invoked in a way to create a project buildsystem" >&2
+            fi
+        else
+            if [[ ! $ALLOWED_MODE || $ALLOWED_MODE == build ]]; then
+                do_build "$@"
+            else
+                # NBSP used to prevent Qt Creator treating this as an error when issued for 'cmake'
+                echo "$self:${NBSP}Ignoring $command invoked in a way to build the project" >&2
+            fi
+        fi
+    }
+
+    init_wrappers_dir
+    cat <<END >"$wrapper"
+#!/bin/bash
+
+IS_SHADOW_BUILD=$(is_shadow_build && echo 1)
+BUILD_DIR=$(quote "$PWD")
+SRC_DIR=$(quote "${OPT_SRC_DIR:-$PWD}")
+ALLOWED_MODE=$(quote "$CMAKE_MODE")
+EXTRA_CONFIGURE_ARGS=($(quote "${CMAKE_EXTRA_CONFIGURE_ARGS[@]}"))
+EXTRA_BUILD_ARGS=($(quote "${CMAKE_EXTRA_BUILD_ARGS[@]}"))
+EXTRA_BUILD_TOOL_ARGS=($(quote "${CMAKE_EXTRA_BUILD_TOOL_ARGS[@]}"))
+BUILD_TARGET=$(quote "$CMAKE_BUILD_TARGET")
+
+$(declare -f main)
+
+main "\$@"
+END
+    chmod +x "$wrapper"
+)
+
 init_simple_wrapper() {
     local wrapper=$1
     local extra_args=("${@:2}")
@@ -1335,6 +1477,7 @@ run_build() {
 
     if is_shadow_build; then
         init_qmake_wrapper $WRAPPERSDIR/qmake
+        init_cmake_wrapper $WRAPPERSDIR/cmake
     fi
 
     (
@@ -1386,6 +1529,135 @@ run_prepare() {
     )
 }
 
+cmake_post_cleanup() {
+    # Handle path changes for Qt Creator
+    local cmakefiles="CMakeCache.txt"
+
+    cp -p CMakeCache.txt CMakeCache.txt.qtccache
+
+    for cbpfile in *.cbp; do
+        [[ -f $cbpfile ]] || continue
+        cp -p "$cbpfile" "$cbpfile.qtccache"
+        cmakefiles="$cmakefiles $cbpfile"
+    done
+
+    if [[ $STATEDIR == /home/mersdk/share* && $MER_SSH_HOST_SHARED_HOME ]]; then
+        sed -i "s|/home/mersdk/share|$MER_SSH_HOST_SHARED_HOME|g" $cmakefiles
+    elif [[ $STATEDIR == /home/src1* && $MER_SSH_HOST_SHARED_SRC ]]; then
+        sed -i "s|/home/src1|$MER_SSH_HOST_SHARED_SRC|g" $cmakefiles
+    else
+        echo "Failed to set CMake paths for Qt Creator"
+        rm *.qtccache
+    fi
+}
+
+cmake_pre_setup() {
+    # Undo path changes for Qt Creator
+    if [[ -f "CMakeCache.txt.qtccache" ]]; then
+        mv CMakeCache.txt.qtccache CMakeCache.txt
+        for cbp_file in *.cbp.qtccache; do
+            mv $cbp_file ${cbp_file%.qtccache}
+        done
+    fi
+}
+
+run_cmake__process_args() {
+    CMAKE_MODE=
+    CMAKE_EXTRA_CONFIGURE_ARGS=()
+    CMAKE_EXTRA_BUILD_ARGS=()
+    CMAKE_EXTRA_BUILD_TOOL_ARGS=()
+    CMAKE_BUILD_TARGET=
+
+    [[ $1 ]] || fatal "Argument expected"
+
+    case $1 in
+        --build)
+            CMAKE_MODE=build
+
+            [[ $2 ]] || fatal "Option expects argument: '--build'"
+            [[ $2 == . ]] || fatal "The argument to '--build' must be '.' (literally)"
+            shift 2
+
+            while [[ $# -gt 0 ]]; do
+                case $1 in
+                    --target)
+                        [[ $2 ]] || fatal "Option expects argument: '--target'"
+                        CMAKE_BUILD_TARGET=$2
+                        shift
+                        ;;
+                    --)
+                        shift
+                        break
+                        ;;
+                    *)
+                        CMAKE_EXTRA_BUILD_ARGS+=("$1")
+                        ;;
+                esac
+                shift
+            done
+            CMAKE_EXTRA_BUILD_TOOL_ARGS=("$@")
+            ;;
+        *)
+            [[ -e $1 ]] || fatal "Unrecognized argument: '$1'"
+
+            CMAKE_MODE=configure
+
+            local project_dir="${1%%+(/)}"
+            handle_pro_file_or_dir_option "$project_dir"
+            shift
+
+            while [[ $1 == -- ]]; do shift; done
+            CMAKE_EXTRA_CONFIGURE_ARGS=("$@")
+            ;;
+    esac
+}
+
+run_cmake() {
+    local rpmbuild="--build . --target all"
+
+    declare -p OPT_SPEC
+    set -x
+    if [[ $OPT_SPEC ]]; then
+        local build_tgt=$(sb2 -t $OPT_TARGET gcc -dumpmachine)
+        build_tgt=${build_tgt%-gnueabi}
+
+        cp -a "$OPT_SPEC" "$TMP_SPEC"
+
+        # get rid of potential windows linefeeds
+        sed -i "s/\x0D$//g" "$TMP_SPEC"
+
+        fix_package_version "$TMP_SPEC"
+
+        # This is a good time to verify the target dependencies as per mb
+        verify_target_dependencies
+
+        case $CMAKE_MODE in
+            configure)
+                init_cmake_wrapper $WRAPPERSDIR/cmake
+                init_noop_wrapper $WRAPPERSDIR/make
+                ;;
+            build)
+                init_cmake_wrapper $WRAPPERSDIR/cmake
+                init_simple_wrapper $WRAPPERSDIR/make "${CMAKE_EXTRA_BUILD_TOOL_ARGS[@]}"
+                ;;
+            *)
+                fatal "Internal error: Invalid value '$CMAKE_MODE' in CMAKE_MODE"
+                ;;
+        esac
+
+        (
+            cd_to_spec_setup_dir
+
+            sb2 -t $OPT_TARGET env PATH="${WRAPPERSDIR}:${USERWRAPPERSDIR}:${PATH}" rpmbuild \
+                --build-in-place --target=$build_tgt --define "noecho 1" \
+                --define "_sourcedir $(dirname $OPT_SPEC)" -bc --short-circuit "$TMP_SPEC"
+        )
+    else
+        sb2 -t $OPT_TARGET cmake "$@" ${OPT_PRO_FILE_OR_DIR:+"$OPT_PRO_FILE_OR_DIR"}
+    fi
+    set +x
+}
+
 run_qmake() {
     if [[ "$OPT_SPEC" ]]; then
         local build_tgt=$(sb2 -t $OPT_TARGET gcc -dumpmachine)
@@ -1406,6 +1678,7 @@ run_qmake() {
 
         (
             cd_to_spec_setup_dir;
+
             sb2 -t $OPT_TARGET env PATH="$WRAPPERSDIR:$USERWRAPPERSDIR:$PATH" rpmbuild \
                 --build-in-place --target=$build_tgt \
                 --define "noecho 1" \
@@ -2049,7 +2322,6 @@ handle_pro_file_or_dir_option() {
     # without spec file
     : ${src_dir:=$pro_dir}
 
-    # Remember that for the plain qmake/make usage
     OPT_PRO_FILE_OR_DIR=$pro_file_or_dir
 
     # The project file/directory might be specified explicitly for non-shadow builds as well
@@ -2195,7 +2467,7 @@ while [[ "$1" ]]; do
             OPT_NEEDSPEC=1;
             break
             ;;
-        qmake | make )
+        qmake | cmake | make )
             if behind_sfdk; then
                 OPT_NEEDSPEC=1
             fi
@@ -2348,6 +2620,11 @@ case "$1" in
             esac
         done
         handle_pro_file_or_dir_option "$pro_file_or_dir"
+        ;;
+    cmake )
+        cmd=run_$1; shift
+        run_cmake__process_args "$@"
+        shift $#
         ;;
     build )
         cmd=run_$1; shift
@@ -2517,10 +2794,21 @@ fi
 
 remove_wrappers_dir
 
+if [[ -f "CMakeCache.txt" ]]; then
+    cmake_pre_setup
+fi
+
 $cmd "$@"
 
+rc=$?
+
+if [[ -f "CMakeCache.txt" ]]; then
+    cmake_post_cleanup
+fi
+
+exit $rc
 ##############################################################################
-exit; fi ###  S E L F - T E S T  EXECUTION BEGINS HERE #######################
+fi ###  S E L F - T E S T  EXECUTION BEGINS HERE #############################
 ##############################################################################
 
 set -o nounset
