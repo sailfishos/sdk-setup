@@ -17,7 +17,7 @@ _mb2_comp()
 
     if [ "$cur" != -* ]; then
 	for (( i=0; i < ${#COMP_WORDS[@]}-1; i++ )); do
-	    if [[ ${COMP_WORDS[i]} == @(build|qmake|make|rpm|run|deploy|install) ]]; then
+	    if [[ ${COMP_WORDS[i]} == @(build|qmake|cmake|make|rpm|run|deploy|install) ]]; then
 		special=${COMP_WORDS[i]}
 	    fi
 	done
@@ -60,7 +60,7 @@ _mb2_comp()
     if [[ "$cur" == -* ]]; then
 	COMPREPLY=( $( compgen -W '-d -i -p -s -t -f -x --shared-folder --target --device --increment --projectdir --specfile --fix-version' -- "$cur" ) )
     else
-	COMPREPLY=( $( compgen -W 'build qmake make ssh install rpm deploy run \
+	COMPREPLY=( $( compgen -W 'build qmake cmake make ssh install rpm deploy run \
                                    -d -p -s -t -i -f -x --shared-folder --device --increment --projectdir --specfile --target --fix-version' -- "$cur" ) )
     fi
 
