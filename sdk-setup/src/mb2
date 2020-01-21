@@ -287,13 +287,21 @@ COMMANDS
         effect is cumulative and persists until overriden with later name
         prefixed with the opposite operator.
 
-    deploy {--pkcon|--rsync|--sdk|--zypper}
+    deploy {--pkcon|--rsync|--sdk|--zypper} [--debug] [--] [[+|-]<pattern>...]
         Deploy build results to a device. This implies also the "make-install"
         step and except for the --rsync method it will include also the
         "package" step.
 
+        Selection of (sub)packages for deployment can be influenced with glob
+        <pattern>s, each of which may be preceded with '+' or '-' to opt for
+        either inclusion (default) or exclusion respectively as the desired
+        effect. Later specified patterns may override earlier ones.  Extended,
+        Bash-compatible patterns are allowed.  The '-*-debug@(info|source)'
+        pattern is implied unless the '--debug' option is used.  Options must
+        precede patterns if any.
+
         The following deployment methods are available, corresponding to the
-        single mandatory option:
+        mandatory option:
 
         --pkcon
             Uses 'pkcon' to install RPM package(s). Requires the "Allow
@@ -601,10 +609,49 @@ ensure_spec_newer_than_yaml() {
     # it's ok also not to have a yaml
 }
 
-# Find binary rpms under <dir> built from the given <spec>, excluding those matching <filter>
+match_multi() {
+    local name=$1 patterns=("${@:2}")
+
+    if [[ ${#patterns[*]} -eq 0 ]]; then
+        return 0
+    fi
+
+    local inclusion_limited= included= excluded= pattern=
+    for pattern in "${patterns[@]}"; do
+        local exclude=
+        if [[ $pattern == +* ]]; then
+            pattern=${pattern:1}
+        elif [[ $pattern == -* ]]; then
+            pattern=${pattern:1}
+            exclude=1
+        fi
+
+        if [[ ! $pattern ]]; then
+            notice "Got invalid, empty pattern"
+            return 1
+        fi
+
+        if [[ $exclude ]]; then
+            if [[ $name == $pattern ]]; then
+                included=
+                excluded=1
+            fi
+        else
+            inclusion_limited=1
+            if [[ $name == $pattern ]]; then
+                included=1
+                excluded=
+            fi
+        fi
+    done
+
+    [[ (! $inclusion_limited || $included) && ! $excluded ]]
+}
+
+# Find binary rpms under <dir> built from the given <spec>, filtering according to <patterns>
 find_rpms()
 {
-    local dir=$1 spec=$2 filter=$3
+    local dir=$1 spec=$2 patterns=("${@:3}")
 
     local wanted_source_name= wanted_evr=
     read wanted_source_name wanted_evr < <(rpmspec -q --srpm --queryformat '%{NAME} %{EVR}\n' "$spec")
@@ -614,7 +661,8 @@ find_rpms()
         local name= source_rpm= evr=
         read name source_rpm evr < <(rpm -q --queryformat '%{NAME} %{SOURCERPM} %{EVR}\n' -p "$pkg")
         local source_name=${source_rpm%-$evr.src.rpm}
-        if [[ ! ($name =~ $filter) && $source_name == $wanted_source_name && $evr == $wanted_evr ]]; then
+        if [[ $source_name == $wanted_source_name && $evr == $wanted_evr ]] \
+                && match_multi "$name" "${patterns[@]}"; then
             printf '%s\n' "$pkg"
         fi
     done < <(find "$dir" -maxdepth 1 -name '*.rpm')
@@ -1325,54 +1373,77 @@ run_package() {
 
 run_deploy() {
     [[ $device_type ]] || fatal "No device specified"
-    [[ ${1:-} ]] || fatal "Argument expected"
     [[ -e $STATEDIR/spec ]] || fatal "No previoud build found"
+
+    local method_opt= patterns=('-*-debug@(info|source)')
+    while [[ $# -ne 0 ]]; do
+        case $1 in
+            --sdk | --pkcon | --zypper | --rsync )
+                [[ ! $method_opt ]] || fatal "Cannot combine '$1' and '$method_opt'"
+                method_opt=$1
+                ;;
+            --debug )
+                patterns=
+                ;;
+            -- )
+                shift
+                patterns+=("$@")
+                break
+                ;;
+            *)
+                patterns+=("$@")
+                break
+                ;;
+        esac
+        shift
+    done
+
+    [[ ${method_opt:-} ]] || fatal "Argument expected"
 
     local retcode=0
 
-    while [[ $1 ]]; do
-        case "$1" in
-            "--sdk" | "--pkcon" )
-                local method;
-                if [[ "$1" == "--sdk" ]]; then
-                    method="sdk-deploy-rpm"
-                else
-                    method="pkcon --plain --noninteractive install-local"
-                fi
-                shift
-                run_package
-                [[ $? -ne 0 ]] && return 1
-                rpms=$(find_rpms "$OPT_OUTPUTDIR" "$STATEDIR/spec" '-debug(source|info)$')
-                rsync_as $deviceuser -av ${rpms} $device_ip:/home/$deviceuser/RPMS/
-                [[ $? -ne 0 ]] && return 1
-                device_rpms=$(sed "s,^$OPT_OUTPUTDIR/,RPMS/," <<<"$rpms")
-                ssh_as $deviceuser $method ${device_rpms}
-                retcode=$?
-                ssh_as $deviceuser rm -f ${device_rpms}
-                ;;
-            "--zypper" ) shift
-                run_package
-                [[ $? -ne 0 ]] && return 1
-                rpms=$(find_rpms "$OPT_OUTPUTDIR" "$STATEDIR/spec" '-debug(source|info)$')
-                rsync_as root -av ${rpms} $device_ip:/root/RPMS/
-                [[ $? -ne 0 ]] && return 1
-                device_rpms=$(sed "s,^$OPT_OUTPUTDIR/,RPMS/," <<<"$rpms")
-                ssh_as root zypper --non-interactive --quiet in -f ${device_rpms}
-                retcode=$?
-                ssh_as root rm -f ${device_rpms}
-                ;;
-            "--rsync" ) shift
-                run_make_install
-                [[ $? -ne 0 ]] && return 1
-                name=$(get_spec_tag "%{name}")
-                rsync_as $deviceuser -av ${buildroot}/. $device_ip:/opt/sdk/$name
-                retcode=$?
-                ;;
-            *)
-                fatal "Unexpected argument: '$1'"
-                ;;
-        esac
-    done
+    case $method_opt in
+        --sdk | --pkcon )
+            local method;
+            if [[ $method_opt == --sdk ]]; then
+                method="sdk-deploy-rpm"
+            else
+                method="pkcon --plain --noninteractive install-local"
+            fi
+            run_package
+            [[ $? -ne 0 ]] && return 1
+            rpms=$(find_rpms "$OPT_OUTPUTDIR" "$STATEDIR/spec" "${patterns[@]}")
+            [[ $rpms ]] || fatal "No package found or none matched the given criteria"
+            rsync_as $deviceuser -av ${rpms} $device_ip:/home/$deviceuser/RPMS/
+            [[ $? -ne 0 ]] && return 1
+            device_rpms=$(sed "s,^$OPT_OUTPUTDIR/,RPMS/," <<<"$rpms")
+            ssh_as $deviceuser $method ${device_rpms}
+            retcode=$?
+            ssh_as $deviceuser rm -f ${device_rpms}
+            ;;
+        --zypper )
+            run_package
+            [[ $? -ne 0 ]] && return 1
+            rpms=$(find_rpms "$OPT_OUTPUTDIR" "$STATEDIR/spec" "${patterns[@]}")
+            [[ $rpms ]] || fatal "No package found or none matched the given criteria"
+            rsync_as root -av ${rpms} $device_ip:/root/RPMS/
+            [[ $? -ne 0 ]] && return 1
+            device_rpms=$(sed "s,^$OPT_OUTPUTDIR/,RPMS/," <<<"$rpms")
+            ssh_as root zypper --non-interactive --quiet in -f ${device_rpms}
+            retcode=$?
+            ssh_as root rm -f ${device_rpms}
+            ;;
+        --rsync )
+            run_make_install
+            [[ $? -ne 0 ]] && return 1
+            name=$(get_spec_tag "%{name}")
+            rsync_as $deviceuser -av ${buildroot}/. $device_ip:/opt/sdk/$name
+            retcode=$?
+            ;;
+        *)
+            fatal "Internal error: Invalid deployment method: '$1'"
+            ;;
+    esac
 
     [[ $retcode -eq 0 ]] || { echo "Deploy failed"; return 1; }
 }
@@ -1492,7 +1563,8 @@ run_check() {
                 if [[ ! -e $STATEDIR/spec ]]; then
                     notice "No previous build found and no package to verify specified explicitly"
                 else
-                    packages=($(find_rpms "$OPT_OUTPUTDIR" "$STATEDIR/spec" '-debug(source|info)$'))
+                    packages=($(find_rpms "$OPT_OUTPUTDIR" "$STATEDIR/spec" \
+                        '-*-debug@(source|info)'))
                     if [[ ${#packages[*]} -eq 0 ]]; then
                         notice "No packages found and none specified explicitly"
                     fi
@@ -3533,6 +3605,54 @@ run_tc special_packaging "Use prepare (shadow)" \
 run_tc special_packaging "Use doprep" \
     Y       N      DOPREP N       N        N         Y
 tear_down_ts special_packaging
+
+################################################################################
+# Test the match_multi function
+
+match_multi_ts_set_up() {
+    :
+}
+
+match_multi_ts_tear_down() {
+    :
+}
+
+match_multi_tc() {
+    local match_name=$1 no_match_name=$2 patterns=("${@:3}")
+
+    local rc=0 problems=()
+
+    if [[ $match_name ]] && ! match_multi "$match_name" ${patterns:+"${patterns[@]}"}; then
+        rc=1
+        problems+=("Not matched while it should")
+    fi
+
+    if [[ $no_match_name ]] && match_multi "$no_match_name" ${patterns:+"${patterns[@]}"}; then
+        rc=1
+        problems+=("Matched while it should not")
+    fi
+
+    if [[ $rc != 0 ]]; then
+        cat <<END
+Test case failed: $TC_NAME
+END
+        printf '    %s\n' "${problems[@]}"
+    fi
+
+    return $rc
+}
+
+set_up_ts match_multi "Test match_multi"
+run_tc match_multi "No filter" foobar ""
+run_tc match_multi "Implicit inclusion only" foobar doobar "foo*"
+run_tc match_multi "Explicit inclusion only" foobar doobar "+foo*"
+run_tc match_multi "Explicit exclusion only" foobar doobar "-doo*"
+run_tc match_multi "Override exclusion" foobar doobar "-*bar" "foo*"
+run_tc match_multi "Override inclusion" foobar doobar "*bar" "-doo*"
+run_tc match_multi "Override exclusion later" foobar doobar "-*bar" "zoo*" "foo*"
+run_tc match_multi "Override inclusion later" foobar doobar "*bar" "zoo*" "-doo*"
+run_tc match_multi "Extglob" foobar doobar "foo@(bar|baz)"
+tear_down_ts match_multi
 
 ################################################################################
 
