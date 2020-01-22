@@ -294,9 +294,7 @@ COMMANDS
 
     deploy {--pkcon|--rsync|--sdk|--zypper|--manual} [--all] [--debug]
            [--] [[+|-]<pattern>...]
-        Deploy build results to a device. Unless mentioned otherwise, this
-        implies also the "make-install" and "package" steps. A common exception
-        is when the '--all' option is used.
+        Deploy build results to a device.
 
         By default, just the build results of the project under current working
         directory will be deployed. When a shared output directory is used (see
@@ -324,8 +322,7 @@ COMMANDS
         --rsync
             Uses 'rsync' to copy the installed files under '/opt/sdk/<name>'
             without building/installing RPM package(s).  Does not require root
-            access to the device.  With this method the "package" step is not
-            implied. Incompatible with '--all'.
+            access to the device.  Incompatible with '--all'.
 
         --sdk
             Uses the method native to the SDK to install RPM package(s).
@@ -339,6 +336,10 @@ COMMANDS
         --manual
             Only transfers the RPM package(s) to the device for manual
             installation. Uses '~/RPMS' as the target directory on the device.
+
+        When used via Qt Creator, this command implies also the "make-install"
+        and "package" commands unless the '--all' option or '--rsync' method is
+        used.
 
     run [<command> [<args>]]
         Run the given command on the device specified with '--device'.  Can be
@@ -1471,7 +1472,7 @@ run_deploy() {
             else
                 method="pkcon --plain --noninteractive install-local"
             fi
-            [[ $all_opt ]] || run_package || return
+            ! behind_qtcreator || run_package || return
             rpms=$(find_rpms $all_opt "$OPT_OUTPUTDIR" "$STATEDIR/spec" "${patterns[@]}")
             [[ $rpms ]] || fatal "No package found or none matched the given criteria"
             rsync_as $deviceuser -av ${rpms} $device_ip:/home/$deviceuser/RPMS/
@@ -1482,7 +1483,7 @@ run_deploy() {
             ssh_as $deviceuser rm -f ${device_rpms}
             ;;
         --zypper )
-            [[ $all_opt ]] || run_package || return
+            ! behind_qtcreator || run_package || return
             rpms=$(find_rpms $all_opt "$OPT_OUTPUTDIR" "$STATEDIR/spec" "${patterns[@]}")
             [[ $rpms ]] || fatal "No package found or none matched the given criteria"
             rsync_as root -av ${rpms} $device_ip:/root/RPMS/
@@ -1493,14 +1494,13 @@ run_deploy() {
             ssh_as root rm -f ${device_rpms}
             ;;
         --rsync )
-            run_make_install
-            [[ $? -ne 0 ]] && return 1
+            ! behind_qtcreator || run_make_install || return
             name=$(get_spec_tag "%{name}")
             rsync_as $deviceuser -av ${buildroot}/. $device_ip:/opt/sdk/$name
             retcode=$?
             ;;
         --manual )
-            [[ $all_opt ]] || run_package || return
+            ! behind_qtcreator || run_package || return
             rpms=$(find_rpms $all_opt "$OPT_OUTPUTDIR" "$STATEDIR/spec" "${patterns[@]}")
             [[ $rpms ]] || fatal "No package found or none matched the given criteria"
             rsync_as $deviceuser -av ${rpms} $device_ip:/home/$deviceuser/RPMS/
