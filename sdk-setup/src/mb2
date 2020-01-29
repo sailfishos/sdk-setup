@@ -1027,14 +1027,14 @@ get_device() {
 rsync_as() {
     local user="$1";shift
     local key=$(get_shared_dir)/${device_sshkeypath}/$user
-    [[ -f "$key" ]] || fatal "No key for user '$user' on '$device_name' given in devices.xml (rsync '$key')"
+    [[ -f "$key" ]] || fatal "SSH key not configured for user '$user' on '$device_name'"
     RSYNC_RSH="ssh -F /etc/ssh/ssh_config.sdk -l $user -i \"$key\" -p $device_sshport" rsync "$@"
 }
 
 ssh_as() {
     local user="$1";shift
     local key=$(get_shared_dir)/${device_sshkeypath}/$user
-    [[ -f "$key" ]] || fatal "No key for user '$user' on '$device_name' given in devices.xml ('$key')"
+    [[ -f "$key" ]] || fatal "SSH key not configured for user '$user' on '$device_name'"
     ssh -F /etc/ssh/ssh_config.sdk -i "$key" -l $user $device_ip -p $device_sshport "$(quote "$@")"
 }
 
