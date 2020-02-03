@@ -574,6 +574,29 @@ git_() (
     git "$@"
 )
 
+get_hostname_from_devices_xml() {
+    local TAG_NAME= ATTRIBUTES=
+    while read_dom; do
+        if [[ $TAG_NAME == host ]]; then
+            eval "local $ATTRIBUTES"
+            printf '%s\n' "$name"
+            break
+        fi
+    done < $(get_shared_dir)/devices.xml
+}
+
+get_hostname() {
+    local hostname=
+    if inside_build_engine; then
+        hostname=$(get_hostname_from_devices_xml)
+    else
+        hostname=$({ hostname --fqdn; hostname; } \
+            |sed '/^localhost\(\.localdomain\)\?$/d; q')
+    fi
+
+    printf '%s\n' "${hostname:-localhost.localdomain}"
+}
+
 try_to_make_spec() { # Tries to create a missing spec
     [[ -f "$1" ]] && return # It's not missing
     local yaml="${1%.spec}.yaml"
@@ -1259,6 +1282,7 @@ run_build() {
             --define "_rpmdir $OPT_OUTPUTDIR" \
             --define "_sourcedir $(dirname $OPT_SPEC)" \
             --define "_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm" \
+            --define "_buildhost $(get_hostname)" \
             --buildroot="$buildroot" \
             "${BUILD_NOPREP[@]}" \
             -bb \
@@ -1292,6 +1316,7 @@ run_prepare() {
             --define "_rpmdir $OPT_OUTPUTDIR" \
             --define "_sourcedir $(dirname $OPT_SPEC)" \
             --define "_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm" \
+            --define "_buildhost $(get_hostname)" \
             --buildroot="$buildroot" \
             -bp --short-circuit \
             "$TMP_SPEC"
@@ -1324,6 +1349,7 @@ run_qmake() {
                 --build-in-place --target=$build_tgt \
                 --define "noecho 1" \
                 --define "_sourcedir $(dirname $OPT_SPEC)" \
+                --define "_buildhost $(get_hostname)" \
                 -bc --short-circuit \
                 "$TMP_SPEC"
         )
@@ -1356,6 +1382,7 @@ run_make() {
                 --build-in-place --target=$build_tgt \
                 --define "noecho 1" \
                 --define "_sourcedir $(dirname $OPT_SPEC)" \
+                --define "_buildhost $(get_hostname)" \
                 -bc --short-circuit \
                 "$TMP_SPEC"
         )
@@ -1390,6 +1417,7 @@ run_make_install() {
         sb2 -t $OPT_TARGET rpmbuild --build-in-place --target=$build_tgt \
             --define "noecho 1" \
             --define "_sourcedir $(dirname $OPT_SPEC)" \
+            --define "_buildhost $(get_hostname)" \
             --define "_skip_install_processing 1" \
             --buildroot="$buildroot" \
             -bi --short-circuit $maybe_nocheck \
@@ -1421,6 +1449,7 @@ run_package() {
             --define "_rpmdir $OPT_OUTPUTDIR" \
             --define "_sourcedir $(dirname $OPT_SPEC)" \
             --define "_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm" \
+            --define "_buildhost $(get_hostname)" \
             --buildroot="$buildroot" \
             -bb --noprep --nobuildstage --noclean \
             "$TMP_SPEC"
