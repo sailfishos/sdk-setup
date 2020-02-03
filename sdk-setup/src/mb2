@@ -320,9 +320,10 @@ COMMANDS
             root access to the device.
 
         --rsync
-            Uses 'rsync' to copy the installed files under '/opt/sdk/<name>'
-            without building/installing RPM package(s).  Does not require root
-            access to the device.  Incompatible with '--all'.
+            This method is special.  Uses 'rsync' to copy the installed files
+            under '/opt/sdk/<name>' without building/installing RPM package(s).
+            Does not require root access to the device.  Incompatible with
+            '--all'.
 
         --sdk
             Uses the method native to the SDK to install RPM package(s).
@@ -340,6 +341,66 @@ COMMANDS
         When used via Qt Creator, this command implies also the "make-install"
         and "package" commands unless the '--all' option or '--rsync' method is
         used.
+
+    undeploy {--pkcon|--rpm|--rsync|--zypper} [--all] [-n|--dry-run]
+             [--] [[+|-]<pattern>...]
+        Undeploy build results previously deployed to a device.
+
+        Initially, device packages are collected based on the build host name
+        recorded in their metadata.  Just those packages that seem to
+        originate from the host where mb2 is running will be considered for
+        removal from the device.  For that it is vital that the host name is
+        stable and unique among the host names recorded by packages installed
+        from other sources.
+
+        Further, unless the '--all' option is used, just the build results of
+        the project under current working directory will be considered for
+        removal from the device.  When the '--all' option is used, any build
+        results originated from this build host will be considered.  (Note how
+        the effect of '--all' differs between 'deploy' and 'undeploy'.)
+
+        Package origin is determined based on the build host name recorded in
+        its metadata.  For that it is vital that 1) the build host name has
+        not changed since the time the packages were built and that 2) the
+        build host name is unique among the host names recorded by packages
+        installed from other sources.  See the 'engine' command to learn more
+        about the build host name.
+
+        With the '--dry-run' option, the list of (sub)packages that would be
+        removed may be previewed without applying the changes.
+
+        If needed, the selection can be furthermore adjusted with glob
+        <pattern>s, each of which may be preceded with '+' or '-' to opt for
+        either inclusion (default) or exclusion respectively as the desired
+        effect.  Later specified patterns may override earlier ones.
+        Extended, Bash-compatible patterns are allowed.  Options must precede
+        patterns if any.
+
+        Except for the '--rsync' method, the selected method is not required to
+        match the method previously used with the 'deploy' command.
+
+        The following methods of undeployment are available, corresponding to
+        the mandatory option:
+
+        --pkcon
+            Uses 'pkcon' to remove RPM package(s).  Requires the "Allow
+            untrusted software" option enabled in Settings, does not require
+            root access to the device.
+
+        --rpm
+            Uses plain 'rpm' to remove RPM package(s).  Requires root access
+            to the device.
+
+        --rsync
+            This method is special.  It does not work with RPM packages.  It
+            is only capable to remove files previously copied under
+            '/opt/sdk/' with 'deploy --rsync'.  With this method, the origin
+            of the data is not taken into consideration.  Does not require
+            root access to the device.
+
+        --zypper
+            Uses 'zypper' to remove RPM package(s).  Requires 'zypper'
+            installed on the device, requires root access to the device.
 
     run [<command> [<args>]]
         Run the given command on the device specified with '--device'.  Can be
@@ -966,14 +1027,14 @@ get_device() {
 rsync_as() {
     local user="$1";shift
     local key=$(get_shared_dir)/${device_sshkeypath}/$user
-    [[ -f "$key" ]] || fatal "No key for user '$user' on '$device_name' given in devices.xml (rsync '$key')"
+    [[ -f "$key" ]] || fatal "SSH key not configured for user '$user' on '$device_name'"
     RSYNC_RSH="ssh -F /etc/ssh/ssh_config.sdk -l $user -i \"$key\" -p $device_sshport" rsync "$@"
 }
 
 ssh_as() {
     local user="$1";shift
     local key=$(get_shared_dir)/${device_sshkeypath}/$user
-    [[ -f "$key" ]] || fatal "No key for user '$user' on '$device_name' given in devices.xml ('$key')"
+    [[ -f "$key" ]] || fatal "SSH key not configured for user '$user' on '$device_name'"
     ssh -F /etc/ssh/ssh_config.sdk -i "$key" -l $user $device_ip -p $device_sshport "$(quote "$@")"
 }
 
@@ -1544,6 +1605,163 @@ run_deploy() {
     [[ $retcode -eq 0 ]] || { echo "Deploy failed"; return 1; }
 }
 
+run_undeploy__process_args() {
+    UNDEPLOY_ALL=
+    UNDEPLOY_DRY_RUN=
+    UNDEPLOY_METHOD_OPT=
+    UNDEPLOY_PATTERNS=()
+
+    [[ $device_type ]] || fatal "No device specified"
+
+    while [[ $# -ne 0 ]]; do
+        case $1 in
+            --pkcon | --rpm | --rsync | --zypper )
+                if [[ $UNDEPLOY_METHOD_OPT ]]; then
+                    fatal "Cannot combine '$1' and '$UNDEPLOY_METHOD_OPT'"
+                fi
+                UNDEPLOY_METHOD_OPT=$1
+                ;;
+            --all )
+                UNDEPLOY_ALL=1
+                ;;
+            -n | --dry-run )
+                UNDEPLOY_DRY_RUN=1
+                ;;
+            -- )
+                shift
+                UNDEPLOY_PATTERNS+=("$@")
+                break
+                ;;
+            * )
+                while [[ $# -ne 0 ]]; do
+                    case $1 in
+                        # Try to avoid bad surprices
+                        -n | --dry-run )
+                            fatal "Options must precede patterns"
+                            ;;
+                        * )
+                            UNDEPLOY_PATTERNS+=("$1")
+                            ;;
+                    esac
+                    shift
+                done
+                break
+                ;;
+        esac
+        shift
+    done
+
+    [[ $UNDEPLOY_METHOD_OPT ]] || fatal "Argument expected"
+
+    if [[ ! $UNDEPLOY_ALL ]]; then
+        [[ -e $STATEDIR/spec ]] || fatal "No previoud build found"
+    fi
+}
+
+run_undeploy() {
+    local user=
+    case $UNDEPLOY_METHOD_OPT in
+        --pkcon | --rsync )
+            user=$deviceuser
+            ;;
+        --rpm | --zypper )
+            user=root
+            ;;
+        * )
+            fatal "Internal error: Invalid undeploy method '$UNDEPLOY_METHOD_OPT'"
+            ;;
+    esac
+
+    local candidates=
+    if [[ $UNDEPLOY_METHOD_OPT == --rsync ]]; then
+        # Consider all directories under /opt/sdk
+        candidates=$(ssh_as "$user" ls /opt/sdk)
+        candidates=$(sed 's,.*,& /opt/sdk/&,' <<<"$candidates")
+    else
+        # Consider all packages with matching BUILDHOST
+        local format='%{BUILDHOST} %{SOURCERPM} %{NAME} %{EVR}\n'
+        candidates=$(ssh_as "$user" rpm -q --queryformat "$format" -a)
+        candidates=$(
+            [[ $candidates ]] || exit 0
+            wanted_buildhost=$(get_hostname)
+            while read buildhost rest; do
+                [[ $buildhost == "$wanted_buildhost" ]] && printf '%s\n' "$rest"
+            done <<<"$candidates"
+        )
+    fi
+
+    # candidates now contains [{src_name, name, maybe_evr}], optionally filter
+    # by src_name, discard src_name.
+    if [[ $UNDEPLOY_ALL ]]; then
+        candidates=$(cut -d' ' -f2- <<<"$candidates")
+    else
+        candidates=$(
+            [[ $candidates ]] || exit 0
+            local wanted_src_name=$(get_spec_tag "%{name}")
+            while read src_name rest; do
+                [[ $src_name =~ ^"$wanted_src_name"(-[0-9].*)?$ ]] && printf '%s\n' "$rest"
+            done <<<"$candidates"
+        )
+    fi
+
+    # candidates now contains [{name, maybe_evr}], optionally filter by name
+    if [[ ${#UNDEPLOY_PATTERNS[*]} -gt 0 ]]; then
+        candidates=$(
+            [[ $candidates ]] || exit 0
+            while read name maybe_evr; do
+                if match_multi "$name" "${UNDEPLOY_PATTERNS[@]}"; then
+                    printf "%s %s\n" "$name" "$maybe_evr"
+                fi
+            done <<<"$candidates"
+        )
+    fi
+
+    if [[ $UNDEPLOY_DRY_RUN ]]; then
+        if [[ ! $candidates ]]; then
+            echo "No candidate for removal found"
+            return
+        else
+            echo "The following packages would be removed:"
+            local name= evr=
+            while read name evr; do
+                printf '%s%s\n' "$name" "${evr:+-$evr}"
+            done <<<"$candidates"
+        fi
+    fi
+
+    # candidates now contains [{name, maybe_evr}], discard maybe_evr
+    candidates=$(cut -d' ' -f1 <<<"$candidates")
+
+    if [[ $UNDEPLOY_METHOD_OPT != --rsync ]]; then
+        if ! ssh_as "$user" rpm --test -e $candidates; then
+            return 1
+        fi
+    fi
+
+    if [[ $UNDEPLOY_DRY_RUN ]]; then
+        return 0
+    fi
+
+    case $UNDEPLOY_METHOD_OPT in
+        --pkcon )
+            ssh_as "$user" pkcon --plain --noninteractive remove $candidates
+            ;;
+        --rpm )
+            ssh_as "$user" rpm -e $candidates
+            ;;
+        --rsync )
+            local unsafe_to_rm_f=$(grep --invert-match '^/opt/sdk/[^.][^/]*$' <<<"$candidates")
+            if [[ $unsafe_to_rm_f ]]; then
+                fatal "Internal error: Refusing to remove '$unsafe_to_rm_f'"
+            fi
+            ssh_as "$user" rm -rf $candidates
+            ;;
+        --zypper )
+            ssh_as "$user" zypper --non-interactive rm $candidates
+            ;;
+    esac
+}
+
 run_check__process_args() {
     local check_levels=$1
     local check_suites=$2
@@ -1991,7 +2209,7 @@ while [[ "$1" ]]; do
             fi
             break
             ;;
-        run | ssh | check )
+        run | ssh | check | undeploy )
             break
             ;;
         --version )
@@ -2064,6 +2282,14 @@ case "$1" in
         fi
         cmd=run_${1//-/_}
         shift
+        ;;
+    undeploy )
+        cmd=run_$1; shift
+        run_undeploy__process_args "$@"
+        if [[ ! $UNDEPLOY_ALL ]]; then
+            OPT_NEEDSPEC=1
+        fi
+        shift $#
         ;;
     build-requires | installdeps )
         if [[ $1 == installdeps ]]; then
