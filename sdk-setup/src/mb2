@@ -90,13 +90,14 @@ Limitations related to shadow builds:
 
 SHARED OUTPUT DIRECTORY
 
-To make deployment easier it is possible to use a shared output directory
-specified with the '--output-dir' option or more conveniently with the
-combination of '--output-prefix' and '--task' options.  Consider enabling
-'--output-prefix' and '--task' by default by creating an alias in your
-'~/.mersdk.profile' to get build results grouped by the tasks they are
-related to.  By default the task will be determined based on the current Git
-branch - check '--task' for more details:
+With shared output directory, it is possible to deploy all required packages
+built from different sources more conveniently. This can be achieved with the
+'--output-dir' option or even better with the combination of '--output-prefix'
+and '--task' options.  Consider enabling '--output-prefix' and '--task' by
+default by creating an alias in your '~/.mersdk.profile' to get build results
+grouped by the tasks they are related to.  By default, the task will be
+determined based on the current Git branch - check the '--task' option
+description for more details:
 
     alias mb2='mb2 --output-prefix ~/RPMS --task'
 
@@ -106,12 +107,16 @@ branch - check '--task' for more details:
     cd ../packageB
     git checkout -b bugXXXXX
     mb2 -t target build
-    rsync -av ~/RPMS/bugXXXXX-target/ device:RPMS \\
-        && ssh device zypper -p RPMS -v dup
+
+    ls -1 ~/RPMS/bugXXXXX-my-target/
+    mb2 -t target -d device deploy --manual --all \\
+        && ssh device sudo zypper -p RPMS -v dup
 
 With these options the output directory is also searched for build-time
 dependencies by default, so if packageB requires packageA at build time, you
 do not need to install packageA manually to the build target.
+
+Note that it can be usefull to also pass '--from ~plus-repo-1' to 'zypper dup'.
 
 
 CLEAN BUILDS
@@ -287,13 +292,27 @@ COMMANDS
         effect is cumulative and persists until overriden with later name
         prefixed with the opposite operator.
 
-    deploy {--pkcon|--rsync|--sdk|--zypper}
-        Deploy build results to a device. This implies also the "make-install"
-        step and except for the --rsync method it will include also the
-        "package" step.
+    deploy {--pkcon|--rsync|--sdk|--zypper|--manual} [--all] [--debug]
+           [--] [[+|-]<pattern>...]
+        Deploy build results to a device.
+
+        By default, just the build results of the project under current working
+        directory will be deployed. When a shared output directory is used (see
+        '--output-dir' and '--output-prefix'), the option '--all' can be used to
+        require deployment of all packages found under the output directory, no
+        matter of their origin. The '--all' option is not available when the
+        '--rsync' method is used.
+
+        Selection of (sub)packages for deployment can be influenced with glob
+        <pattern>s, each of which may be preceded with '+' or '-' to opt for
+        either inclusion (default) or exclusion respectively as the desired
+        effect. Later specified patterns may override earlier ones.  Extended,
+        Bash-compatible patterns are allowed.  The '-*-debug@(info|source)'
+        pattern is implied unless the '--debug' option is used.  Options must
+        precede patterns if any.
 
         The following deployment methods are available, corresponding to the
-        single mandatory option:
+        mandatory option:
 
         --pkcon
             Uses 'pkcon' to install RPM package(s). Requires the "Allow
@@ -303,7 +322,7 @@ COMMANDS
         --rsync
             Uses 'rsync' to copy the installed files under '/opt/sdk/<name>'
             without building/installing RPM package(s).  Does not require root
-            access to the device.
+            access to the device.  Incompatible with '--all'.
 
         --sdk
             Uses the method native to the SDK to install RPM package(s).
@@ -313,6 +332,14 @@ COMMANDS
         --zypper
             Uses 'zypper' to install RPM package(s).  Requires 'zypper'
             installed on the device, requires root access to the device.
+
+        --manual
+            Only transfers the RPM package(s) to the device for manual
+            installation. Uses '~/RPMS' as the target directory on the device.
+
+        When used via Qt Creator, this command implies also the "make-install"
+        and "package" commands unless the '--all' option or '--rsync' method is
+        used.
 
     run [<command> [<args>]]
         Run the given command on the device specified with '--device'.  Can be
@@ -601,10 +628,88 @@ ensure_spec_newer_than_yaml() {
     # it's ok also not to have a yaml
 }
 
-# Find binary rpms under <dir> built from the given <spec>, excluding those matching <filter>
+match_multi() {
+    local name=$1 patterns=("${@:2}")
+
+    if [[ ${#patterns[*]} -eq 0 ]]; then
+        return 0
+    fi
+
+    local inclusion_limited= included= excluded= pattern=
+    for pattern in "${patterns[@]}"; do
+        local exclude=
+        if [[ $pattern == +* ]]; then
+            pattern=${pattern:1}
+        elif [[ $pattern == -* ]]; then
+            pattern=${pattern:1}
+            exclude=1
+        fi
+
+        if [[ ! $pattern ]]; then
+            notice "Got invalid, empty pattern"
+            return 1
+        fi
+
+        if [[ $exclude ]]; then
+            if [[ $name == $pattern ]]; then
+                included=
+                excluded=1
+            fi
+        else
+            inclusion_limited=1
+            if [[ $name == $pattern ]]; then
+                included=1
+                excluded=
+            fi
+        fi
+    done
+
+    [[ (! $inclusion_limited || $included) && ! $excluded ]]
+}
+
+find_latest_rpms() {
+    local dir=$1 patterns=("${@:2}")
+
+    local latest=$(
+        zypper --plus-repo "$dir/" search --repo ~plus-repo-1 --details \
+            `# drop header` \
+            |sed '1,/^--/d' \
+            `# zypper sorts by version: revert it and keep first for each name` \
+            |tac |sort --stable -t '|' -k 2,2 -u \
+            `# $name $dir/$name-$evr.$arch.rpm` \
+            |awk -F ' *\\| *' -v dir="$dir" '{print $2, dir "/" $2 "-" $4 "." $5 ".rpm"}'
+    )
+
+    [[ $latest ]] || return
+
+    local name= pkg=
+    while read name pkg; do
+        if [[ ! -f "$pkg" ]]; then
+            fatal "Internal error: Package does not exist: '$pkg'"
+        fi
+        if match_multi "$name" "${patterns[@]}"; then
+            printf '%s\n' "$pkg"
+        fi
+    done <<<"$latest"
+}
+
+# Find binary rpms under <dir> built from the given <spec>, filtering according
+# to <patterns>. If '--all' is used (must be the very first option), ignore
+# <spec> and find latest packages no matter of their origin.
 find_rpms()
 {
-    local dir=$1 spec=$2 filter=$3
+    local all=
+    if [[ $1 == --all ]]; then
+        all=1
+        shift
+    fi
+
+    local dir=$1 spec=$2 patterns=("${@:3}")
+
+    if [[ $all ]]; then
+        find_latest_rpms "$dir" "${patterns[@]}"
+        return
+    fi
 
     local wanted_source_name= wanted_evr=
     read wanted_source_name wanted_evr < <(rpmspec -q --srpm --queryformat '%{NAME} %{EVR}\n' "$spec")
@@ -614,7 +719,8 @@ find_rpms()
         local name= source_rpm= evr=
         read name source_rpm evr < <(rpm -q --queryformat '%{NAME} %{SOURCERPM} %{EVR}\n' -p "$pkg")
         local source_name=${source_rpm%-$evr.src.rpm}
-        if [[ ! ($name =~ $filter) && $source_name == $wanted_source_name && $evr == $wanted_evr ]]; then
+        if [[ $source_name == $wanted_source_name && $evr == $wanted_evr ]] \
+                && match_multi "$name" "${patterns[@]}"; then
             printf '%s\n' "$pkg"
         fi
     done < <(find "$dir" -maxdepth 1 -name '*.rpm')
@@ -1325,54 +1431,86 @@ run_package() {
 
 run_deploy() {
     [[ $device_type ]] || fatal "No device specified"
-    [[ ${1:-} ]] || fatal "Argument expected"
     [[ -e $STATEDIR/spec ]] || fatal "No previoud build found"
+
+    local method_opt= all_opt= patterns=('-*-debug@(info|source)')
+    while [[ $# -ne 0 ]]; do
+        case $1 in
+            --sdk | --pkcon | --zypper | --rsync | --manual )
+                [[ ! $method_opt ]] || fatal "Cannot combine '$1' and '$method_opt'"
+                method_opt=$1
+                ;;
+            --all )
+                all_opt=$1
+                ;;
+            --debug )
+                patterns=
+                ;;
+            -- )
+                shift
+                patterns+=("$@")
+                break
+                ;;
+            *)
+                patterns+=("$@")
+                break
+                ;;
+        esac
+        shift
+    done
+
+    [[ ! $all_opt || $method_opt != --rsync ]] || fatal "Cannot use '--all' with '--rsync'"
+    [[ ${method_opt:-} ]] || fatal "Argument expected"
 
     local retcode=0
 
-    while [[ $1 ]]; do
-        case "$1" in
-            "--sdk" | "--pkcon" )
-                local method;
-                if [[ "$1" == "--sdk" ]]; then
-                    method="sdk-deploy-rpm"
-                else
-                    method="pkcon --plain --noninteractive install-local"
-                fi
-                shift
-                run_package
-                [[ $? -ne 0 ]] && return 1
-                rpms=$(find_rpms "$OPT_OUTPUTDIR" "$STATEDIR/spec" '-debug(source|info)$')
-                rsync_as $deviceuser -av ${rpms} $device_ip:/home/$deviceuser/RPMS/
-                [[ $? -ne 0 ]] && return 1
-                device_rpms=$(sed "s,^$OPT_OUTPUTDIR/,RPMS/," <<<"$rpms")
-                ssh_as $deviceuser $method ${device_rpms}
-                retcode=$?
-                ssh_as $deviceuser rm -f ${device_rpms}
-                ;;
-            "--zypper" ) shift
-                run_package
-                [[ $? -ne 0 ]] && return 1
-                rpms=$(find_rpms "$OPT_OUTPUTDIR" "$STATEDIR/spec" '-debug(source|info)$')
-                rsync_as root -av ${rpms} $device_ip:/root/RPMS/
-                [[ $? -ne 0 ]] && return 1
-                device_rpms=$(sed "s,^$OPT_OUTPUTDIR/,RPMS/," <<<"$rpms")
-                ssh_as root zypper --non-interactive --quiet in -f ${device_rpms}
-                retcode=$?
-                ssh_as root rm -f ${device_rpms}
-                ;;
-            "--rsync" ) shift
-                run_make_install
-                [[ $? -ne 0 ]] && return 1
-                name=$(get_spec_tag "%{name}")
-                rsync_as $deviceuser -av ${buildroot}/. $device_ip:/opt/sdk/$name
-                retcode=$?
-                ;;
-            *)
-                fatal "Unexpected argument: '$1'"
-                ;;
-        esac
-    done
+    case $method_opt in
+        --sdk | --pkcon )
+            local method;
+            if [[ $method_opt == --sdk ]]; then
+                method="sdk-deploy-rpm"
+            else
+                method="pkcon --plain --noninteractive install-local"
+            fi
+            ! behind_qtcreator || run_package || return
+            rpms=$(find_rpms $all_opt "$OPT_OUTPUTDIR" "$STATEDIR/spec" "${patterns[@]}")
+            [[ $rpms ]] || fatal "No package found or none matched the given criteria"
+            rsync_as $deviceuser -av ${rpms} $device_ip:/home/$deviceuser/RPMS/
+            [[ $? -ne 0 ]] && return 1
+            device_rpms=$(sed "s,^$OPT_OUTPUTDIR/,RPMS/," <<<"$rpms")
+            ssh_as $deviceuser $method ${device_rpms}
+            retcode=$?
+            ssh_as $deviceuser rm -f ${device_rpms}
+            ;;
+        --zypper )
+            ! behind_qtcreator || run_package || return
+            rpms=$(find_rpms $all_opt "$OPT_OUTPUTDIR" "$STATEDIR/spec" "${patterns[@]}")
+            [[ $rpms ]] || fatal "No package found or none matched the given criteria"
+            rsync_as root -av ${rpms} $device_ip:/root/RPMS/
+            [[ $? -ne 0 ]] && return 1
+            device_rpms=$(sed "s,^$OPT_OUTPUTDIR/,RPMS/," <<<"$rpms")
+            ssh_as root zypper --non-interactive --quiet in -f ${device_rpms}
+            retcode=$?
+            ssh_as root rm -f ${device_rpms}
+            ;;
+        --rsync )
+            ! behind_qtcreator || run_make_install || return
+            name=$(get_spec_tag "%{name}")
+            rsync_as $deviceuser -av ${buildroot}/. $device_ip:/opt/sdk/$name
+            retcode=$?
+            ;;
+        --manual )
+            ! behind_qtcreator || run_package || return
+            rpms=$(find_rpms $all_opt "$OPT_OUTPUTDIR" "$STATEDIR/spec" "${patterns[@]}")
+            [[ $rpms ]] || fatal "No package found or none matched the given criteria"
+            rsync_as $deviceuser -av ${rpms} $device_ip:/home/$deviceuser/RPMS/
+            [[ $? -ne 0 ]] && return 1
+            retcode=0
+            ;;
+        *)
+            fatal "Internal error: Invalid deployment method: '$1'"
+            ;;
+    esac
 
     [[ $retcode -eq 0 ]] || { echo "Deploy failed"; return 1; }
 }
@@ -1492,7 +1630,8 @@ run_check() {
                 if [[ ! -e $STATEDIR/spec ]]; then
                     notice "No previous build found and no package to verify specified explicitly"
                 else
-                    packages=($(find_rpms "$OPT_OUTPUTDIR" "$STATEDIR/spec" '-debug(source|info)$'))
+                    packages=($(find_rpms "$OPT_OUTPUTDIR" "$STATEDIR/spec" \
+                        '-*-debug@(source|info)'))
                     if [[ ${#packages[*]} -eq 0 ]]; then
                         notice "No packages found and none specified explicitly"
                     fi
@@ -3533,6 +3672,142 @@ run_tc special_packaging "Use prepare (shadow)" \
 run_tc special_packaging "Use doprep" \
     Y       N      DOPREP N       N        N         Y
 tear_down_ts special_packaging
+
+################################################################################
+# Test the match_multi function
+
+match_multi_ts_set_up() {
+    :
+}
+
+match_multi_ts_tear_down() {
+    :
+}
+
+match_multi_tc() {
+    local match_name=$1 no_match_name=$2 patterns=("${@:3}")
+
+    local rc=0 problems=()
+
+    if [[ $match_name ]] && ! match_multi "$match_name" ${patterns:+"${patterns[@]}"}; then
+        rc=1
+        problems+=("Not matched while it should")
+    fi
+
+    if [[ $no_match_name ]] && match_multi "$no_match_name" ${patterns:+"${patterns[@]}"}; then
+        rc=1
+        problems+=("Matched while it should not")
+    fi
+
+    if [[ $rc != 0 ]]; then
+        cat <<END
+Test case failed: $TC_NAME
+END
+        printf '    %s\n' "${problems[@]}"
+    fi
+
+    return $rc
+}
+
+set_up_ts match_multi "Test match_multi"
+run_tc match_multi "No filter" foobar ""
+run_tc match_multi "Implicit inclusion only" foobar doobar "foo*"
+run_tc match_multi "Explicit inclusion only" foobar doobar "+foo*"
+run_tc match_multi "Explicit exclusion only" foobar doobar "-doo*"
+run_tc match_multi "Override exclusion" foobar doobar "-*bar" "foo*"
+run_tc match_multi "Override inclusion" foobar doobar "*bar" "-doo*"
+run_tc match_multi "Override exclusion later" foobar doobar "-*bar" "zoo*" "foo*"
+run_tc match_multi "Override inclusion later" foobar doobar "*bar" "zoo*" "-doo*"
+run_tc match_multi "Extglob" foobar doobar "foo@(bar|baz)"
+tear_down_ts match_multi
+
+################################################################################
+# Test find_latest_rpms
+
+make_test_package() {
+    local name=$1 version=$2 release=$3
+
+    # Create a minimal spec file
+    mkdir -p rpm || return
+    cat >rpm/test.spec <<END || return
+Name:       ${name}
+
+# This is to not require meego-rpm-config installed for self-test execution
+%global __os_install_post %{nil}
+
+Summary:    Test
+Version:    ${version}
+Release:    ${release}
+Group:      Qt/Qt
+License:    LICENSE
+URL:        http://example.org/
+Source0:    %{name}-%{version}.tar.bz2
+
+%description
+Test
+
+%build
+
+%install
+mkdir -p %{buildroot}
+touch %{buildroot}/foo
+
+%files
+%defattr(-,root,root,-)
+/foo
+END
+    # Set output-dir explicitly to prevent removal of previously built packages
+    mkdir -p RPMS || return
+    "$SELF" --output-dir RPMS build || return
+}
+
+find_latest_rpms_tc() {
+    sb2_stub_create || return
+
+    make_test_package "test1" "1.2.3" "1" || return
+    make_test_package "test1" "1.2.3+jb12345.20200202202020.deadbeef" "1" || return
+    make_test_package "test1" "1.2.3+jb12345.20200222222222.beefbabe" "1" || return
+    make_test_package "test2" "3.2.1" "1" || return
+    make_test_package "test2" "3.3" "1" || return
+
+    local expected=$(cat <<END
+RPMS/test1-1.2.3+jb12345.20200222222222.beefbabe-1.i486.rpm
+RPMS/test2-3.3-1.i486.rpm
+END
+)
+    local actual=
+    actual=$(set +o nounset; find_latest_rpms "RPMS") || return
+
+    if [[ $actual != "$expected" ]]; then
+        cat <<END
+Test case failed: $TC_NAME
+  ** Expected   ** [[
+$expected
+]]
+  ** Actual     ** [[
+$actual
+]]
+END
+        return 1
+    fi
+
+    return 0
+}
+
+find_latest_rpms_tc_tear_down() {
+    sb2_stub_remove || return
+    rm -f rpm/test.spec || return
+    rmdir rpm || return
+    rm -f RPMS/test1-1.2.3-1.i486.rpm || return
+    rm -f RPMS/test1-1.2.3+jb12345.20200202202020.deadbeef-1.i486.rpm || return
+    rm -f RPMS/test1-1.2.3+jb12345.20200222222222.beefbabe-1.i486.rpm || return
+    rm -f RPMS/test2-3.2.1-1.i486.rpm || return
+    rm -f RPMS/test2-3.3-1.i486.rpm || return
+    ! [[ -d RPMS ]] || rmdir RPMS || return
+    rm -f "$buildroot/foo" || return
+}
+
+run_tc find_latest_rpms "Test find_latest_rpms"
 
 ################################################################################
 
