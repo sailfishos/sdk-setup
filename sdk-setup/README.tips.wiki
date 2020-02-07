@@ -41,7 +41,7 @@ Should you hit such a condition try to fix your SDK by upgrading the SDK Chroot 
 == Software Development ==
 
 
-=== Using shared directory for related RPMs (sdk-utils>=1.2.44) ===
+=== Using shared directory for related RPMs ===
 
 To make deployment easier, <code>mb2</code> can use a shared output directory.  Add yourself <code>alias mb2='mb2 --output-prefix &lt;path&gt;'</code> to <code>~/.mersdk.profile</code> to achieve this. Add <code>--task</code> as well to let it further adjust the output path based on your Git branch name.
 
@@ -55,9 +55,25 @@ The default behavior of the <code>--task</code> option is to consider Git branch
 See <code>mb2 --help</code> and [https://sailfishos.org/wiki/Building_packages#Building_Packages_Locally Building Packages Locally] for more information.
 
 
+=== Advanced deployment with mb2 (sdk-utils>=1.3.23) ===
+
+In the basic scenario, <code>mb2</code> deploys all non-debug packages from the current project. Optionally, <code>mb2</code> can deploy packages from all related projects in one step, filter the packages with glob patterns, support manual deployment in advanced cases and more.
+
+
+See <code>mb2 --help</code> for more information.
+
+
+=== Undeploying with mb2 (sdk-utils>=1.3.23) ===
+
+Locally built device packages may be conveniently undeployed with the help of <code>mb2 undeploy</code> command. By default it tries to undeploy just packages from the current project, optionally it can consider all packages originating from this host.
+
+
+See <code>mb2 --help</code> for more information.
+
+
 === Deploying without force ===
 
-Deploying with <code>rpm -Uvh --force</code> can hide bugs. <code>mb2</code> produces evergrowing version numbers unless told otherwise, so <code>zypper -p &lt;rpms-dir&gt; -v dup</code> usually works well and obeys the dependencies.
+Deploying with <code>rpm -Uvh --force</code> can hide bugs. <code>mb2</code> produces evergrowing version numbers unless told otherwise, so <code>zypper -p &lt;rpms-dir&gt; -v dup</code> (optionally with <code>--from ~plus-repo-1</code>) usually works well and obeys the dependencies.
 
 
 See [https://sailfishos.org/wiki/Deploying_packages#Deploying_Local_RPMs Deploying Local RPMs] for more information.
@@ -79,9 +95,9 @@ By default <code>mb2</code> skips the <code>%prep</code> section of an RPM spec 
 The effect of the <code>apply</code> command can be reverted executing again with the <code>-R</code> option.
 
 
-=== Shadow builds (sdk-utils>=1.2.32) ===
+=== Shadow builds ===
 
-<code>mb2</code> can do shadow builds conveniently now - simply pass the path to the sources like in <code>mb2 build ../src</code> or <code>mb2 qmake ../src && mb2 make && mb2 rpm</code>.
+<code>mb2</code> can do shadow builds conveniently - simply pass the path to the sources like in <code>mb2 build ../src</code> or <code>mb2 qmake ../src && mb2 make && mb2 rpm</code>.
 
 
 The path to the sources needs only to be passed to the <code>build</code> and <code>qmake</code> commands (like with plain <code>qmake</code> + <code>make</code> usage):
@@ -99,7 +115,7 @@ The path to the sources needs only to be passed to the <code>build</code> and <c
 See <code>mb2 --help</code> for more information.
 
 
-=== Keeping build targets clean (sdk-utils>=1.2.40) ===
+=== Keeping build targets clean ===
 
 You can preserve clean state of your build targets by using <code>mb2</code> with its <code>--snapshot</code> option.
 
