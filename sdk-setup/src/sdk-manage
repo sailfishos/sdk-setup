@@ -1210,6 +1210,29 @@ synchronise_target() {
         return 1
     fi
 
+    # See GccToolChain::gccHeaderPaths() in Qt Creator sources.
+    local system_includes=$(
+        sb2 -t "$target" gcc -x c++ -E -v /dev/null 2>&1 |awk '
+            BEGIN { inside_search_list = 0 }
+            /^#include/ { inside_search_list = 1; next }
+            (!inside_search_list) { next }
+            /^End of search list./ { exit }
+            { print }
+        '
+    )
+    # These are not contained in the target but it the tooling (or directly in
+    # the SDK if tooling is not used with the target).
+    local cross_includes=$(
+        if [[ $system_includes ]]; then
+            while read path; do
+                path=$(readlink -f "$path")
+                if [[ $path != "$MER_TARGETS/"* && $path == */opt/cross/* ]]; then
+                    printf '%s\n' "$path"
+                fi
+            done <<<"$system_includes"
+        fi
+    )
+
     echo >&2 "Synchronising target to host"
     # The filter=". -" means to read filters from stdin (the <<EOF)
     rsync -a --no-devices --no-specials \
@@ -1217,6 +1240,12 @@ synchronise_target() {
 	  --prune-empty-dirs  --copy-links \
 	  --filter=". -" \
           "$MER_TARGETS/$target/." "$HOST_TARGETS/$target/." <<EOF || return
+# It would be verbose about these, which we add manually to the destination
+- /usr/bin
+- /usr/bin/**
+# It would be verbose about these, which we rsync from elsewhere
+- /opt
+- /opt/**
 # Ensure all dirs are copied (--prune-empty-dirs will clean up)
 + */
 # We want this for QtCreator to determine the architecture
@@ -1234,6 +1263,17 @@ synchronise_target() {
 # and nothing else
 - *
 EOF
+
+    if [[ $cross_includes ]]; then
+        local src_path= dst_path=
+        while read src_path; do
+            dst_path=$HOST_TARGETS/$target/opt/cross/${src_path#*/opt/cross/}
+            mkdir -p "$dst_path" || return
+            rsync -a --delete --ignore-errors --prune-empty-dirs --copy-links \
+                "$src_path/." "$dst_path/." || return
+        done <<<"$cross_includes"
+    fi
+
     # We need /usr/bin/stopCreatorSegfaulting for Creator's happiness
     mkdir -p "$HOST_TARGETS/$target/usr/bin" || return
     touch "$HOST_TARGETS/$target/usr/bin/stopCreatorSegfaulting" || return
