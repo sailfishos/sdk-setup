@@ -37,7 +37,7 @@ def process_gcc_dump_includes(dump):
         if line.startswith(" /srv/mer/toolings/"):
             path = line.strip()
             realpath = os.path.realpath(path)
-            replaced = re.sub(r"^/srv/mer/toolings/[^/]+/opt/cross/", "/usr/", realpath)
+            replaced = re.sub(r"^/srv/mer/toolings/[^/]+/opt/cross/", "/opt/cross/", realpath)
             if replaced == realpath:
                 raise Exception("Unhandled path in GCC includes dump: '%s'" % path)
             retv.append(" " + replaced)
