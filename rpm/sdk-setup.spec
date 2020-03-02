@@ -41,6 +41,7 @@ Requires:   virtualbox-guest-tools
 Requires:   openssh-server
 Requires:   kbd
 Requires:   ncurses
+Requires:   python3-fuse
 Requires(post): /bin/ln
 Requires(post): systemd
 Conflicts:  sdk-chroot
@@ -152,6 +153,7 @@ cp --no-dereference systemd/* %{buildroot}/%{_unitdir}/
 cp src/sdk-info %{buildroot}%{_bindir}/
 cp src/sdk-setup-enginelan %{buildroot}%{_bindir}/
 cp src/sdk-shutdown %{buildroot}%{_bindir}/
+cp src/dynexecfs %{buildroot}%{_bindir}/
 # This should really be %%{_unitdir}/default.target but systemd owns that :/
 mkdir -p %{buildroot}/%{_sysconfdir}/systemd/system/
 ln -sf %{_unitdir}/multi-user.target  %{buildroot}/%{_sysconfdir}/systemd/system/default.target
@@ -280,6 +282,7 @@ fi
 %{_bindir}/sdk-info
 %{_bindir}/sdk-setup-enginelan
 %{_bindir}/sdk-shutdown
+%{_bindir}/dynexecfs
 /home/.zypp-cache
 %{_unitdir}/information.service
 %{_unitdir}/sdk-enginelan.service
