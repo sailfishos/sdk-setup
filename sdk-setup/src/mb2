@@ -667,6 +667,10 @@ git_() (
     git "$@"
 )
 
+oomadvice() {
+    /usr/libexec/sdk-setup/oomadvice "$@"
+}
+
 get_hostname_from_devices_xml() {
     local TAG_NAME= ATTRIBUTES=
     while read_dom; do
@@ -1505,7 +1509,7 @@ run_build() {
     (
         cd_to_spec_setup_dir;
         [[ $OPT_CLEAN_OUTPUTDIR ]] && rm -f "$OPT_OUTPUTDIR/"*.rpm;
-        sb2 -t $OPT_TARGET env PATH="$WRAPPERSDIR:$USERWRAPPERSDIR:$PATH" rpmbuild \
+        oomadvice sb2 -t $OPT_TARGET env PATH="$WRAPPERSDIR:$USERWRAPPERSDIR:$PATH" rpmbuild \
             --build-in-place --target=$build_tgt \
             "${BUILD_DEBUG[@]}" \
             --define "_smp_mflags -j$(rpm_quote "$BUILD_JOBS")" \
@@ -1538,7 +1542,7 @@ run_prepare() {
     (
         cd_to_spec_setup_dir;
         [[ $OPT_CLEAN_OUTPUTDIR ]] && rm -f "$OPT_OUTPUTDIR/"*.rpm;
-        sb2 -t $OPT_TARGET rpmbuild --build-in-place --target=$build_tgt \
+        oomadvice sb2 -t $OPT_TARGET rpmbuild --build-in-place --target=$build_tgt \
             "${BUILD_DEBUG[@]}" \
             --define "_smp_mflags -j$BUILD_JOBS" \
             --define "_rpmdir $OPT_OUTPUTDIR" \
@@ -1641,7 +1645,7 @@ run_cmake() {
 
     (
         cd_to_spec_setup_dir
-        sb2 -t $OPT_TARGET env PATH="${WRAPPERSDIR}:${USERWRAPPERSDIR}:${PATH}" rpmbuild \
+        oomadvice sb2 -t $OPT_TARGET env PATH="${WRAPPERSDIR}:${USERWRAPPERSDIR}:${PATH}" rpmbuild \
             --build-in-place --target=$build_tgt \
             --define "noecho 1" \
             --define "_sourcedir $(dirname $OPT_SPEC)" \
@@ -1671,7 +1675,7 @@ run_qmake() {
 
         (
             cd_to_spec_setup_dir;
-            sb2 -t $OPT_TARGET env PATH="$WRAPPERSDIR:$USERWRAPPERSDIR:$PATH" rpmbuild \
+            oomadvice sb2 -t $OPT_TARGET env PATH="$WRAPPERSDIR:$USERWRAPPERSDIR:$PATH" rpmbuild \
                 --build-in-place --target=$build_tgt \
                 --define "noecho 1" \
                 --define "_sourcedir $(dirname $OPT_SPEC)" \
@@ -1705,7 +1709,7 @@ run_make() {
 
         (
             cd_to_spec_setup_dir;
-            sb2 -t $OPT_TARGET env PATH="$WRAPPERSDIR:$USERWRAPPERSDIR:$PATH" rpmbuild \
+            oomadvice sb2 -t $OPT_TARGET env PATH="$WRAPPERSDIR:$USERWRAPPERSDIR:$PATH" rpmbuild \
                 --build-in-place --target=$build_tgt \
                 --define "noecho 1" \
                 --define "_sourcedir $(dirname $OPT_SPEC)" \
@@ -1739,7 +1743,7 @@ run_make_install() {
     # Install to buildroot which should be rsync'ed to /opt/sdk/$package on device
     (
         cd_to_spec_setup_dir;
-        sb2 -t $OPT_TARGET rpmbuild --build-in-place --target=$build_tgt \
+        oomadvice sb2 -t $OPT_TARGET rpmbuild --build-in-place --target=$build_tgt \
             --define "noecho 1" \
             --define "_sourcedir $(dirname $OPT_SPEC)" \
             --define "_buildhost $(get_hostname)" \
@@ -1767,7 +1771,7 @@ run_package() {
         increment_build_number;
         cd_to_spec_setup_dir;
         [[ $OPT_CLEAN_OUTPUTDIR ]] && rm -f "$OPT_OUTPUTDIR/"*.rpm;
-        sb2 -t $OPT_TARGET rpmbuild --build-in-place --target=$build_tgt \
+        oomadvice sb2 -t $OPT_TARGET rpmbuild --build-in-place --target=$build_tgt \
             --define "noecho 1" \
             --define "_rpmdir $OPT_OUTPUTDIR" \
             --define "_sourcedir $(dirname $OPT_SPEC)" \

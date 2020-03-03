@@ -1,0 +1,199 @@
+#!/bin/bash
+#
+# Monitor command execution and advice user when OOM killer takes action
+#
+# Copyright (C) 2020 Open Mobile Platform LLC.
+# Contact: http://jolla.com/
+# All rights reserved.
+#
+# You may use this file under the terms of BSD license as follows:
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+#   * Redistributions of source code must retain the above copyright
+#     notice, this list of conditions and the following disclaimer.
+#   * Redistributions in binary form must reproduce the above copyright
+#     notice, this list of conditions and the following disclaimer in the
+#     documentation and/or other materials provided with the distribution.
+#   * Neither the name of the Jolla Ltd nor the
+#     names of its contributors may be used to endorse or promote products
+#     derived from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+# ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+# WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+# DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS OR CONTRIBUTORS BE LIABLE FOR
+# ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+# (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+# LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+# ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+# SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+#
+
+set -o nounset
+set -o pipefail
+shopt -s extglob
+
+SELF=$(basename "$0")
+
+synopsis()
+{
+    cat <<END
+usage: oomadvice [--adj <oom_adj>] [--] command [args...]
+END
+}
+
+usage()
+{
+    cat <<END
+$(synopsis)
+
+This command is an internal command of Sailfish SDK.
+END
+}
+
+notice()
+{
+    # Keep in sync with mb2
+    printf 'NOTICE: %s\n' "$*" >&2
+}
+
+fatal()
+{
+    # Keep in sync with mb2
+    printf 'Fatal: %s\n' "$*" >&2
+}
+
+bad_usage()
+{
+    printf 'oomadvice: %s\n' "$*" >&2
+}
+
+inside_build_engine() [[ -f /etc/mer-sdk-vbox ]]
+
+journal_show_cursor()
+{
+    sudo journalctl --show-cursor -n 0 --quiet |sed -n 's/^-- cursor: \+//p'
+}
+
+journal_grep_oom_related()
+{
+    grep -i -e kill -e oom
+}
+
+journal_oom_pretty()
+{
+    local full=$(cat)
+
+    # Example journal content:
+    # Mar 03 08:24:11 SailfishSDK kernel: Out of memory: Kill process \
+    # 5528 (ld-linux.so.2) score 624 or sacrifice child
+    # Mar 03 08:24:11 SailfishSDK kernel: Killed process 5528 (ld-linux.so.2) \
+    # total-vm:199544kB, anon-rss:152212kB, file-rss:0kB, shmem-rss:180kB
+    local pretty=$(sed -n '/Kill/s/^.* kernel: \+//p' <<<"$full")
+    if (( $(wc -l <<<"$pretty") != 2 )); then
+        notice "Internal error: Unexpected format in journal"
+        pretty=$full
+    fi
+
+    printf '%s' "$pretty"
+}
+
+# Call function in a true subprocess shell
+subprocess()
+{
+    local fn=$1
+    local args=("${@:2}")
+
+    bash -c "$(declare -f $fn); $fn \"\$@\"" bash "${args[@]}"
+}
+
+set_defaults()
+{
+    OPT_OOM_ADJ=10
+    OPT_USAGE=
+    OPT_COMMAND=
+}
+
+parse_opts()
+{
+    while (( $# > 0 )); do
+        case $1 in
+            -h|--help)
+                OPT_USAGE=1
+                return
+                ;;
+            --adj)
+                if [[ ! ${2:-} ]]; then
+                    bad_usage "Option requires argument: '$1'"
+                    return 1
+                fi
+                OPT_OOM_ADJ=$2
+                shift
+                ;;
+            --)
+                shift
+                OPT_COMMAND=("$@")
+                ;;
+            -*)
+                bad_usage "Unrecognized option: '$1'"
+                return 1
+                ;;
+            *)
+                OPT_COMMAND=("$@")
+                return
+                ;;
+        esac
+        shift
+    done
+}
+
+main()
+{
+    set_defaults || return
+    parse_opts "$@" || return
+
+    if [[ $OPT_USAGE ]]; then
+        usage
+        return
+    fi
+
+    if (( ${#OPT_COMMAND[*]} == 0 )); then
+        bad_usage "Argument expected"
+        return 1
+    fi
+
+    local journal_start=$(journal_show_cursor)
+
+    slave()
+    {
+        local adj=$1
+        echo "$adj" > /proc/self/oom_adj
+        shift
+        exec "$@"
+    }
+
+    subprocess slave "$OPT_OOM_ADJ" "${OPT_COMMAND[@]}"
+    local rc=$?
+
+    if (( rc != 0 )); then
+        local oom_journal=$(sudo journalctl --cursor="$journal_start" |journal_grep_oom_related)
+        if [[ $oom_journal ]]; then
+            local pretty=$(journal_oom_pretty <<<"$oom_journal")
+            echo >&2
+            notice "Out of memory error occured during command execution:"
+            local line=
+            while read line; do
+                notice "    $line"
+            done <<<"$pretty"
+            if inside_build_engine; then
+                notice "Consider increasing memory/swap usage limits in build engine options."
+            fi
+        fi
+    fi
+
+    return "$rc"
+}
+
+main "$@"
