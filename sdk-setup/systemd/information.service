@@ -1,9 +1,8 @@
-#  This file is part of Mer SDK.
+#  This file is part of Sailfish SDK.
 #
 
 [Unit]
 Description=SDK Information
-Documentation=https://sailfishos.org/wiki/Platform_SDK
 After=systemd-user-sessions.service plymouth-quit-wait.service multi-user.target network.target
 
 [Service]

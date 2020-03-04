@@ -1,4 +1,4 @@
-#  This file is part of Mer SDK.
+#  This file is part of Sailfish SDK.
 #
 [Timer]
 # Refresh 5 minutes after booting or every day if left running

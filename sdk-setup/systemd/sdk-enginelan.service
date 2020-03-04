@@ -1,9 +1,8 @@
-#  This file is part of Mer SDK.
+#  This file is part of Sailfish SDK.
 #
 
 [Unit]
 Description=SDK Engine LAN
-Documentation=https://wiki.merproject.org/wiki/SDK_on_VirtualBox/Design
 # We need the shared mount and we should setup after connman is available
 After=etc-mersdk-share.service connman.service
 

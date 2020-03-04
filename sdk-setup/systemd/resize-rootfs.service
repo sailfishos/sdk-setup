@@ -1,9 +1,8 @@
-#  This file is part of Mer SDK.
+#  This file is part of Sailfish SDK.
 #  It provides support for automatically resizing the root filesystem
 
 [Unit]
 Description=Resize rootfs
-Documentation=https://sailfishos.org/wiki/Platform_SDK
 
 [Service]
 Type=oneshot
