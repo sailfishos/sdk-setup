@@ -1,0 +1,13 @@
+#  This file is part of Sailfish SDK.
+
+[Unit]
+Description=Setup swap inside VirtualBox based SDK Build Engine
+After=vboxservice.service
+ConditionVirtualization=oracle
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/sdk-setup/sdk-setup-swap
+
+[Install]
+WantedBy=basic.target

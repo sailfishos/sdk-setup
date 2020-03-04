@@ -1,0 +1,215 @@
+#!/bin/sh
+#
+# Optionally set up a swap
+#
+# Copyright (C) 2020 Open Mobile Platform LLC.
+# Contact: http://jolla.com/
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#
+# - Redistributions of source code must retain the above copyright
+#   notice, this list of conditions and the following disclaimer.
+# - Redistributions in binary form must reproduce the above copyright
+#   notice, this list of conditions and the following disclaimer in
+#   the documentation and/or other materials provided with the
+#   distribution.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+# ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+# LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+# POSSIBILITY OF SUCH DAMAGE.
+
+set -o nounset
+set -o pipefail
+shopt -s extglob
+
+synopsis()
+{
+    cat <<END
+usage: sdk-setup-swap [--help]
+END
+}
+
+usage()
+{
+    cat <<END
+$(synopsis)
+
+This command is an internal command of Sailfish SDK.
+END
+}
+
+info()
+{
+    printf 'sdk-setup-swap: %s\n' "$*" >&2
+}
+
+fatal()
+{
+    printf 'sdk-setup-swap: fatal: %s\n' "$*" >&2
+}
+
+bad_usage()
+{
+    printf 'sdk-setup-swap: %s\n' "$*" >&2
+}
+
+inside_build_engine() [[ -f /etc/mer-sdk-vbox ]]
+inside_virtualbox() [[ $(systemd-detect-virt) == oracle ]]
+
+guestproperty_get_int()
+{
+    local property=$1
+
+    local out=
+    if out=$(VBoxControl --nologo guestproperty get "$property"); then
+        if [[ $out =~ ^Value:\ ([0-9]+)$ ]]; then
+            echo ${BASH_REMATCH[1]}
+        else
+            fatal "Unrecognized output from VBoxControl: '$out'"
+            return 1
+        fi
+    else
+        if [[ $out == "No value set!" ]]; then
+            echo 0
+        else
+            fatal "Error quering guestproperty with VBoxControl"
+            return 1
+        fi
+    fi
+}
+
+guestproperty_set_int()
+{
+    local property=$1 value=$2
+    VBoxControl --nologo guestproperty set "$property" "$value"
+}
+
+set_defaults()
+{
+    SWAP_FILE=/swap
+    SWAP_SIZE_MB_PROPERTY=/SailfishSDK/VM/Swap/SizeMb
+    RESERVED_MB=1024
+
+    OPT_USAGE=
+}
+
+parse_opts()
+{
+    while (( $# > 0 )); do
+        case $1 in
+            -h|--help)
+                OPT_USAGE=1
+                return
+                ;;
+            -*)
+                bad_usage "Unrecognized option: '$1'"
+                return 1
+                ;;
+            *)
+                bad_usage "Unexpected argument: '$1'"
+                return 1
+                ;;
+        esac
+        shift
+    done
+}
+
+main()
+{
+    set_defaults || return
+    parse_opts "$@" || return
+
+    if [[ $OPT_USAGE ]]; then
+        usage
+        return
+    fi
+
+    if (( UID != 0 )); then
+        fatal "Must be run as root"
+        return 1
+    fi
+
+    if ! inside_build_engine; then
+        fatal "Not running inside Sailfish SDK Build Engine"
+        return 1
+    fi
+    
+    if ! inside_virtualbox; then
+        fatal "Not running inside VirtualBox"
+        return 1
+    fi
+
+    if swapon --show --raw --noheadings |grep -q "^${SWAP_FILE} "; then
+        fatal "Swap file '$SWAP_FILE' already in use"
+        return 1
+    fi
+
+    local requested_mb=
+    requested_mb=$(guestproperty_get_int "$SWAP_SIZE_MB_PROPERTY") || return
+
+    if (( requested_mb == 0 )); then
+        info "Swap not enabled"
+        return
+    fi
+
+    if [[ -e $SWAP_FILE ]]; then
+        if ! swapon "$SWAP_FILE"; then
+            fatal "Failed to reuse existing (swap?) file"
+            return 1
+        fi
+
+        local existing_mb_expr= existing_mb=
+        existing_mb_expr=$(stat "$SWAP_FILE" --format "%s >> 20") || return
+        existing_mb=$(($existing_mb_expr)) || return
+
+        if (( existing_mb == requested_mb )); then
+            info "Reused existing swap file '$SWAP_FILE' with the right size"
+            return
+        fi
+
+        info "Reinitializing existing swap file '$SWAP_FILE' with new size"
+
+        swapoff "$SWAP_FILE" || return
+    fi
+
+    touch "$SWAP_FILE" || return
+    chmod 600 "$SWAP_FILE" || return
+
+    local available_mb_expr= available_mb=
+    available_mb_expr=$(stat --file-system "$SWAP_FILE" --format "(%a * %s) >> 20") || return
+    available_mb=$(($available_mb_expr)) || return
+    let available_mb-=RESERVED_MB
+
+    local actual_mb=
+    if (( requested_mb <= available_mb )); then
+        actual_mb=$requested_mb
+    else
+        info "Available disk space too small. Swap will be smaller then requested."
+        actual_mb=$available_mb
+    fi
+
+    if ! dd if=/dev/zero bs=1M count="$actual_mb" of="$SWAP_FILE"; then
+        rm -f "$SWAP_FILE"
+        return 1
+    fi
+
+    mkswap "$SWAP_FILE" || return
+    swapon "$SWAP_FILE" || return
+
+    if (( actual_mb < requested_mb )); then
+        guestproperty_set_int "$SWAP_SIZE_MB_PROPERTY" "$actual_mb"
+    fi
+}
+
+main "$@"
