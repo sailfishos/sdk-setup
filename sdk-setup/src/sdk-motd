@@ -310,12 +310,17 @@ is_requirement_met()
 
 requires_older() [[ $1 == *'<'* ]]
 
+list_all_motds()
+{
+    sed -n \
+        's/^[[:space:]]*===[[:space:]]*\([^=[:space:]].*[^[:space:]]\)[[:space:]]*===[[:space:]]*$/\1/p' \
+        "$CACHE_FILE"
+}
+
 list_motds()
 {
     local titles=
-    titles=$(sed -n \
-        's/^[[:space:]]*===[[:space:]]*\([^=[:space:]].*[^[:space:]]\)[[:space:]]*===[[:space:]]*$/\1/p' \
-        "$CACHE_FILE")
+    titles=$(list_all_motds)
     [[ ! $titles ]] && return
 
     local title= requirement=
@@ -588,7 +593,8 @@ main()
         return
     fi
 
-    if ! [[ -e "$CACHE_FILE" ]]; then
+    if [[ ! -s $CACHE_FILE || $CACHE_FILE -ot $SYSTEM_CACHE_FILE || ! $(list_all_motds) ]]; then
+        rm -f "$CACHE_FILE"
         mkdir -p "$(dirname "$CACHE_FILE")" || return
         cp "$SYSTEM_CACHE_FILE" "$CACHE_FILE" || return
         # Do not delay daily refresh in case it is desired
