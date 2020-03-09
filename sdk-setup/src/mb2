@@ -1048,7 +1048,7 @@ get_device() {
                 if [[ "$maintag" == "device" ]] && [[ $IN_DEVICE != 1 ]]; then
                     continue
                 fi
-                eval ${maintag}_$TAG_NAME=\"$CONTENT\"
+                eval ${maintag}_$TAG_NAME=\'$CONTENT\'
                 ;;
         esac
     done
@@ -1059,21 +1059,59 @@ get_device() {
     if [[ ! "$device_sshport" ]]; then
         device_sshport=22
     fi
+    if [[ "$device_sshkeypath" == '$HOME/'* ]]; then
+        local real_home=$(inside_build_engine && echo "$HOME/share" || echo "$HOME")
+        device_sshkeypath=$real_home/${device_sshkeypath#\$HOME/}
+    elif [[ "$device_sshkeypath" ]]; then
+        device_sshkeypath=$(get_shared_dir)/${device_sshkeypath}
+    fi
     if [[ "$FOUND_DEVICE" == 1 ]]; then return 0; else return 1; fi
+}
+
+# SSH requires that a private key file is only accessible to the user. Under
+# build engine, file permissions under ~/share are too open to comply with
+# that.  Loading key from stdin is a way to work this around.
+with_specific_or_default_keys() {
+    local user=$1 command=("${@:2}")
+
+    local key=$device_sshkeypath
+    if [[ $key ]]; then
+        [[ -f $key ]] || key=$key/$user
+        [[ -f $key ]] || fatal "SSH key not configured for user '$user' on '$device_name'"
+    fi
+
+    add_specific_or_default_keys() {
+        local key=$1
+        if [[ $key ]]; then
+            ssh-add -q - <"$key" || return
+        elif inside_build_engine; then
+            local real_home="$HOME/share"
+            local default_key=
+            # See in Qt Creator sources for defaultKeys() in
+            # genericlinuxdeviceconfigurationwizardpages.cpp
+            for default_key in "$real_home"/.ssh/id_{rsa,ecdsa,ed25519}; do
+                if [[ -f $default_key ]]; then
+                    ssh-add -q - <"$default_key" # allow failure
+                fi
+            done
+        fi
+    }
+
+    ssh-agent bash -c "$(declare -f inside_build_engine add_specific_or_default_keys);
+        add_specific_or_default_keys $(quote "$key") && $(quote "${command[@]}")" bash
 }
 
 rsync_as() {
     local user="$1";shift
-    local key=$(get_shared_dir)/${device_sshkeypath}/$user
-    [[ -f "$key" ]] || fatal "SSH key not configured for user '$user' on '$device_name'"
-    RSYNC_RSH="ssh -F /etc/ssh/ssh_config.sdk -l $user -i \"$key\" -p $device_sshport" rsync "$@"
+    RSYNC_RSH="ssh -F /etc/ssh/ssh_config.sdk -l $user -p $device_sshport" \
+        with_specific_or_default_keys "$user" \
+        rsync "$@"
 }
 
 ssh_as() {
     local user="$1";shift
-    local key=$(get_shared_dir)/${device_sshkeypath}/$user
-    [[ -f "$key" ]] || fatal "SSH key not configured for user '$user' on '$device_name'"
-    ssh -F /etc/ssh/ssh_config.sdk -i "$key" -l $user $device_ip -p $device_sshport "$(quote "$@")"
+    with_specific_or_default_keys "$user" \
+        ssh -F /etc/ssh/ssh_config.sdk -l $user $device_ip -p $device_sshport "$(quote "$@")"
 }
 
 cd_to_spec_setup_dir() {
