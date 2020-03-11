@@ -1534,7 +1534,7 @@ run_deploy() {
                 all_opt=$1
                 ;;
             --debug )
-                patterns=
+                patterns=()
                 ;;
             -- )
                 shift
