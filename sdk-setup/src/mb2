@@ -756,7 +756,8 @@ find_latest_rpms() {
     local dir=$1 patterns=("${@:2}")
 
     local latest=$(
-        zypper --plus-repo "$dir/" search --repo ~plus-repo-1 --details \
+        sb2 -t "$OPT_TARGET" -m sdk-install \
+            zypper --plus-repo "$dir/" search --repo ~plus-repo-1 --details \
             `# drop header` \
             |sed '1,/^--/d' \
             `# zypper sorts by version: revert it and keep first for each name` \
