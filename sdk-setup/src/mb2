@@ -979,6 +979,7 @@ read_dom () {
     local RET=$?
     TAG_NAME=${ENTITY%% *}
     ATTRIBUTES=${ENTITY#* }
+    ATTRIBUTES=${ATTRIBUTES%/}
     return $RET
 }
 
