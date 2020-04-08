@@ -58,6 +58,10 @@ def maybe_mark_as_executable(st, path):
     if S_ISLNK(st.st_mode) or S_ISREG(st.st_mode) and looks_like_executable("." + path):
         st = stat_result2fuse_stat(st)
         st.st_mode |= S_IXUSR | S_IXGRP | S_IXOTH
+    elif S_ISREG(st.st_mode):
+        st = stat_result2fuse_stat(st)
+        st.st_mode &= ~(S_IXUSR | S_IXGRP | S_IXOTH)
+
     return st
 
 
