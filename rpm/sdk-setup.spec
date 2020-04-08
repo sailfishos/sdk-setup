@@ -236,6 +236,7 @@ rm -Rf /home/.zypp-cache
 %preun -n sdk-vm
 %systemd_preun home-mersdk-share-raw.service
 %systemd_preun home-mersdk-share-dynexec.service
+%systemd_preun home-mersdk-share-dynexec-docker.service
 %systemd_preun etc-mersdk-share.service
 %systemd_preun etc-ssh-authorized_keys.mount
 %systemd_preun host_install.service
@@ -246,6 +247,7 @@ rm -Rf /home/.zypp-cache
 %post -n sdk-vm
 %systemd_post home-mersdk-share-raw.service
 %systemd_post home-mersdk-share-dynexec.service
+%systemd_post home-mersdk-share-dynexec-docker.service
 %systemd_post etc-mersdk-share.service
 %systemd_post etc-ssh-authorized_keys.mount
 %systemd_post host_install.service
@@ -292,6 +294,7 @@ fi
 %{_unitdir}/host_targets.service
 %{_unitdir}/home-mersdk-share-raw.service
 %{_unitdir}/home-mersdk-share-dynexec.service
+%{_unitdir}/home-mersdk-share-dynexec-docker.service
 %{_unitdir}/etc-mersdk-share.service
 %{_unitdir}/etc-ssh-authorized_keys.mount
 %{_unitdir}/sdk-refresh.service
