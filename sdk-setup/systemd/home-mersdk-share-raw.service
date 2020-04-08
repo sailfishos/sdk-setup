@@ -1,5 +1,6 @@
 [Unit]
 Description=Shared home using raw vboxsf
+ConditionVirtualization=oracle
 ConditionPathExists=/etc/mersdk/share/home-mersdk-share.no-dynexec
 After=etc-mersdk-share.service
 
