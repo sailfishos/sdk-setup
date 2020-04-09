@@ -1251,9 +1251,15 @@ synchronise_target() {
         fi
     )
 
+    local maybe_times=--times
+    if [[ $(systemd-detect-virt) == docker ]]; then
+	# It would fail with EPERM
+        maybe_times=
+    fi
+
     echo >&2 "Synchronising target to host"
     # The filter=". -" means to read filters from stdin (the <<EOF)
-    rsync -a --no-devices --no-specials \
+    rsync -r $maybe_times --no-devices --no-specials \
           --delete --ignore-errors \
 	  --prune-empty-dirs  --copy-links \
 	  --filter=". -" \
@@ -1287,7 +1293,7 @@ EOF
         while read src_path; do
             dst_path=$HOST_TARGETS/$target/opt/cross/${src_path#*/opt/cross/}
             mkdir -p "$dst_path" || return
-            rsync -a --delete --ignore-errors --prune-empty-dirs --copy-links \
+            rsync -r $maybe_times --delete --ignore-errors --prune-empty-dirs --copy-links \
                 "$src_path/." "$dst_path/." || return
         done <<<"$cross_includes"
     fi
