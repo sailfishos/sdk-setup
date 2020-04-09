@@ -803,6 +803,24 @@ install_tooling() {
         return 1
     fi
 
+    # FIXME we have INSIDE_CHROOT and INSIDE_VBOX, but the latter is true also under docker
+    if [[ $(systemd-detect-virt) == docker ]]; then
+        sudo sed -i "$MER_TOOLINGS/$name/mer-tooling-chroot" -e '
+            /^if cmp .*mountinfo/ {
+                i \# sdk-manage disabled this under docker
+                s/^/#/
+                a \if false\; then
+            }
+            /^\s*mount .*resolv.conf/ {
+                i \    # sdk-manage replaced this under docker
+                h
+                s/mount/#mount/
+                p
+                g
+                s/mount -o bind,ro /cp /
+            }'
+    fi
+
     if [[ $MODE == "$MODE_USER" ]]; then
         if [[ $INSIDE_VBOX ]]; then
             local size=$(sudo du --summarize --bytes "$MER_TOOLINGS/$name" |cut -f1)
