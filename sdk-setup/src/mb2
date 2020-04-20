@@ -1353,8 +1353,6 @@ run_build() {
             "$TMP_SPEC" \
             "$@"
     )
-    local rc=$?
-    return $rc
 }
 
 run_prepare() {
@@ -1385,8 +1383,6 @@ run_prepare() {
             -bp --short-circuit \
             "$TMP_SPEC"
     )
-    local rc=$?
-    return $rc
 }
 
 run_qmake() {
@@ -1417,8 +1413,6 @@ run_qmake() {
                 -bc --short-circuit \
                 "$TMP_SPEC"
         )
-        local rc=$?
-        return $rc
     else
         sb2 -t $OPT_TARGET qmake "$@" ${OPT_PRO_FILE_OR_DIR:+"$OPT_PRO_FILE_OR_DIR"}
     fi
@@ -1450,8 +1444,6 @@ run_make() {
                 -bc --short-circuit \
                 "$TMP_SPEC"
         )
-        local rc=$?
-        return $rc
     else
         sb2 -t $OPT_TARGET make "$@"
     fi
@@ -1487,8 +1479,6 @@ run_make_install() {
             -bi --short-circuit $maybe_nocheck \
             "$TMP_SPEC"
     )
-    local rc=$?
-    return $rc
 }
 
 run_package() {
@@ -1518,8 +1508,6 @@ run_package() {
             -bb --noprep --nobuildstage --noclean \
             "$TMP_SPEC"
     )
-    local rc=$?
-    return $rc
 }
 
 run_deploy() {
