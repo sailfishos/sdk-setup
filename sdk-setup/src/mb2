@@ -1175,7 +1175,7 @@ init_qmake_wrapper() (
         echo "$self: Executing real $command:" >&2
 
         set -x
-        "$real" "$@"
+        "$real" "$@" "${EXTRA_ARGS[@]}"
     }
 
     init_wrappers_dir
@@ -1186,10 +1186,11 @@ IS_SHADOW_BUILD=$(is_shadow_build && echo 1)
 BUILD_DIR=$(quote "$PWD")
 SRC_DIR=$(quote "${OPT_SRC_DIR:-$PWD}")
 VARIABLES_CACHE=$STATEDIR/qmake_variables.cache
+EXTRA_ARGS=($(quote "${extra_args[@]}"))
 
 $(declare -f main)
 
-main "\$@" $(quote "${extra_args[@]}")
+main "\$@"
 END
     chmod +x "$wrapper"
 )
