@@ -219,26 +219,31 @@ COMMANDS
 
     apply [-R]
         Apply all patches defined in the .spec file to the source tree.
+
         -R    reverse apply patches (patch -R)
 
     build [-p|--doprep] [-d|--enable-debug] [-j <n>] [<project-dir-or-file>]
           [[--] <rpmbuild-extra-args>]
         Run rpmbuild. Execute all sections of the .spec file except for %prep
-        unless told otherwise. If path to a <project-dir-or-file> is passed,
-        shadow build will be done. Otherwise the current working directory is
-        treated as the project directory. (The file name part is ignored -
-        project file selection is done by qmake call inside the .spec file.)
+        unless told otherwise.
+
+        If path to a <project-dir-or-file> is passed, shadow build will be
+        done. Otherwise the current working directory is treated as the
+        project directory. (The file name part is ignored - project file
+        selection is done by qmake call inside the .spec file.)
+
         -p    run %prep phase as well
         -d    enable debug build
         -j <n> run up to <n> jobs simultaneously
 
     qmake [<project-dir-or-file>] [[--] <qmake-extra-args>]
         Run rpmbuild. Execute just the %build section of the .spec file,
-        suppressing any "make" invocation figuring in that section. If path to
-        a <project-dir-or-file> is passed, shadow build will be done. Otherwise
-        the current working directory is treated as the project directory. (The
-        file name part is ignored - project file selection is done by qmake call
-        inside the .spec file.)
+        suppressing any 'make' invocation figuring in that section.
+
+        If path to a <project-dir-or-file> is passed, shadow build will be
+        done. Otherwise the current working directory is treated as the
+        project directory. (The file name part is ignored - project file
+        selection is done by qmake call inside the .spec file.)
 
     make [<make-extra-args>]
         Run rpmbuild. Execute just the %build section of the .spec file,
