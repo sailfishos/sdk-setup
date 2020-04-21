@@ -2633,14 +2633,21 @@ END
 
 arg_pass_stub_create() {
     while [[ ${1:-} ]]; do
-        local stub=$STUBS_DIR/$1
-        local results=$STUBS_DIR/$1.args
+        local name=${1%:*}
+        local opts=${1##*:}
+        local stub=$STUBS_DIR/$name
+        local results=$STUBS_DIR/$name.args
+
+        local redirect='>'
+        if [[ $opts == *a* ]]; then
+            redirect='>>'
+        fi
 
         touch "$results" || return
         cat >"$stub" <<END || return
 #!/bin/bash
 echo "stub invoked: \$0 \$(printf "%q " "\$@")" >&2
-{ [[ \$# -ne 0 ]] && printf "%q\\n" "\$@"; } >"$results"
+{ [[ \$# -ne 0 ]] && printf "%q\\n" "\$@"; } $redirect"$results"
 exit 0
 END
         chmod +x "$stub" || return
@@ -2673,6 +2680,11 @@ arg_pass_stub_clear() {
 
 expect_args() {
     [[ $# -ne 0 ]] && printf "%q\n" "$@" || true
+}
+
+expect_next_args() {
+    echo
+    expect_args "$@"
 }
 
 sb2_stub() {
