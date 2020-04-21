@@ -2683,12 +2683,9 @@ sb2_stub() {
         echo "stub $0: unexpected arguments: $(printf "%q " "${args[@]}")" >&2
     }
 
-    if ! [[ $1 == -t && $3 != -* ]]; then
-        bad_args
-        return 1
-    fi
-
-    shift 2
+    [[ $1 == -t ]] && shift 2 || { bad_args; return 1; }
+    [[ $1 == -m ]] && shift 2
+    [[ $1 != -* ]] || { bad_args; return 1; }
 
     env=(env)
     if [[ $1 == env ]]; then
@@ -2716,6 +2713,9 @@ sb2_stub() {
             exec "${env[@]}" "$@" >&2
             ;;
         rpmspec)
+            exec "${env[@]}" "$@"
+            ;;
+        zypper)
             exec "${env[@]}" "$@"
             ;;
         *)
