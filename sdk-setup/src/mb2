@@ -1133,23 +1133,23 @@ init_qmake_wrapper() (
     local extra_args=("${@:2}")
 
     main() {
-        self=${0#$PWD/}
-        command=${0##*/}
+        local self=${0#$PWD/}
+        local command=${0##*/}
 
-        path=${0%/*}
+        local path=${0%/*}
         PATH=${PATH/$path:/}
 
-        real=$(which "$command")
+        local real=$(which "$command")
         if [[ ! $real || $real == "$0" ]]; then
             echo "$self: Cannot find real $command" >&2
             exit 1
         fi
 
         if [[ $IS_SHADOW_BUILD ]]; then
-            subdir=${PWD#$BUILD_DIR}
-            src_dir=$SRC_DIR${subdir:+/$subdir}
-            args=()
-            pro_passed=
+            local subdir=${PWD#$BUILD_DIR}
+            local src_dir=$SRC_DIR${subdir:+/$subdir}
+            local args=()
+            local pro_passed=
             for arg in "$@"; do
                 if [[ $arg == *.pro && -f $src_dir/$arg ]]; then
                     args+=("$src_dir/$arg")
@@ -1164,7 +1164,7 @@ init_qmake_wrapper() (
             set -- "${args[@]}"
         fi
 
-        assignments=()
+        local assignments=()
         for arg in "$@"; do
             if [[ $arg =~ ^[a-zA-Z_][a-zA-Z0-9_]*= ]]; then
                 assignments+=("$arg")
