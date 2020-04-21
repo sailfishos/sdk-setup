@@ -2539,6 +2539,8 @@ STUBS_DIR=$(readlink -f stubs)
 ORIG_PATH=$PATH
 export PATH="$STUBS_DIR:$PATH"
 
+BUILDHOST=$(get_hostname)
+
 if ! which make >/dev/null; then
     fatal "Please install 'make' and try again"
 fi
@@ -2868,6 +2870,7 @@ run_tc sb2_arg_pass "prepare" \
         --define '_rpmdir /tmp/@TMPDIR@/RPMS' \
         --define '_sourcedir /tmp/@TMPDIR@/rpm' \
         --define '_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm' \
+        --define "_buildhost $BUILDHOST" \
         --buildroot=/tmp/@TMPDIR@/installroot \
         -bp --short-circuit \
         /tmp/@TMPDIR@/.mb2/spec)" \
@@ -2882,6 +2885,7 @@ run_tc sb2_arg_pass "build" \
         --define '_rpmdir /tmp/@TMPDIR@/RPMS' \
         --define '_sourcedir /tmp/@TMPDIR@/rpm' \
         --define '_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm' \
+        --define "_buildhost $BUILDHOST" \
         --buildroot=/tmp/@TMPDIR@/installroot \
         -bb \
         /tmp/@TMPDIR@/.mb2/spec \
@@ -2896,6 +2900,7 @@ run_tc sb2_arg_pass "build with debug" \
         --define '_rpmdir /tmp/@TMPDIR@/RPMS' \
         --define '_sourcedir /tmp/@TMPDIR@/rpm' \
         --define '_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm' \
+        --define "_buildhost $BUILDHOST" \
         --buildroot=/tmp/@TMPDIR@/installroot \
         -bb \
         /tmp/@TMPDIR@/.mb2/spec \
@@ -2908,6 +2913,7 @@ run_tc sb2_arg_pass "qmake" \
         --build-in-place --target= \
         --define 'noecho 1' \
         --define '_sourcedir /tmp/@TMPDIR@/rpm' \
+        --define "_buildhost $BUILDHOST" \
         -bc --short-circuit \
         /tmp/@TMPDIR@/.mb2/spec)" \
     qmake "a b" "c  d" e f
@@ -2918,6 +2924,7 @@ run_tc sb2_arg_pass "make" \
         --build-in-place --target= \
         --define 'noecho 1' \
         --define '_sourcedir /tmp/@TMPDIR@/rpm' \
+        --define "_buildhost $BUILDHOST" \
         -bc --short-circuit \
         /tmp/@TMPDIR@/.mb2/spec)" \
     make "a b" "c  d" e f
@@ -2928,6 +2935,7 @@ run_tc sb2_arg_pass "make-install" \
         -t "$DEFAULT_TARGET" rpmbuild --build-in-place --target= \
         --define 'noecho 1' \
         --define '_sourcedir /tmp/@TMPDIR@/rpm' \
+        --define "_buildhost $BUILDHOST" \
         --define '_skip_install_processing 1' \
         --buildroot='/tmp/@TMPDIR@/installroot' \
         -bi --short-circuit --nocheck \
@@ -2942,6 +2950,7 @@ run_tc sb2_arg_pass "package" \
         --define '_rpmdir /tmp/@TMPDIR@/RPMS' \
         --define '_sourcedir /tmp/@TMPDIR@/rpm' \
         --define '_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm' \
+        --define "_buildhost $BUILDHOST" \
         --buildroot='/tmp/@TMPDIR@/installroot' \
         -bb --noprep --nobuildstage --noclean \
         /tmp/@TMPDIR@/.mb2/spec)" \
