@@ -3072,17 +3072,15 @@ run_tc rpmbuild_arg_pass "qmake" \
     "$(expect_args )" \
     qmake "a b" "c  d" e f
 
+maybe_jopt=
 if [[ $DEFAULT_JOBS -ne 1 ]]; then
-    run_tc rpmbuild_arg_pass "make" \
-        "$(expect_args )" \
-        "$(expect_args -j"$DEFAULT_JOBS" "a b" "c  d" e f)" \
-        make "a b" "c  d" e f
-else
-    run_tc rpmbuild_arg_pass "make" \
-        "$(expect_args )" \
-        "$(expect_args "a b" "c  d" e f)" \
-        make "a b" "c  d" e f
+    maybe_jopt=-j$DEFAULT_JOBS
 fi
+
+run_tc rpmbuild_arg_pass "make" \
+    "$(expect_args )" \
+    "$(expect_args $maybe_jopt "a b" "c  d" e f)" \
+    make "a b" "c  d" e f
 
 tear_down_ts rpmbuild_arg_pass
 
