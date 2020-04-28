@@ -1,7 +1,7 @@
 #!/bin/bash
 #
-# Copyright (C) 2013-2019 Jolla Ltd.
-# Copyright (C) 2019-2020 Open Mobile Platform LLC.
+# Copyright (C) 2013 - 2020 Jolla Ltd.
+# Copyright (C) 2019 - 2020 Open Mobile Platform LLC.
 # Contact: http://jolla.com/
 # All rights reserved.
 #
@@ -51,9 +51,7 @@ usage() {
     less --quit-if-one-screen <<EOF
 $(synopsis)
 
-Executes a subset of build commands in the context of an rpmbuild.
-Typically called from QtCreator to perform qmake/make phases of a project.
-Note that any other build steps in the .spec file will also be run.
+Executes all or a subset of build commands in the context of an rpmbuild.
 
 <specfile> will be looked for in the current rpm/ dir. If there is more than
 one it must be provided.  $ME is aware of spectacle and will update the spec
@@ -64,7 +62,7 @@ SHADOW BUILDS
 
 CWD is used as a base dir for installroot/ and RPMS/ to allow for shadow
 builds. Shadow builds can be done by passing project file or directory path to
-the "build" or "qmake" command:
+the "build" or "qmake" (or "cmake") command:
 
     $ mkdir build && cd build
     $ mb2 build ../path/to/sources
@@ -78,9 +76,10 @@ the "build" or "qmake" command:
 
 Limitations related to shadow builds:
 
-    1. Shadow build is only available for packages that use qmake and
-       their build and install procedure is fully realized using qmake
-       with no additional steps implemented at .spec level.
+    1. Shadow build is only available for packages that use qmake (or CMake).
+       Additionally, their build and install procedure must be fully realized
+       using qmake (or CMake) with no additional steps implemented at .spec
+       level.
     2. The "--doprep" option to the "build" command cannot be used with shadow
        builds.
     3. If "prepare" or "apply" is needed, it must be used directly on the
@@ -201,8 +200,9 @@ the actual changelog.
 COMMANDS
     build-requires [--[no-]refresh] {pull|reset}
         When 'pull' is used, install or update the build-time dependencies as
-        is done implicitly by the "prepare", "build" and "qmake" commands but
-        refresh the package cache first, unless '--no-refresh' is active.
+        is done implicitly by the 'prepare', 'build' and 'qmake' (or 'cmake')
+        commands but refresh the package cache first, unless '--no-refresh' is
+        active.
 
         When the global '--snapshot' option is used, '--no-refresh' is
         implied.  This can be overriden with '--refresh' - do not use unless
@@ -219,30 +219,61 @@ COMMANDS
 
     apply [-R]
         Apply all patches defined in the .spec file to the source tree.
+
         -R    reverse apply patches (patch -R)
 
     build [-p|--doprep] [-d|--enable-debug] [-j <n>] [<project-dir-or-file>]
           [[--] <rpmbuild-extra-args>]
         Run rpmbuild. Execute all sections of the .spec file except for %prep
-        unless told otherwise. If path to a <project-dir-or-file> is passed,
-        shadow build will be done. Otherwise the current working directory is
-        treated as the project directory. (The file name part is ignored -
-        project file selection is done by qmake call inside the .spec file.)
+        unless told otherwise.
+
+        If path to a <project-dir-or-file> is passed, shadow build will be
+        done. Otherwise the current working directory is treated as the
+        project directory. (The file name part is ignored - project file
+        selection is done by qmake call inside the .spec file.)
+
         -p    run %prep phase as well
         -d    enable debug build
         -j <n> run up to <n> jobs simultaneously
 
     qmake [<project-dir-or-file>] [[--] <qmake-extra-args>]
         Run rpmbuild. Execute just the %build section of the .spec file,
-        suppressing any "make" invocation figuring in that section. If path to
-        a <project-dir-or-file> is passed, shadow build will be done. Otherwise
-        the current working directory is treated as the project directory. (The
-        file name part is ignored - project file selection is done by qmake call
-        inside the .spec file.)
+        suppressing any 'make' invocation figuring in that section.
+
+        If path to a <project-dir-or-file> is passed, shadow build will be
+        done. Otherwise the current working directory is treated as the
+        project directory. (The file name part is ignored - project file
+        selection is done by qmake call inside the .spec file.)
+
+    cmake [<project-dir>] [[--] <cmake-extra-args>]
+    cmake --build . [<cmake-extra-args>] [-- <build-tool-extra-args>]
+        Run rpmbuild. Execute just the %build section of the .spec file,
+        suppressing any 'cmake' invocation figuring in that section, that does
+        not match the execution form used here, i.e., does not trigger the
+        desired action, namely 1) generate a project buildsystem or
+        2) build the project.
+
+        Additionally, any plain 'make' invocation will be recognized as
+        implementing the 'build the project' action and will be treated
+        accordingly. Any possible <cmake-extra-args> will be silently ignored
+        and any possible <build-tools-extra-args> will be used equally for
+        each 'make' invocation in that case.
+
+        If path to a <project-dir> is passed, shadow build will be done.
+        Otherwise the current working directory is treated as the project
+        directory.
 
     make [<make-extra-args>]
         Run rpmbuild. Execute just the %build section of the .spec file,
-        suppressing any "qmake" invocation figuring in that section.
+        suppressing any command figuring in that section, that is recognized
+        as a command to generate project buildsystem, namely,
+
+        - any 'qmake' invocation
+        - any 'cmake' invocation using the corresponding execution form
+
+        For CMake based projects the 'make <make-extra-args>' command is
+        equivalent to 'cmake --build . -- <make-extra-args>' (provided that
+        'make' is the build tool used by the project).
 
     make-install
         Run rpmbuild. Execute just the %install section of the .spec file.
@@ -1133,23 +1164,23 @@ init_qmake_wrapper() (
     local extra_args=("${@:2}")
 
     main() {
-        self=${0#$PWD/}
-        command=${0##*/}
+        local self=${0#$PWD/}
+        local command=${0##*/}
 
-        path=${0%/*}
+        local path=${0%/*}
         PATH=${PATH/$path:/}
 
-        real=$(which "$command")
+        local real=$(which "$command")
         if [[ ! $real || $real == "$0" ]]; then
             echo "$self: Cannot find real $command" >&2
             exit 1
         fi
 
         if [[ $IS_SHADOW_BUILD ]]; then
-            subdir=${PWD#$BUILD_DIR}
-            src_dir=$SRC_DIR${subdir:+/$subdir}
-            args=()
-            pro_passed=
+            local subdir=${PWD#$BUILD_DIR}
+            local src_dir=$SRC_DIR${subdir:+/$subdir}
+            local args=()
+            local pro_passed=
             for arg in "$@"; do
                 if [[ $arg == *.pro && -f $src_dir/$arg ]]; then
                     args+=("$src_dir/$arg")
@@ -1164,7 +1195,7 @@ init_qmake_wrapper() (
             set -- "${args[@]}"
         fi
 
-        assignments=()
+        local assignments=()
         for arg in "$@"; do
             if [[ $arg =~ ^[a-zA-Z_][a-zA-Z0-9_]*= ]]; then
                 assignments+=("$arg")
@@ -1175,7 +1206,7 @@ init_qmake_wrapper() (
         echo "$self: Executing real $command:" >&2
 
         set -x
-        "$real" "$@"
+        "$real" "$@" "${EXTRA_ARGS[@]}"
     }
 
     init_wrappers_dir
@@ -1186,10 +1217,144 @@ IS_SHADOW_BUILD=$(is_shadow_build && echo 1)
 BUILD_DIR=$(quote "$PWD")
 SRC_DIR=$(quote "${OPT_SRC_DIR:-$PWD}")
 VARIABLES_CACHE=$STATEDIR/qmake_variables.cache
+EXTRA_ARGS=($(quote "${extra_args[@]}"))
 
 $(declare -f main)
 
-main "\$@" $(quote "${extra_args[@]}")
+main "\$@"
+END
+    chmod +x "$wrapper"
+)
+
+# 1. Allows to pass extra arguments to cmake
+# 2. Enables shadow build by adding path prefix to the project-dir argument, or
+# 2.1 passing project directory path if it was not passed
+# 3. Allows to suppress cmake not invoked in the desired mode
+init_cmake_wrapper() (
+    local wrapper=$1
+
+    do_configure() {
+        if [[ $IS_SHADOW_BUILD ]]; then
+            local subdir=${PWD#$BUILD_DIR}
+            local src_dir=$SRC_DIR${subdir:+/$subdir}
+            local args=()
+            local pro_passed=
+            for arg in "$@"; do
+                # Allow .spec files do shadow build explicitly
+                prefixed_clean=$(readlink --canonicalize-missing "$src_dir/$arg")
+                if [[ -f $prefixed_clean/CMakeLists.txt ]]; then
+                    args+=("$prefixed_clean")
+                    pro_passed=1
+                else
+                    args+=("$arg")
+                fi
+            done
+            if [[ ! $pro_passed ]]; then
+                args+=("$src_dir")
+            fi
+            set -- "${args[@]}"
+        fi
+
+        # NBSP used to prevent Qt Creator treating this as an error when issued for 'cmake'
+        echo "$self:${NBSP}Executing real $command:" >&2
+
+        (
+            set -x
+            "$real" "$@" "${EXTRA_CONFIGURE_ARGS[@]}"
+        )
+    }
+
+    do_build() {
+        local args=() build_tool_args=()
+        while [[ $# -gt 0 ]]; do
+            case $1 in
+                --build)
+                    if [[ $2 != . ]]; then
+                        echo "$self: The argument to '--build' passed in .spec must be '.' (literally)" >&2
+                        exit 1
+                    fi
+                    args+=("$1" "$2")
+                    shift
+                    ;;
+                --target)
+                    if [[ $MAKE_TARGET && $2 != "$MAKE_TARGET" ]]; then
+                        echo "$self: The argument to '--target' passed in .spec differs from that on command line" >&2
+                        exit 1
+                    fi
+                    args+=("$1" "$2")
+                    shift
+                    ;;
+                --)
+                    shift
+                    build_tool_args=("$@")
+                    shift $#
+                    break
+                    ;;
+                *)
+                    args+=("$1")
+                    ;;
+            esac
+            shift
+        done
+
+        # NBSP used to prevent Qt Creator treating this as an error when issued for 'cmake'
+        echo "$self:${NBSP}Executing real $command:" >&2
+
+        (
+            set -x
+            "$real" "${args[@]}" "${EXTRA_BUILD_ARGS[@]}" -- "${build_tool_args[@]}" "${EXTRA_BUILD_TOOL_ARGS[@]}"
+        )
+    }
+
+    main() {
+        local self=${0#$PWD/}
+        local command=${0##*/}
+        local NBSP=$'\xC2\xA0'
+
+        local path=${0%/*}
+        PATH=${PATH/$path:/}
+
+        local real=$(which "$command")
+        if [[ ! $real || $real == "$0" ]]; then
+            echo "$self: Cannot find real $command" >&2
+            exit 1
+        fi
+
+        if [[ $1 != --build ]]; then
+            if [[ ! $ALLOWED_MODE || $ALLOWED_MODE == configure ]]; then
+                do_configure "$@"
+            else
+                # NBSP used to prevent Qt Creator treating this as an error when issued for 'cmake'
+                echo "$self:${NBSP}Ignoring $command invoked to create a project buildsystem" >&2
+            fi
+        else
+            if [[ ! $ALLOWED_MODE || $ALLOWED_MODE == build ]]; then
+                do_build "$@"
+            else
+                # NBSP used to prevent Qt Creator treating this as an error when issued for 'cmake'
+                echo "$self:${NBSP}Ignoring $command invoked to build the project" >&2
+            fi
+        fi
+    }
+
+    init_wrappers_dir
+    cat <<END >"$wrapper"
+#!/bin/bash
+
+IS_SHADOW_BUILD=$(is_shadow_build && echo 1)
+BUILD_DIR=$(quote "$PWD")
+SRC_DIR=$(quote "${OPT_SRC_DIR:-$PWD}")
+ALLOWED_MODE=$(quote "$CMAKE_MODE")
+EXTRA_CONFIGURE_ARGS=($(quote "${CMAKE_EXTRA_CONFIGURE_ARGS[@]}"))
+EXTRA_BUILD_ARGS=($(quote "${CMAKE_EXTRA_BUILD_ARGS[@]}"))
+EXTRA_BUILD_TOOL_ARGS=($(quote "${CMAKE_EXTRA_BUILD_TOOL_ARGS[@]}"))
+BUILD_TARGET=$(quote "$CMAKE_BUILD_TARGET")
+
+$(declare -f do_configure)
+$(declare -f do_build)
+$(declare -f main)
+
+main "\$@"
 END
     chmod +x "$wrapper"
 )
@@ -1334,6 +1499,7 @@ run_build() {
 
     if is_shadow_build; then
         init_qmake_wrapper $WRAPPERSDIR/qmake
+        init_cmake_wrapper $WRAPPERSDIR/cmake
     fi
 
     (
@@ -1353,8 +1519,6 @@ run_build() {
             "$TMP_SPEC" \
             "$@"
     )
-    local rc=$?
-    return $rc
 }
 
 run_prepare() {
@@ -1385,8 +1549,106 @@ run_prepare() {
             -bp --short-circuit \
             "$TMP_SPEC"
     )
-    local rc=$?
-    return $rc
+}
+
+run_cmake__process_args() {
+    CMAKE_MODE=
+    CMAKE_EXTRA_CONFIGURE_ARGS=()
+    CMAKE_EXTRA_BUILD_ARGS=()
+    CMAKE_EXTRA_BUILD_TOOL_ARGS=()
+    CMAKE_BUILD_TARGET=
+
+    case $1 in
+        --build)
+            CMAKE_MODE=build
+
+            [[ $2 ]] || fatal "Option expects argument: '--build'"
+            [[ $2 == . ]] || fatal "The argument to '--build' must be '.' (literally)"
+            shift 2
+
+            while [[ $# -gt 0 ]]; do
+                case $1 in
+                    --target)
+                        [[ $2 ]] || fatal "Option expects argument: '--target'"
+                        CMAKE_BUILD_TARGET=$2
+                        shift
+                        ;;
+                    --)
+                        shift
+                        break
+                        ;;
+                    *)
+                        CMAKE_EXTRA_BUILD_ARGS+=("$1")
+                        ;;
+                esac
+                shift
+            done
+            CMAKE_EXTRA_BUILD_TOOL_ARGS=("$@")
+            ;;
+        *)
+            CMAKE_MODE=configure
+
+            local project_dir=
+
+            while [[ $# -gt 0 ]]; do
+                case $1 in
+                    --)
+                        shift
+                        break
+                        ;;
+                    *)
+                        if [[ -e $1 ]]; then
+                            project_dir=${1%%+(/)}
+                            shift
+                        fi
+                        break
+                        ;;
+                esac
+            done
+
+            CMAKE_EXTRA_CONFIGURE_ARGS=("$@")
+            handle_pro_file_or_dir_option "$project_dir"
+            ;;
+    esac
+}
+
+run_cmake() {
+    local build_tgt=$(sb2 -t $OPT_TARGET gcc -dumpmachine)
+    build_tgt=${build_tgt%-gnueabi}
+
+    cp -a "$OPT_SPEC" "$TMP_SPEC"
+
+    # get rid of potential windows linefeeds
+    sed -i "s/\x0D$//g" "$TMP_SPEC"
+
+    fix_package_version "$TMP_SPEC"
+
+    case $CMAKE_MODE in
+        configure)
+            verify_target_dependencies
+            init_cmake_wrapper $WRAPPERSDIR/cmake
+            init_noop_wrapper $WRAPPERSDIR/make
+            ;;
+        build)
+            init_cmake_wrapper $WRAPPERSDIR/cmake
+            init_simple_wrapper $WRAPPERSDIR/make "${CMAKE_EXTRA_BUILD_TOOL_ARGS[@]}" \
+                ${CMAKE_BUILD_TARGET:+"$CMAKE_BUILD_TARGET"}
+            ;;
+        *)
+            fatal "Internal error: Invalid value '$CMAKE_MODE' in CMAKE_MODE"
+            ;;
+    esac
+
+    (
+        cd_to_spec_setup_dir
+        sb2 -t $OPT_TARGET env PATH="${WRAPPERSDIR}:${USERWRAPPERSDIR}:${PATH}" rpmbuild \
+            --build-in-place --target=$build_tgt \
+            --define "noecho 1" \
+            --define "_sourcedir $(dirname $OPT_SPEC)" \
+            --define "_buildhost $(get_hostname)" \
+            -bc --short-circuit \
+            "$TMP_SPEC"
+    )
 }
 
 run_qmake() {
@@ -1417,8 +1679,6 @@ run_qmake() {
                 -bc --short-circuit \
                 "$TMP_SPEC"
         )
-        local rc=$?
-        return $rc
     else
         sb2 -t $OPT_TARGET qmake "$@" ${OPT_PRO_FILE_OR_DIR:+"$OPT_PRO_FILE_OR_DIR"}
     fi
@@ -1438,6 +1698,9 @@ run_make() {
         build_tgt=${build_tgt%-gnueabi}
 
         init_noop_wrapper $WRAPPERSDIR/qmake
+        CMAKE_MODE=build
+        CMAKE_EXTRA_BUILD_TOOL_ARGS=("$@")
+        init_cmake_wrapper $WRAPPERSDIR/cmake
         init_simple_wrapper $WRAPPERSDIR/make "$@"
 
         (
@@ -1450,8 +1713,6 @@ run_make() {
                 -bc --short-circuit \
                 "$TMP_SPEC"
         )
-        local rc=$?
-        return $rc
     else
         sb2 -t $OPT_TARGET make "$@"
     fi
@@ -1487,8 +1748,6 @@ run_make_install() {
             -bi --short-circuit $maybe_nocheck \
             "$TMP_SPEC"
     )
-    local rc=$?
-    return $rc
 }
 
 run_package() {
@@ -1518,8 +1777,6 @@ run_package() {
             -bb --noprep --nobuildstage --noclean \
             "$TMP_SPEC"
     )
-    local rc=$?
-    return $rc
 }
 
 run_deploy() {
@@ -2060,7 +2317,6 @@ handle_pro_file_or_dir_option() {
     # without spec file
     : ${src_dir:=$pro_dir}
 
-    # Remember that for the plain qmake/make usage
     OPT_PRO_FILE_OR_DIR=$pro_file_or_dir
 
     # The project file/directory might be specified explicitly for non-shadow builds as well
@@ -2202,7 +2458,7 @@ while [[ "$1" ]]; do
             shift 2
             ;;
         make-install | install | package | rpm | deploy | build | build-requires | installdeps \
-            | apply | prepare | prep )
+            | apply | prepare | prep | cmake )
             OPT_NEEDSPEC=1;
             break
             ;;
@@ -2359,6 +2615,11 @@ case "$1" in
             esac
         done
         handle_pro_file_or_dir_option "$pro_file_or_dir"
+        ;;
+    cmake )
+        cmd=run_$1; shift
+        run_cmake__process_args "$@"
+        shift $#
         ;;
     build )
         cmd=run_$1; shift
@@ -2550,6 +2811,8 @@ STUBS_DIR=$(readlink -f stubs)
 ORIG_PATH=$PATH
 export PATH="$STUBS_DIR:$PATH"
 
+BUILDHOST=$(get_hostname)
+
 if ! which make >/dev/null; then
     fatal "Please install 'make' and try again"
 fi
@@ -2642,14 +2905,21 @@ END
 
 arg_pass_stub_create() {
     while [[ ${1:-} ]]; do
-        local stub=$STUBS_DIR/$1
-        local results=$STUBS_DIR/$1.args
+        local name=${1%:*}
+        local opts=${1##*:}
+        local stub=$STUBS_DIR/$name
+        local results=$STUBS_DIR/$name.args
+
+        local redirect='>'
+        if [[ $opts == *a* ]]; then
+            redirect='>>'
+        fi
 
         touch "$results" || return
         cat >"$stub" <<END || return
 #!/bin/bash
 echo "stub invoked: \$0 \$(printf "%q " "\$@")" >&2
-{ [[ \$# -ne 0 ]] && printf "%q\\n" "\$@"; } >"$results"
+{ [[ \$# -ne 0 ]] && printf "%q\\n" "\$@"; } $redirect"$results"
 exit 0
 END
         chmod +x "$stub" || return
@@ -2684,6 +2954,11 @@ expect_args() {
     [[ $# -ne 0 ]] && printf "%q\n" "$@" || true
 }
 
+expect_next_args() {
+    echo
+    expect_args "$@"
+}
+
 sb2_stub() {
     echo "stub invoked: $0 $(printf "%q " "$@")" >&2
 
@@ -2692,12 +2967,9 @@ sb2_stub() {
         echo "stub $0: unexpected arguments: $(printf "%q " "${args[@]}")" >&2
     }
 
-    if ! [[ $1 == -t && $3 != -* ]]; then
-        bad_args
-        return 1
-    fi
-
-    shift 2
+    [[ $1 == -t ]] && shift 2 || { bad_args; return 1; }
+    [[ $1 == -m ]] && shift 2
+    [[ $1 != -* ]] || { bad_args; return 1; }
 
     env=(env)
     if [[ $1 == env ]]; then
@@ -2725,6 +2997,9 @@ sb2_stub() {
             exec "${env[@]}" "$@" >&2
             ;;
         rpmspec)
+            exec "${env[@]}" "$@"
+            ;;
+        zypper)
             exec "${env[@]}" "$@"
             ;;
         *)
@@ -2879,6 +3154,7 @@ run_tc sb2_arg_pass "prepare" \
         --define '_rpmdir /tmp/@TMPDIR@/RPMS' \
         --define '_sourcedir /tmp/@TMPDIR@/rpm' \
         --define '_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm' \
+        --define "_buildhost $BUILDHOST" \
         --buildroot=/tmp/@TMPDIR@/installroot \
         -bp --short-circuit \
         /tmp/@TMPDIR@/.mb2/spec)" \
@@ -2893,6 +3169,7 @@ run_tc sb2_arg_pass "build" \
         --define '_rpmdir /tmp/@TMPDIR@/RPMS' \
         --define '_sourcedir /tmp/@TMPDIR@/rpm' \
         --define '_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm' \
+        --define "_buildhost $BUILDHOST" \
         --buildroot=/tmp/@TMPDIR@/installroot \
         -bb \
         /tmp/@TMPDIR@/.mb2/spec \
@@ -2907,6 +3184,7 @@ run_tc sb2_arg_pass "build with debug" \
         --define '_rpmdir /tmp/@TMPDIR@/RPMS' \
         --define '_sourcedir /tmp/@TMPDIR@/rpm' \
         --define '_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm' \
+        --define "_buildhost $BUILDHOST" \
         --buildroot=/tmp/@TMPDIR@/installroot \
         -bb \
         /tmp/@TMPDIR@/.mb2/spec \
@@ -2919,9 +3197,21 @@ run_tc sb2_arg_pass "qmake" \
         --build-in-place --target= \
         --define 'noecho 1' \
         --define '_sourcedir /tmp/@TMPDIR@/rpm' \
+        --define "_buildhost $BUILDHOST" \
         -bc --short-circuit \
         /tmp/@TMPDIR@/.mb2/spec)" \
     qmake "a b" "c  d" e f
+
+run_tc sb2_arg_pass "cmake" \
+    "$(expect_args \
+        -t "$DEFAULT_TARGET" env PATH="$WRAPPERS_PATH:/tmp/@TMPDIR@/stubs:$ORIG_PATH" rpmbuild \
+        --build-in-place --target= \
+        --define 'noecho 1' \
+        --define '_sourcedir /tmp/@TMPDIR@/rpm' \
+        --define "_buildhost $BUILDHOST" \
+        -bc --short-circuit \
+        /tmp/@TMPDIR@/.mb2/spec)" \
+    cmake . "a b" "c  d" e f
 
 run_tc sb2_arg_pass "make" \
     "$(expect_args \
@@ -2929,6 +3219,7 @@ run_tc sb2_arg_pass "make" \
         --build-in-place --target= \
         --define 'noecho 1' \
         --define '_sourcedir /tmp/@TMPDIR@/rpm' \
+        --define "_buildhost $BUILDHOST" \
         -bc --short-circuit \
         /tmp/@TMPDIR@/.mb2/spec)" \
     make "a b" "c  d" e f
@@ -2939,6 +3230,7 @@ run_tc sb2_arg_pass "make-install" \
         -t "$DEFAULT_TARGET" rpmbuild --build-in-place --target= \
         --define 'noecho 1' \
         --define '_sourcedir /tmp/@TMPDIR@/rpm' \
+        --define "_buildhost $BUILDHOST" \
         --define '_skip_install_processing 1' \
         --buildroot='/tmp/@TMPDIR@/installroot' \
         -bi --short-circuit --nocheck \
@@ -2953,6 +3245,7 @@ run_tc sb2_arg_pass "package" \
         --define '_rpmdir /tmp/@TMPDIR@/RPMS' \
         --define '_sourcedir /tmp/@TMPDIR@/rpm' \
         --define '_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm' \
+        --define "_buildhost $BUILDHOST" \
         --buildroot='/tmp/@TMPDIR@/installroot' \
         -bb --noprep --nobuildstage --noclean \
         /tmp/@TMPDIR@/.mb2/spec)" \
@@ -2964,8 +3257,9 @@ tear_down_ts sb2_arg_pass
 # Test arguments passing to commands invoked by rpmbuild
 
 rpmbuild_arg_pass_ts_set_up() {
-    RPMBUILD_STUBS=(qmake make)
+    RPMBUILD_STUBS=(qmake cmake:a make)
     arg_pass_stub_create "${RPMBUILD_STUBS[@]}"
+    RPMBUILD_STUBS=("${RPMBUILD_STUBS[@]%:*}")
 
     sb2_stub_create || return
 
@@ -2977,6 +3271,7 @@ Name:       test
 # These would normally come from the environment
 %{!?qmake:%define qmake qmake}
 %{!?qmake5:%define qmake5 qmake}
+%{!?cmake:%define cmake cmake}
 
 # This is to not require meego-rpm-config installed for self-test execution
 %global __os_install_post %{nil}
@@ -2997,6 +3292,8 @@ Test
 
 %build
 %qmake5
+%cmake .
+cmake --build .
 make %{?_smp_mflags}
 
 %install
@@ -3054,25 +3351,38 @@ set_up_ts rpmbuild_arg_pass "Passing arguments to commands invoked by rpmbuild"
 
 run_tc rpmbuild_arg_pass "build" \
     "$(expect_args )" \
+    "$(expect_args .)$(expect_next_args --build .)" \
     "$(expect_args -j"$DEFAULT_JOBS")" \
     build
 
 run_tc rpmbuild_arg_pass "qmake" \
     "$(expect_args "a b" "c  d" e f)" \
+    "$(expect_args .)$(expect_next_args --build .)" \
     "$(expect_args )" \
     qmake "a b" "c  d" e f
 
+run_tc rpmbuild_arg_pass "cmake / configure" \
+    "$(expect_args )" \
+    "$(expect_args . "a b" "c  d" e f)" \
+    "$(expect_args )" \
+    cmake . "a b" "c  d" e f
+
+maybe_jopt=
 if [[ $DEFAULT_JOBS -ne 1 ]]; then
-    run_tc rpmbuild_arg_pass "make" \
-        "$(expect_args )" \
-        "$(expect_args -j"$DEFAULT_JOBS" "a b" "c  d" e f)" \
-        make "a b" "c  d" e f
-else
-    run_tc rpmbuild_arg_pass "make" \
-        "$(expect_args )" \
-        "$(expect_args "a b" "c  d" e f)" \
-        make "a b" "c  d" e f
+    maybe_jopt=-j$DEFAULT_JOBS
 fi
+
+run_tc rpmbuild_arg_pass "cmake / build" \
+    "$(expect_args )" \
+    "$(expect_args --build . "a b" "c  d" e f -- "g h" "i  j" k l)" \
+    "$(expect_args $maybe_jopt "g h" "i  j" k l foo)" \
+    cmake --build . --target foo "a b" "c  d" e f -- "g h" "i  j" k l
+
+run_tc rpmbuild_arg_pass "make" \
+    "$(expect_args )" \
+    "$(expect_args --build . -- "a b" "c  d" e f)" \
+    "$(expect_args $maybe_jopt "a b" "c  d" e f)" \
+    make "a b" "c  d" e f
 
 tear_down_ts rpmbuild_arg_pass
 
@@ -3353,8 +3663,9 @@ run_tc readarray "Test readarray behavior"
 # Test build phases separation
 
 rpmbuild_phases_ts_set_up() {
-    RPMBUILD_STUBS=(my_setup qmake make my_install my_check)
+    RPMBUILD_STUBS=(my_setup qmake cmake:a make my_install my_check)
     arg_pass_stub_create "${RPMBUILD_STUBS[@]}"
+    RPMBUILD_STUBS=("${RPMBUILD_STUBS[@]%:*}")
 
     sb2_stub_create || return
 
@@ -3366,6 +3677,7 @@ Name:       test
 # These would normally come from the environment
 %{!?qmake:%define qmake qmake}
 %{!?qmake5:%define qmake5 qmake}
+%{!?cmake:%define cmake cmake}
 
 # This is to not require meego-rpm-config installed for self-test execution
 %global __os_install_post %{nil}
@@ -3386,6 +3698,8 @@ my_setup
 
 %build
 %qmake5
+%cmake .
+cmake --build .
 make %{?_smp_mflags}
 
 %install
@@ -3436,6 +3750,18 @@ rpmbuild_phases_tc() {
         actual="$actual -qmake"
     fi
 
+    if arg_pass_stub_results cmake |head -n1 |grep -q --line-regexp -F -e .; then
+        actual="$actual +cmake-c"
+    else
+        actual="$actual -cmake-c"
+    fi
+
+    if arg_pass_stub_results cmake |grep -q --line-regexp -F -e --build; then
+        actual="$actual +cmake-b"
+    else
+        actual="$actual -cmake-b"
+    fi
+
     if arg_pass_stub_results make &>/dev/null; then
         actual="$actual +make"
     else
@@ -3480,19 +3806,23 @@ END
 set_up_ts rpmbuild_phases "Separating build phases"
 
 run_tc rpmbuild_phases "prepare" \
-    "+prepare -qmake -make -make-install -check -package" prepare
+    "+prepare -qmake -cmake-c -cmake-b -make -make-install -check -package" prepare
 run_tc rpmbuild_phases "build" \
-    "-prepare +qmake +make +make-install +check +package" build
+    "-prepare +qmake +cmake-c +cmake-b +make +make-install +check +package" build
 run_tc rpmbuild_phases "build --doprep" \
-    "+prepare +qmake +make +make-install +check +package" build --doprep
+    "+prepare +qmake +cmake-c +cmake-b +make +make-install +check +package" build --doprep
 run_tc rpmbuild_phases "qmake" \
-    "-prepare +qmake -make -make-install -check -package" qmake
+    "-prepare +qmake +cmake-c +cmake-b -make -make-install -check -package" qmake
+run_tc rpmbuild_phases "cmake / configure" \
+    "-prepare +qmake +cmake-c -cmake-b -make -make-install -check -package" cmake .
+run_tc rpmbuild_phases "cmake / build" \
+    "-prepare +qmake -cmake-c +cmake-b +make -make-install -check -package" cmake --build .
 run_tc rpmbuild_phases "make" \
-    "-prepare -qmake +make -make-install -check -package" make
+    "-prepare -qmake -cmake-c +cmake-b +make -make-install -check -package" make
 run_tc rpmbuild_phases "make-install" \
-    "-prepare -qmake -make +make-install -check -package" make-install
+    "-prepare -qmake -cmake-c -cmake-b -make +make-install -check -package" make-install
 run_tc rpmbuild_phases "package" \
-    "-prepare -qmake -make +make-install +check +package" package
+    "-prepare -qmake -cmake-c -cmake-b -make +make-install +check +package" package
 
 tear_down_ts rpmbuild_phases
 
@@ -3930,6 +4260,319 @@ run_tc special_packaging "Use prepare (shadow)" \
 run_tc special_packaging "Use doprep" \
     Y       N      DOPREP N       N        N         Y
 tear_down_ts special_packaging
+
+################################################################################
+# Test compatibility with various packaging options (cmake based projects)
+
+# In "configure" mode accepts up to one argument - source directory path.
+# Defaults to current working directory. Creates Makefile that makes single
+# file named after the single executable name expected in CMakeLists.txt and
+# installs it directly under the INSTALL_ROOT.
+#
+# In "build" mode expects "." as the build directory and invokes "make",
+# passing optional build-tool arguments and optionally the target name.
+special_packaging_cmake_stub() {
+    if [[ $1 == --build ]]; then
+        if [[ $2 != . ]]; then
+            echo "stub cmake: unexpected argument to '--build': '$2'" >&2
+            return 1
+        fi
+        shift 2
+        target=
+        make_args=()
+        while [[ $# -gt 0 ]]; do
+            case $1 in
+                --target)
+                    target=$2
+                    shift
+                    ;;
+                --)
+                    shift
+                    make_args=("$@")
+                    break
+                    ;;
+                *)
+                    ;;
+            esac
+            shift
+        done
+
+        make "$@" $target
+        return
+    else
+        if [[ ! $1 ]]; then
+            sources=.
+        elif [[ ! -d $1 ]]; then
+            echo "stub cmake: directory not found: '$1'" >&2
+            return 1
+        else
+            sources=$1
+        fi
+
+        if [[ ! -f $sources/CMakeLists.txt ]]; then
+            echo "stub cmake: no CMakeLists.txt in '$1'" >&2
+            return 1
+        fi
+
+        target=foo
+        cat >Makefile <<EOF
+all:
+	echo $target > $target
+
+install:
+	cp $target \$(DESTDIR)/$target
+EOF
+    fi
+}
+
+special_packaging_cmake_ts_set_up() {
+    sb2_stub_create || return
+
+    cat >"$STUBS_DIR/cmake" <<END || return
+#!/bin/bash
+$(declare -f special_packaging_cmake_stub)
+special_packaging_cmake_stub "\$@"
+END
+    chmod +x "$STUBS_DIR/cmake" || return
+}
+
+special_packaging_cmake_ts_tear_down() {
+    sb2_stub_remove || return
+    rm -f "$STUBS_DIR/cmake" || return
+}
+
+# Accepts 5 arguments described inline
+special_packaging_cmake_tc() {
+    # SUBDIR: Put sources under subdirectory
+    #   - N: No
+    #   - Y: Yes, pass it to the %setup macro
+    #   - NOSET: Yes, do not pass it to the %setup macro
+    local maybe_subdir=$([[ $1 == Y || $1 == NOSET ]] && echo test)
+    local maybe_setupdir=$([[ $1 == Y ]] && echo "/%{name}")
+
+    # SHADOW BUILD: Do shadow build
+    #   - Y/N
+    local enable_shadow=$([[ $2 == Y ]] && echo 1)
+
+    # PROJECT IN SPEC: Pass project directory to cmake call in the .spec file
+    #   - Y/N
+    local maybe_project_in_spec=
+    if [[ $3 == Y ]]; then
+        if [[ ! $maybe_subdir || $maybe_setupdir ]]; then
+            maybe_project_in_spec=.
+        else
+            maybe_project_in_spec=$maybe_subdir
+        fi
+    fi
+
+    # PROJECT ON CMDLN: Pass project directory on command line
+    #   - Y/N
+    local project_on_cmdln=$([[ $4 == Y ]] && echo ${maybe_subdir:-.})
+
+    # CMAKE BUILD: Use "cmake --build" instead of raw "make" in the .spec file
+    #   - Y/N
+    local use_cmake_build=$([[ $5 == Y ]] && echo 1)
+
+    local srcdir=test
+    local builddir=test
+
+    if [[ $enable_shadow ]]; then
+        if [[ $project_on_cmdln ]]; then
+            project_on_cmdln=/$project_on_cmdln
+        fi
+        project_on_cmdln=../test$project_on_cmdln
+        builddir=test-build
+    fi
+
+    mkdir -p "$srcdir" || return
+    mkdir -p "$builddir" || return
+
+    mkdir "$srcdir/rpm" || return
+    cat >"$srcdir/rpm/test.spec" <<END || return
+Name:       test
+
+# These would normally come from the environment
+%{!?cmake:%define cmake cmake}
+
+# This is to not require meego-rpm-config installed for self-test execution
+%global __os_install_post %{nil}
+
+# Make it noop
+%define setup echo
+
+Summary:    Test
+Version:    0.1
+Release:    1
+Group:      Qt/Qt
+License:    LICENSE
+URL:        http://example.org/
+Source0:    %{name}-%{version}.tar.bz2
+
+%description
+Test
+
+%prep
+%setup -n %{name}-%{version}${maybe_setupdir}
+
+%build
+%cmake ${maybe_project_in_spec}
+if [[ -n '${use_cmake_build}' ]]; then
+    cmake --build .
+else
+    make %{?_smp_mflags}
+fi
+
+%install
+mkdir -p %{buildroot}
+make DESTDIR=%{buildroot} install
+
+%files
+%defattr(-,root,root,-)
+/foo
+END
+
+    mkdir -p "$srcdir/$maybe_subdir" || return
+    echo > "$srcdir/$maybe_subdir/CMakeLists.txt" || return
+
+    find -ls >&2
+
+    (
+        (
+            cd "$builddir" || return
+            echo "--- Running build" >&2
+            set -x
+            "$SELF" build ${project_on_cmdln:+"$project_on_cmdln"} || return
+        ) || return
+
+        rm -rf "$builddir"/{.mb2,RPMS,Makefile,foo} "$buildroot" || return
+
+        (
+            cd "$builddir" || return
+            echo "--- Running cmake/cmake --build/package" >&2
+            set -x
+            "$SELF" cmake ${project_on_cmdln:+"$project_on_cmdln"} || return
+            "$SELF" cmake --build . || return
+            "$SELF" package || return
+        ) || return
+
+        rm -rf "$builddir"/{.mb2,RPMS,Makefile,foo} "$buildroot" || return
+
+        (
+            cd "$builddir" || return
+            echo "--- Running cmake/make/package" >&2
+            set -x
+            "$SELF" cmake ${project_on_cmdln:+"$project_on_cmdln"} || return
+            "$SELF" make || return
+            "$SELF" package || return
+        ) || return
+    )
+
+    if [[ $? -ne 0 ]]; then
+        cat <<END
+Test case failed: $TC_NAME
+END
+        return 1
+    fi
+
+    return 0
+}
+
+special_packaging_cmake_tc_tear_down() {
+    rm -rf "$buildroot" || return
+    rm -rf ./test ./test-build || return
+}
+
+#   SUBDIR  SHADOW  PROJECT  PROJECT   CMAKE
+#           BUILD   IN SPEC  ON CMDLN  BUILD
+
+set_up_ts special_packaging_cmake "Compatibility / CMake / Flat package"
+run_tc special_packaging_cmake "Basic" \
+    N       N       N        N         N
+run_tc special_packaging_cmake "Basic (shadow)" \
+    N       Y       N        N         N
+run_tc special_packaging_cmake "Pass project dir in spec" \
+    N       N       Y        N         N
+run_tc special_packaging_cmake "Pass project dir in spec (shadow)" \
+    N       Y       Y        N         N
+run_tc special_packaging_cmake "Pass project dir on cmdline" \
+    N       N       N        Y         N
+run_tc special_packaging_cmake "Pass project dir in spec and on cmdline (shadow)" \
+    N       Y       Y        Y         N
+tear_down_ts special_packaging_cmake
+
+#   SUBDIR  SHADOW  PROJECT  PROJECT   CMAKE
+#           BUILD   IN SPEC  ON CMDLN  BUILD
+
+set_up_ts special_packaging_cmake "Compatibility / CMake / Flat package / cmake --build"
+run_tc special_packaging_cmake "Basic" \
+    N       N       N        N         Y
+run_tc special_packaging_cmake "Basic (shadow)" \
+    N       Y       N        N         Y
+run_tc special_packaging_cmake "Pass project dir in spec" \
+    N       N       Y        N         Y
+run_tc special_packaging_cmake "Pass project dir in spec (shadow)" \
+    N       Y       Y        N         Y
+run_tc special_packaging_cmake "Pass project dir on cmdline" \
+    N       N       N        Y         Y
+run_tc special_packaging_cmake "Pass project dir in spec and on cmdline (shadow)" \
+    N       Y       Y        Y         Y
+tear_down_ts special_packaging_cmake
+
+#   SUBDIR  SHADOW  PROJECT  PROJECT   CMAKE
+#           BUILD   IN SPEC  ON CMDLN  BUILD
+
+set_up_ts special_packaging_cmake "Compatibility / CMake / Subtree package"
+run_tc special_packaging_cmake "Basic" \
+    Y       N       N        N         N
+run_tc special_packaging_cmake "Basic (shadow)" \
+    Y       Y       N        N         N
+run_tc special_packaging_cmake "Pass project dir" \
+    Y       N       N        Y         N
+run_tc special_packaging_cmake "Pass project dir (shadow)" \
+    Y       Y       N        Y         N
+tear_down_ts special_packaging_cmake
+
+#   SUBDIR  SHADOW  PROJECT  PROJECT   CMAKE
+#           BUILD   IN SPEC  ON CMDLN  BUILD
+
+set_up_ts special_packaging_cmake "Compatibility / CMake / Subtree package / cmake --build"
+run_tc special_packaging_cmake "Basic" \
+    Y       N       N        N         Y
+run_tc special_packaging_cmake "Basic (shadow)" \
+    Y       Y       N        N         Y
+run_tc special_packaging_cmake "Pass project dir" \
+    Y       N       N        Y         Y
+run_tc special_packaging_cmake "Pass project dir (shadow)" \
+    Y       Y       N        Y         Y
+tear_down_ts special_packaging_cmake
+
+#   SUBDIR  SHADOW  PROJECT  PROJECT   CMAKE
+#           BUILD   IN SPEC  ON CMDLN  BUILD
+
+set_up_ts special_packaging_cmake "Compatibility / CMake / Subtree package / Without %setup subdir"
+run_tc special_packaging_cmake "Basic" \
+    NOSET   N       Y        N         N
+run_tc special_packaging_cmake "Basic (shadow)" \
+    NOSET   Y       Y        N         N
+run_tc special_packaging_cmake "Pass project dir" \
+    NOSET   N       Y        Y         N
+run_tc special_packaging_cmake "Pass project dir (shadow)" \
+    NOSET   Y       Y        Y         N
+tear_down_ts special_packaging_cmake
+
+#   SUBDIR  SHADOW  PROJECT  PROJECT   CMAKE
+#           BUILD   IN SPEC  ON CMDLN  BUILD
+
+set_up_ts special_packaging_cmake "Compatibility / CMake / Subtree package / Without %setup subdir / cmake --build"
+run_tc special_packaging_cmake "Basic" \
+    NOSET   N       Y        N         Y
+run_tc special_packaging_cmake "Basic (shadow)" \
+    NOSET   Y       Y        N         Y
+run_tc special_packaging_cmake "Pass project dir" \
+    NOSET   N       Y        Y         Y
+run_tc special_packaging_cmake "Pass project dir (shadow)" \
+    NOSET   Y       Y        Y         Y
+tear_down_ts special_packaging_cmake
 
 ################################################################################
 # Test the match_multi function
