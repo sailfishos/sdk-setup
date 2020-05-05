@@ -200,6 +200,9 @@ cp src/rpmvalidation %{buildroot}%{_bindir}/
 ln -sf rpmvalidation %{buildroot}%{_bindir}/rpmvalidation.sh
 cp src/git-lltb %{buildroot}%{_bindir}/
 cp src/sdk-init %{buildroot}%{_bindir}/
+mkdir -p %{buildroot}%{_libexecdir}/%{name}
+cp src/oomadvice %{buildroot}%{_libexecdir}/%{name}/
+cp src/sdk-setup-swap %{buildroot}%{_libexecdir}/%{name}/
 mkdir -p %{buildroot}%{_datadir}/%{name}
 cp README.tips.wiki %{buildroot}%{_datadir}/%{name}/
 
@@ -250,6 +253,7 @@ rm -Rf /home/.zypp-cache
 %systemd_post sdk-enginelan.service
 %systemd_post sdk-refresh.service
 %systemd_post sdk-refresh.timer
+%systemd_post sdk-setup-swap.service
 %systemd_post sshd.socket
 # this could be mounted read-only so to avoid a
 # cpio: chmod failed - Read-only file system
@@ -290,6 +294,7 @@ fi
 %{_unitdir}/etc-ssh-authorized_keys.mount
 %{_unitdir}/sdk-refresh.service
 %{_unitdir}/sdk-refresh.timer
+%{_unitdir}/sdk-setup-swap.service
 %config %{_sysconfdir}/systemd/system/default.target
 %config %{_sysconfdir}/ssh/ssh-env.conf
 %config %{_sysconfdir}/ssh/sshd_config_engine
@@ -328,6 +333,8 @@ fi
 %{_bindir}/rpmvalidation
 %{_bindir}/git-lltb
 %{_bindir}/sdk-init
+%{_libexecdir}/%{name}/oomadvice
+%{_libexecdir}/%{name}/sdk-setup-swap
 %config %{_sysconfdir}/ssh/ssh_config.sdk
 %config %{_sysconfdir}/bash_completion.d/mb2.bash
 %config %{_sysconfdir}/bash_completion.d/sdk-assistant.bash
