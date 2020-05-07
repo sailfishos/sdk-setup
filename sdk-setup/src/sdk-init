@@ -38,7 +38,7 @@ shopt -s extglob
 synopsis()
 {
     cat <<END
-usage: sdk-init -t|--type <type> [<name>]
+usage: sdk-init -t|--type <type> [-b|--builder <builder>] [<name>]
        sdk-init -l|--list-types
 END
 }
@@ -71,6 +71,10 @@ OPTIONS
     -t, --type <type>
         Choose the <type> of the project to create
 
+    -b, --builder <builder>
+        Choose the <builder> to use for the project. Possible builders depend
+        on project type and can be listed with the '--list-types' option.
+
     --sdk-root <path>
         Path to the (application) SDK installation directory. Only needed if
         custom installation directory was chosen during installation
@@ -98,6 +102,7 @@ inside_build_engine() [[ -f /etc/mer-sdk-vbox ]]
 list_types()
 {
     echo "$DEF_TEMPLATE_NAME ... Qt Quick Application"
+    echo "    Builders: ${DEF_BUILDERS[*]} (Default: $DEF_BUILDER)"
 }
 
 install_template()
@@ -109,7 +114,11 @@ install_template()
 
     case $source in
         */template.pro)
+            [[ $OPT_BUILDER == qmake ]] || return 0
             target=$OPT_NAME.pro
+            ;;
+        */CMakeLists.txt)
+            [[ $OPT_BUILDER == cmake ]] || return 0
             ;;
     esac
 
@@ -126,6 +135,7 @@ install_template()
         -e "s/%{ProjectName}/$OPT_NAME/g" \
         -e "s/%{Summary}/My $OPT_NAME application/g" \
         -e 's/%{Version}/0/g' \
+        -e "s/%{SpectacleBuilder}/$OPT_BUILDER/g" \
         -e 's/\\\\/\\/g' \
         || return
 }
@@ -190,6 +200,8 @@ set_defaults()
 {
     DEF_TEMPLATE_NAME=qtquick
     DEF_TEMPLATE_PATH=share/qtcreator/templates/wizards/sailfishos-qtquick2app
+    DEF_BUILDERS=(qmake cmake)
+    DEF_BUILDER=qmake
 
     OPT_SHORT_USAGE=
     OPT_USAGE=
@@ -198,6 +210,7 @@ set_defaults()
     OPT_LIST_TYPES=
     OPT_NAME=$(basename "$PWD")
     OPT_TYPE=
+    OPT_BUILDER=$DEF_BUILDER
 
     if inside_build_engine; then
         OPT_SDK_ROOT=/host_install
@@ -247,6 +260,18 @@ parse_opts()
                     return 1
                 fi
                 OPT_TYPE=$2
+                shift
+                ;;
+            -b|--builder)
+                if [[ ! ${2:-} ]]; then
+                    bad_usage "Option requires an argument: $1"
+                    return 1
+                fi
+                if [[ $2 = *\ * || " ${DEF_BUILDERS[*]} " != *" $2 "* ]]; then
+                    bad_usage "Not a recognized builder: $2"
+                    return 1
+                fi
+                OPT_BUILDER=$2
                 shift
                 ;;
             -*)
@@ -381,7 +406,13 @@ read -d '' -r WIZARD_JSON <<'EOF'
                 {
                     "source": "template.pro",
                     "target": "%{ProjectName}.pro",
-                    "openAsProject": true
+                    "openAsProject": true,
+                    "condition": "%{JS: '%{BuildSystem}' === 'qmake'}"
+                },
+                {
+                    "source": "CMakeLists.txt",
+                    "openAsProject": true,
+                    "condition": "%{JS: '%{BuildSystem}' === 'cmake'}"
                 },
                 {
                     "source": "README.txt"
@@ -398,6 +429,7 @@ EOF
 
 verify parse_wizard_json ';' <<<"$WIZARD_JSON" 42<<'END'
 template.pro;%{ProjectName}.pro;
+CMakeLists.txt;CMakeLists.txt;
 README.txt;README.txt;
 src/template.cpp;src/%{ProjectName}.cpp;
 END
