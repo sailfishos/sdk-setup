@@ -105,26 +105,33 @@ install_template()
     local source=$1
     local target=$2
 
-    target=${target//%ProjectName%/$OPT_NAME}
+    target=${target//'%{ProjectName}'/$OPT_NAME}
+
+    case $source in
+        */template.pro)
+            target=$OPT_NAME.pro
+            ;;
+    esac
 
     install -D --no-target-directory "$source" "./$target" || return
     # For the double backslash processing see Utils::TemplateEngine::processText in Qt Creator
     # sources
     sed -i "./$target" \
-        -e "s/%ProjectName%/$OPT_NAME/g" \
-        -e "s/%Summary%/My $OPT_NAME application/g" \
-        -e 's/%Version%/0/g' \
+        -e "s/%{ProjectName}/$OPT_NAME/g" \
+        -e "s/%{Summary}/My $OPT_NAME application/g" \
+        -e 's/%{Version}/0/g' \
         -e 's/\\\\/\\/g' \
         || return
 }
 
-# Read wizards.xml, print table of source and target paths, columns separated with <separator>
-parse_wizard_xml()
+# Read wizard.json, print table of source and target paths, columns separated with <separator>
+parse_wizard_json()
 {
     local separator=$1
 
     local raw_file_info=
-    raw_file_info=$(xmllint --xpath '//file/@source | //file/@target' -) || return
+    raw_file_info=$(sed -n 's/^\s*"\(source\|target\)":\s*\(.\+[^,]\),\?$/\1=\2/p' -) \
+        || return
 
     eval local file_info=($raw_file_info)
 
@@ -146,7 +153,7 @@ parse_wizard_xml()
             source=${attribute#source=}
             target=
         else
-            fatal "Parsed invalid attribute '${attribute#*=}' in wizard.xml"
+            fatal "Parsed invalid attribute '${attribute#*=}' in wizard.json"
             return 1
         fi
     done
@@ -165,7 +172,7 @@ instantiate()
     local separator=';'
 
     local file_info=
-    file_info=$(parse_wizard_xml "$separator" <"$template/wizard.xml") || return
+    file_info=$(parse_wizard_json "$separator" <"$template/wizard.json") || return
 
     local source= target=
     while IFS="$separator" read source target <&3; do
@@ -351,22 +358,42 @@ END
     fi
 }
 
-WIZARD_XML='<?xml version="1.0" encoding="UTF-8"?>
-<wizard>
-    <files>
-        <file source="src/template.cpp" target="src/%ProjectName%.cpp" />
-        <file source="README.txt" />
-        <file source="template.desktop" target="%ProjectName%.desktop" foo="bar" />
-        <file source="LICENSE.txt" foo="bar" />
-    </files>
-</wizard>
-'
+WIZARD_JSON=
+read -d '' -r WIZARD_JSON <<'EOF'
+{
+    "version": 1,
+    "id": "Q.SailfishOSQtQuick2Application",
+    "category": "F.Application",
+    "trDisplayName": "Sailfish OS Qt Quick Application",
 
-verify parse_wizard_xml ';' <<<"$WIZARD_XML" 42<<'END'
-src/template.cpp;src/%ProjectName%.cpp;
+    "generators":
+    [
+        {
+            "typeId": "File",
+            "data":
+            [
+                {
+                    "source": "template.pro",
+                    "target": "%{ProjectName}.pro",
+                    "openAsProject": true
+                },
+                {
+                    "source": "README.txt"
+                },
+                {
+                    "source": "src/template.cpp",
+                    "target": "src/%{ProjectName}.cpp"
+                }
+            ]
+        }
+    ]
+}
+EOF
+
+verify parse_wizard_json ';' <<<"$WIZARD_JSON" 42<<'END'
+template.pro;%{ProjectName}.pro;
 README.txt;README.txt;
-template.desktop;%ProjectName%.desktop;
-LICENSE.txt;LICENSE.txt;
+src/template.cpp;src/%{ProjectName}.cpp;
 END
 
 if [[ $some_failed ]]; then
