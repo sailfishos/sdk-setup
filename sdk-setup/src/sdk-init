@@ -114,6 +114,12 @@ install_template()
     esac
 
     install -D --no-target-directory "$source" "./$target" || return
+
+    case $source in
+        *.png)
+            return 0
+    esac
+
     # For the double backslash processing see Utils::TemplateEngine::processText in Qt Creator
     # sources
     sed -i "./$target" \
