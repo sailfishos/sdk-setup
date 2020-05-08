@@ -135,7 +135,7 @@ install_template()
         -e "s/%{ProjectName}/$OPT_NAME/g" \
         -e "s/%{Summary}/My $OPT_NAME application/g" \
         -e 's/%{Version}/0/g' \
-        -e "s/%{SpectacleBuilder}/$OPT_BUILDER/g" \
+        -e "s/%{SpectacleBuilder}/$OPT_SPECTACLE_BUILDER/g" \
         -e 's/\\\\/\\/g' \
         || return
 }
@@ -211,6 +211,7 @@ set_defaults()
     OPT_NAME=$(basename "$PWD")
     OPT_TYPE=
     OPT_BUILDER=$DEF_BUILDER
+    OPT_SPECTACLE_BUILDER=
 
     if inside_build_engine; then
         OPT_SDK_ROOT=/host_install
@@ -312,6 +313,15 @@ parse_opts()
     elif (( ${#positionals[*]} == 1 )); then
         OPT_NAME=${positionals[0]}
     fi
+
+    case $OPT_BUILDER in
+        qmake)
+            OPT_SPECTACLE_BUILDER=qmake5
+            ;;
+        *)
+            OPT_SPECTACLE_BUILDER=$OPT_BUILDER
+            ;;
+    esac
 }
 
 
