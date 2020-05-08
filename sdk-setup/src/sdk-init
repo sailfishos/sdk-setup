@@ -38,7 +38,7 @@ shopt -s extglob
 synopsis()
 {
     cat <<END
-usage: sdk-init -t|--type <type> [<name>]
+usage: sdk-init -t|--type <type> [-b|--builder <builder>] [<name>]
        sdk-init -l|--list-types
 END
 }
@@ -71,6 +71,10 @@ OPTIONS
     -t, --type <type>
         Choose the <type> of the project to create
 
+    -b, --builder <builder>
+        Choose the <builder> to use for the project. Possible builders depend
+        on project type and can be listed with the '--list-types' option.
+
     --sdk-root <path>
         Path to the (application) SDK installation directory. Only needed if
         custom installation directory was chosen during installation
@@ -98,6 +102,7 @@ inside_build_engine() [[ -f /etc/mer-sdk-vbox ]]
 list_types()
 {
     echo "$DEF_TEMPLATE_NAME ... Qt Quick Application"
+    echo "    Builders: ${DEF_BUILDERS[*]} (Default: $DEF_BUILDER)"
 }
 
 install_template()
@@ -105,26 +110,44 @@ install_template()
     local source=$1
     local target=$2
 
-    target=${target//%ProjectName%/$OPT_NAME}
+    target=${target//'%{ProjectName}'/$OPT_NAME}
+
+    case $source in
+        */template.pro)
+            [[ $OPT_BUILDER == qmake ]] || return 0
+            target=$OPT_NAME.pro
+            ;;
+        */CMakeLists.txt)
+            [[ $OPT_BUILDER == cmake ]] || return 0
+            ;;
+    esac
 
     install -D --no-target-directory "$source" "./$target" || return
+
+    case $source in
+        *.png)
+            return 0
+    esac
+
     # For the double backslash processing see Utils::TemplateEngine::processText in Qt Creator
     # sources
     sed -i "./$target" \
-        -e "s/%ProjectName%/$OPT_NAME/g" \
-        -e "s/%Summary%/My $OPT_NAME application/g" \
-        -e 's/%Version%/0/g' \
+        -e "s/%{ProjectName}/$OPT_NAME/g" \
+        -e "s/%{Summary}/My $OPT_NAME application/g" \
+        -e 's/%{Version}/0/g' \
+        -e "s/%{SpectacleBuilder}/$OPT_BUILDER/g" \
         -e 's/\\\\/\\/g' \
         || return
 }
 
-# Read wizards.xml, print table of source and target paths, columns separated with <separator>
-parse_wizard_xml()
+# Read wizard.json, print table of source and target paths, columns separated with <separator>
+parse_wizard_json()
 {
     local separator=$1
 
     local raw_file_info=
-    raw_file_info=$(xmllint --xpath '//file/@source | //file/@target' -) || return
+    raw_file_info=$(sed -n 's/^\s*"\(source\|target\)":\s*\(.\+[^,]\),\?$/\1=\2/p' -) \
+        || return
 
     eval local file_info=($raw_file_info)
 
@@ -146,7 +169,7 @@ parse_wizard_xml()
             source=${attribute#source=}
             target=
         else
-            fatal "Parsed invalid attribute '${attribute#*=}' in wizard.xml"
+            fatal "Parsed invalid attribute '${attribute#*=}' in wizard.json"
             return 1
         fi
     done
@@ -165,7 +188,7 @@ instantiate()
     local separator=';'
 
     local file_info=
-    file_info=$(parse_wizard_xml "$separator" <"$template/wizard.xml") || return
+    file_info=$(parse_wizard_json "$separator" <"$template/wizard.json") || return
 
     local source= target=
     while IFS="$separator" read source target <&3; do
@@ -177,6 +200,8 @@ set_defaults()
 {
     DEF_TEMPLATE_NAME=qtquick
     DEF_TEMPLATE_PATH=share/qtcreator/templates/wizards/sailfishos-qtquick2app
+    DEF_BUILDERS=(qmake cmake)
+    DEF_BUILDER=qmake
 
     OPT_SHORT_USAGE=
     OPT_USAGE=
@@ -185,6 +210,7 @@ set_defaults()
     OPT_LIST_TYPES=
     OPT_NAME=$(basename "$PWD")
     OPT_TYPE=
+    OPT_BUILDER=$DEF_BUILDER
 
     if inside_build_engine; then
         OPT_SDK_ROOT=/host_install
@@ -234,6 +260,18 @@ parse_opts()
                     return 1
                 fi
                 OPT_TYPE=$2
+                shift
+                ;;
+            -b|--builder)
+                if [[ ! ${2:-} ]]; then
+                    bad_usage "Option requires an argument: $1"
+                    return 1
+                fi
+                if [[ $2 = *\ * || " ${DEF_BUILDERS[*]} " != *" $2 "* ]]; then
+                    bad_usage "Not a recognized builder: $2"
+                    return 1
+                fi
+                OPT_BUILDER=$2
                 shift
                 ;;
             -*)
@@ -351,22 +389,49 @@ END
     fi
 }
 
-WIZARD_XML='<?xml version="1.0" encoding="UTF-8"?>
-<wizard>
-    <files>
-        <file source="src/template.cpp" target="src/%ProjectName%.cpp" />
-        <file source="README.txt" />
-        <file source="template.desktop" target="%ProjectName%.desktop" foo="bar" />
-        <file source="LICENSE.txt" foo="bar" />
-    </files>
-</wizard>
-'
+WIZARD_JSON=
+read -d '' -r WIZARD_JSON <<'EOF'
+{
+    "version": 1,
+    "id": "Q.SailfishOSQtQuick2Application",
+    "category": "F.Application",
+    "trDisplayName": "Sailfish OS Qt Quick Application",
 
-verify parse_wizard_xml ';' <<<"$WIZARD_XML" 42<<'END'
-src/template.cpp;src/%ProjectName%.cpp;
+    "generators":
+    [
+        {
+            "typeId": "File",
+            "data":
+            [
+                {
+                    "source": "template.pro",
+                    "target": "%{ProjectName}.pro",
+                    "openAsProject": true,
+                    "condition": "%{JS: '%{BuildSystem}' === 'qmake'}"
+                },
+                {
+                    "source": "CMakeLists.txt",
+                    "openAsProject": true,
+                    "condition": "%{JS: '%{BuildSystem}' === 'cmake'}"
+                },
+                {
+                    "source": "README.txt"
+                },
+                {
+                    "source": "src/template.cpp",
+                    "target": "src/%{ProjectName}.cpp"
+                }
+            ]
+        }
+    ]
+}
+EOF
+
+verify parse_wizard_json ';' <<<"$WIZARD_JSON" 42<<'END'
+template.pro;%{ProjectName}.pro;
+CMakeLists.txt;CMakeLists.txt;
 README.txt;README.txt;
-template.desktop;%ProjectName%.desktop;
-LICENSE.txt;LICENSE.txt;
+src/template.cpp;src/%{ProjectName}.cpp;
 END
 
 if [[ $some_failed ]]; then
