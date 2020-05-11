@@ -1260,6 +1260,7 @@ synchronise_target() {
 + /usr/share/qt**
 + /usr/lib/pkgconfig**
 + /usr/share/pkgconfig**
++ /usr/lib/cmake**
 # and nothing else
 - *
 EOF
