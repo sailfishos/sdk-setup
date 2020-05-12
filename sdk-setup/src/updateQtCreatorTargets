@@ -108,6 +108,10 @@ def update(args, root):
 
     et.SubElement(new, "output", name="QmakeQuery"
                   ).text = sb2_command(args.name, "qmake", "-query")
+
+    et.SubElement(new, "output", name="CMakeVersion"
+                  ).text = sb2_command(args.name, "cmake", "--version")
+
     et.SubElement(new, "output", name="RpmValidationSuites"
                   ).text = rpmvalidation_list_suites(args.name)
 
