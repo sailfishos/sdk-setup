@@ -171,6 +171,8 @@ class Operations(pyfuse3.Operations):
         if (stat_m.S_ISLNK(entry.st_mode)
                 or (stat_m.S_ISREG(entry.st_mode) and looks_like_executable(path, fd))):
             entry.st_mode |= stat_m.S_IXUSR | stat_m.S_IXGRP | stat_m.S_IXOTH
+        elif stat_m.S_ISREG(entry.st_mode):
+            entry.st_mode &= ~(stat_m.S_IXUSR | stat_m.S_IXGRP | stat_m.S_IXOTH)
 
         return entry
 
