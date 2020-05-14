@@ -1,8 +1,13 @@
 #!/usr/bin/env python3
 '''
-passthroughfs.py - Example file system for pyfuse3
+dynexecfs - pass-through file system with dynamic exec permissions
 
-This file system mirrors the contents of a specified directory tree.
+Based on passthroughfs.py, the example file system for pyfuse3
+
+This file system mirrors the contents of a specified directory tree, making
+files executable when they seems to be (based on their magic numbers). Useful
+in combination with underlaying filesystem without POSIX compatible permission
+handling.
 
 Caveats:
 
@@ -24,6 +29,7 @@ Caveats:
    passthrough file system will get confused.
 
 Copyright ©  Nikolaus Rath <Nikolaus.org>
+Copyright © 2019  Open Mobile Platform LLC.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of
 this software and associated documentation files (the "Software"), to deal in
@@ -63,6 +69,16 @@ import faulthandler
 faulthandler.enable()
 
 log = logging.getLogger(__name__)
+
+def looks_like_executable(path, fd):
+    assert (path is None) != (fd is None)
+    try:
+        with open(os.dup(fd) if fd else path, mode='rb') as file:
+            magic = file.read(4)
+            return magic[0:2] == b"#!" or magic[0:4] == b"\x7FELF"
+    except Exception as e:
+        log.warning('Failed to read file %s: %s', path or fd, e)
+        return False
 
 class Operations(pyfuse3.Operations):
 
@@ -152,7 +168,31 @@ class Operations(pyfuse3.Operations):
         entry.st_blksize = 512
         entry.st_blocks = ((entry.st_size+entry.st_blksize-1) // entry.st_blksize)
 
+        if (stat_m.S_ISLNK(entry.st_mode)
+                or (stat_m.S_ISREG(entry.st_mode) and looks_like_executable(path, fd))):
+            entry.st_mode |= stat_m.S_IXUSR | stat_m.S_IXGRP | stat_m.S_IXOTH
+
         return entry
+
+    async def access(self, inode, mode, ctx=None):
+        fd = self._inode_fd_map[inode] if inode in self._inode_fd_map else None
+        return self._access(self._inode_to_path(inode), mode, fd=fd)
+
+    def _access(self, path, mode, fd=None):
+        check_x = mode & os.X_OK
+        mode_nox = mode & ~os.X_OK
+        try:
+            if not os.access(path, mode_nox):
+                return False
+            elif not check_x:
+                return True
+            else:
+                st = os.lstat(path)
+                return (stat_m.S_ISLNK(st.st_mode)
+                        or stat_m.S_ISDIR(st.st_mode)
+                        or (stat_m.S_ISREG(st.st_mode) and looks_like_executable(path, fd)))
+        except OSError as exc:
+            raise FUSEError(exc.errno)
 
     async def readlink(self, inode, ctx):
         path = self._inode_to_path(inode)
@@ -442,6 +482,9 @@ def init_logging(debug=False):
 def parse_args(args):
     '''Parse command line'''
 
+    def comma_separated_list(string):
+        return string.split(',')
+
     parser = ArgumentParser()
 
     parser.add_argument('source', type=str,
@@ -452,6 +495,8 @@ def parse_args(args):
                         help='Enable debugging output')
     parser.add_argument('--debug-fuse', action='store_true', default=False,
                         help='Enable FUSE debugging output')
+    parser.add_argument('-o', '--options', action='append', type=comma_separated_list,
+                        help='Generic file system options')
 
     return parser.parse_args(args)
 
@@ -462,9 +507,11 @@ def main():
 
     log.debug('Mounting...')
     fuse_options = set(pyfuse3.default_options)
-    fuse_options.add('fsname=passthroughfs')
+    fuse_options.add('fsname=dynexecfs')
     if options.debug_fuse:
         fuse_options.add('debug')
+    if options.options:
+        fuse_options.update(*options.options)
     pyfuse3.init(operations, options.mountpoint, fuse_options)
 
     try:
