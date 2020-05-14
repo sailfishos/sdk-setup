@@ -803,6 +803,24 @@ install_tooling() {
         return 1
     fi
 
+    # FIXME we have INSIDE_CHROOT and INSIDE_VBOX, but the latter is true also under docker
+    if [[ $(systemd-detect-virt) == docker ]]; then
+        sudo sed -i "$MER_TOOLINGS/$name/mer-tooling-chroot" -e '
+            /^if cmp .*mountinfo/ {
+                i \# sdk-manage disabled this under docker
+                s/^/#/
+                a \if false\; then
+            }
+            /^\s*mount .*resolv.conf/ {
+                i \    # sdk-manage replaced this under docker
+                h
+                s/mount/#mount/
+                p
+                g
+                s/mount -o bind,ro /cp /
+            }'
+    fi
+
     if [[ $MODE == "$MODE_USER" ]]; then
         if [[ $INSIDE_VBOX ]]; then
             local size=$(sudo du --summarize --bytes "$MER_TOOLINGS/$name" |cut -f1)
@@ -1233,9 +1251,15 @@ synchronise_target() {
         fi
     )
 
+    local maybe_times=--times
+    if [[ $(systemd-detect-virt) == docker ]]; then
+	# It would fail with EPERM
+        maybe_times=
+    fi
+
     echo >&2 "Synchronising target to host"
     # The filter=". -" means to read filters from stdin (the <<EOF)
-    rsync -a --no-devices --no-specials \
+    rsync -r $maybe_times --no-devices --no-specials \
           --delete --ignore-errors \
 	  --prune-empty-dirs  --copy-links \
 	  --filter=". -" \
@@ -1270,7 +1294,7 @@ EOF
         while read src_path; do
             dst_path=$HOST_TARGETS/$target/opt/cross/${src_path#*/opt/cross/}
             mkdir -p "$dst_path" || return
-            rsync -a --delete --ignore-errors --prune-empty-dirs --copy-links \
+            rsync -r $maybe_times --delete --ignore-errors --prune-empty-dirs --copy-links \
                 "$src_path/." "$dst_path/." || return
         done <<<"$cross_includes"
     fi
