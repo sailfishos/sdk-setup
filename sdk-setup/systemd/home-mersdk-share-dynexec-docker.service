@@ -11,7 +11,7 @@ EnvironmentFile=-/etc/mersdk.env.systemd
 EnvironmentFile=-/etc/login.defs.systemd
 ExecStartPre=/bin/mkdir -p /home/mersdk/.share.raw
 ExecStartPre=/bin/mount --move /home/mersdk/share /home/mersdk/.share.raw
-ExecStart=/usr/bin/dynexecfs -o allow_other /home/mersdk/.share.raw /home/mersdk/share
+ExecStart=/usr/bin/dynexecfs --systemd -o allow_other /home/mersdk/.share.raw /home/mersdk/share
 TimeoutSec=90
 
 [Install]

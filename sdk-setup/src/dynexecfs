@@ -84,13 +84,24 @@ class Operations(pyfuse3.Operations):
 
     enable_writeback_cache = True
 
-    def __init__(self, source):
+    def __init__(self, source, systemd_managed=False):
         super().__init__()
+        self._systemd_managed = systemd_managed
         self._inode_path_map = { pyfuse3.ROOT_INODE: source }
         self._lookup_cnt = defaultdict(lambda : 0)
         self._fd_inode_map = dict()
         self._inode_fd_map = dict()
         self._fd_open_count = dict()
+
+    def init(self):
+        if self._systemd_managed:
+            self._notify_systemd()
+
+    def _notify_systemd(self):
+        try:
+            os.system("systemd-notify --pid=%d --ready" % os.getpid())
+        except Exception as e:
+            log.warning('Failed to notify systemd about start-up completion: %s', e)
 
     def _inode_to_path(self, inode):
         try:
@@ -497,6 +508,8 @@ def parse_args(args):
                         help='Enable debugging output')
     parser.add_argument('--debug-fuse', action='store_true', default=False,
                         help='Enable FUSE debugging output')
+    parser.add_argument('--systemd', action='store_true', default=False,
+                        help='Run under systemd management')
     parser.add_argument('-o', '--options', action='append', type=comma_separated_list,
                         help='Generic file system options')
 
@@ -505,7 +518,7 @@ def parse_args(args):
 def main():
     options = parse_args(sys.argv[1:])
     init_logging(options.debug)
-    operations = Operations(options.source)
+    operations = Operations(options.source, systemd_managed=options.systemd)
 
     log.debug('Mounting...')
     fuse_options = set(pyfuse3.default_options)
