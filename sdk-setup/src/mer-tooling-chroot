@@ -52,7 +52,7 @@ fi
 ################################################################
 
 prepare_etc() {
-    cp -f --dereference /etc/resolv.conf ${toolingroot}/etc/resolv.conf
+    cp --remove-destination --dereference /etc/resolv.conf ${toolingroot}/etc/resolv.conf
 
     cat >${toolingroot}/etc/profile.d/90_prompt.sh <<END
 # Do not edit! Created by /$(basename $0)
