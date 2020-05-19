@@ -41,6 +41,7 @@ Requires:   virtualbox-guest-tools
 Requires:   openssh-server
 Requires:   kbd
 Requires:   ncurses
+Requires:   python3-fuse
 Requires(post): /bin/ln
 Requires(post): systemd
 Conflicts:  sdk-chroot
@@ -152,6 +153,9 @@ cp --no-dereference systemd/* %{buildroot}/%{_unitdir}/
 cp src/sdk-info %{buildroot}%{_bindir}/
 cp src/sdk-setup-enginelan %{buildroot}%{_bindir}/
 cp src/sdk-shutdown %{buildroot}%{_bindir}/
+cp src/dynexecfs %{buildroot}%{_bindir}/
+mkdir -p %{buildroot}%{_libexecdir}/%{name}
+cp src/home-srcN-autodetect %{buildroot}%{_libexecdir}/%{name}/
 # This should really be %%{_unitdir}/default.target but systemd owns that :/
 mkdir -p %{buildroot}/%{_sysconfdir}/systemd/system/
 ln -sf %{_unitdir}/multi-user.target  %{buildroot}/%{_sysconfdir}/systemd/system/default.target
@@ -235,7 +239,10 @@ rm -Rf /home/.zypp-cache
 rm -Rf /home/.zypp-cache
 
 %preun -n sdk-vm
-%systemd_preun home-mersdk.service
+%systemd_preun home-mersdk-share-raw.service
+%systemd_preun home-mersdk-share-dynexec.service
+%systemd_preun home-mersdk-share-dynexec-docker.service
+%systemd_preun home-srcN.service
 %systemd_preun etc-mersdk-share.service
 %systemd_preun etc-ssh-authorized_keys.mount
 %systemd_preun host_install.service
@@ -244,7 +251,10 @@ rm -Rf /home/.zypp-cache
 %systemd_preun sdk-enginelan.service
 
 %post -n sdk-vm
-%systemd_post home-mersdk.service
+%systemd_post home-mersdk-share-raw.service
+%systemd_post home-mersdk-share-dynexec.service
+%systemd_post home-mersdk-share-dynexec-docker.service
+%systemd_post home-srcN.service
 %systemd_post etc-mersdk-share.service
 %systemd_post etc-ssh-authorized_keys.mount
 %systemd_post host_install.service
@@ -284,12 +294,20 @@ fi
 %{_bindir}/sdk-info
 %{_bindir}/sdk-setup-enginelan
 %{_bindir}/sdk-shutdown
+%{_bindir}/dynexecfs
+%{_libexecdir}/%{name}/home-srcN-autodetect
 /home/.zypp-cache
 %{_unitdir}/information.service
 %{_unitdir}/sdk-enginelan.service
 %{_unitdir}/host_install.service
 %{_unitdir}/host_targets.service
-%{_unitdir}/home-mersdk.service
+%{_unitdir}/home-mersdk-share-raw.service
+%{_unitdir}/home-mersdk-share-dynexec.service
+%{_unitdir}/home-mersdk-share-dynexec-docker.service
+%{_unitdir}/home-srcN.service
+%{_unitdir}/home-srcN-raw@.service
+%{_unitdir}/home-srcN-dynexec@.service
+%{_unitdir}/home-srcN-dynexec-docker@.service
 %{_unitdir}/etc-mersdk-share.service
 %{_unitdir}/etc-ssh-authorized_keys.mount
 %{_unitdir}/sdk-refresh.service

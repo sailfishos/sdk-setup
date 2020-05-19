@@ -34,13 +34,7 @@ fi
 
 cat /etc/sdk-welcome-message
 
-for src in $(VBoxControl --nologo sharedfolder list | grep -- "- src[0-9]" | cut -f3 -d" ");
-do
-    echo "Adding src workspace $src"
-    mkdir -p /home/$src
-    chown mersdk /home/$src
-    /bin/mount -t vboxsf -orw,exec,uid=$(id -u mersdk),gid=$(id -g mersdk),dev,ttl=200,fmode=755,dmode=755 $src /home/$src
-done
+/usr/libexec/sdk-setup/home-srcN-autodetect --dry-run
 
 /bin/echo -en '\033]R'
 
