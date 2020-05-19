@@ -1883,6 +1883,7 @@ run_deploy() {
             device_rpms=$(sed "s,^$OPT_OUTPUTDIR/,RPMS/," <<<"$rpms")
             ssh_as root zypper --non-interactive --quiet in -f ${device_rpms}
             retcode=$?
+            [[ $retcode -eq 106 ]] && retcode=0
             ssh_as root rm -f ${device_rpms}
             ;;
         --rsync )
