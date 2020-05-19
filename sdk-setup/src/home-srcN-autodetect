@@ -1,0 +1,139 @@
+#!/bin/bash
+#
+# home-srcN-autodetect Autodetects alternative shared source directories
+#
+# Copyright (C) 2020  Open Mobile Platform LLC.
+# Contact: http://jolla.com/
+# All rights reserved.
+#
+# You may use this file under the terms of BSD license as follows:
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+#   * Redistributions of source code must retain the above copyright
+#     notice, this list of conditions and the following disclaimer.
+#   * Redistributions in binary form must reproduce the above copyright
+#     notice, this list of conditions and the following disclaimer in the
+#     documentation and/or other materials provided with the distribution.
+#   * Neither the name of the Jolla Ltd nor the
+#     names of its contributors may be used to endorse or promote products
+#     derived from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+# ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+# WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+# DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS OR CONTRIBUTORS BE LIABLE FOR
+# ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+# (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+# LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+# ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+# SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+#
+
+
+set -o nounset
+set -o pipefail
+
+usage()
+{
+    cat <<END
+usage: home-srcN-autodetect [--dry-run] [--verbose]
+
+Starts systemd services for mounting alternative source directories shared
+from host.
+END
+}
+
+_()
+{
+    if [[ $OPT_VERBOSE ]]; then
+        printf '+'
+        printf ' %q' "$@"
+        printf '\n'
+    fi >&2
+
+    [[ $OPT_DRY_RUN ]] || "$@"
+}
+
+start()
+{
+    local idx=$1
+
+    local service=
+    for template in $(systemctl list-unit-files|sed -n 's/^\(home-srcN-.*@.service\)\s.*/\1/p'); do
+        _ systemctl start "${template/@/@$idx}" || return
+    done
+}
+
+list_names()
+{
+    local virt=
+    virt=$(systemd-detect-virt) || return
+    case $virt in
+        oracle)
+            VBoxControl --nologo sharedfolder list |sed -n 's/.*- \(src[0-9]\)$/\1/p'
+            ;;
+        docker)
+            findmnt -o TARGET --list |sed -n 's,^/home/\(src[0-9]\)$,\1,p'
+            ;;
+        *)
+            echo "Unsupported under '$virt' virtualization" >&2
+            return 1
+            ;;
+    esac
+}
+
+parse_opts()
+{
+    OPT_HELP=
+    OPT_DRY_RUN=
+    OPT_VERBOSE=
+
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -h|--help)
+                OPT_HELP=1
+                return
+                ;;
+            --dry-run)
+                OPT_DRY_RUN=1
+                ;;
+            --verbose)
+                OPT_VERBOSE=1
+                ;;
+            *)
+                echo "Unexpected argument: $1" >&2
+                return 1
+                ;;
+        esac
+        shift
+    done
+}
+
+main()
+{
+    parse_opts "$@" || return
+
+    if [[ $OPT_HELP ]]; then
+        usage
+        return 0
+    fi
+
+    local names=
+    names=$(list_names) || return
+
+    local rc=0
+
+    local name=
+    for name in $names; do
+        # This output is processed by sdk-info!
+        echo "Adding src workspace '$name'" >&2
+        local idx=${name#src}
+        start "$idx" || rc=1
+    done
+
+    return $rc
+}
+
+main "$@"

@@ -1,0 +1,19 @@
+[Unit]
+Description=Shared source directory #%i using raw vboxsf
+PartOf=home-srcN.service
+ConditionVirtualization=oracle
+ConditionPathExists=/etc/mersdk/share/home-src%i.no-dynexec
+After=etc-mersdk-share.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/
+EnvironmentFile=-/etc/mersdk.env.systemd
+EnvironmentFile=-/etc/login.defs.systemd
+ExecStartPre=/bin/mkdir -p /home/src%i
+ExecStart=/bin/mount -t vboxsf -orw,exec,uid=${UID_MERSDK},gid=${GID_MERSDK},dev,ttl=200,fmode=${FMODE_HOME_MERSDK},dmode=${DMODE_HOME_MERSDK} src%i /home/src%i
+TimeoutSec=90
+Slice=system.slice
+
+[Install]
+WantedBy=basic.target
