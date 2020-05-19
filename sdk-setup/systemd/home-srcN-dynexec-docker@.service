@@ -1,0 +1,20 @@
+[Unit]
+Description=Shared source directory #%i using dynexecfs over raw bind mount under Docker
+PartOf=home-srcN.service
+ConditionVirtualization=docker
+ConditionPathExists=/dev/fuse
+ConditionPathExists=!/etc/mersdk/share/home-src%i.no-dynexec
+
+[Service]
+Type=simple
+WorkingDirectory=/
+EnvironmentFile=-/etc/mersdk.env.systemd
+EnvironmentFile=-/etc/login.defs.systemd
+ExecStartPre=/bin/mkdir -p /home/.src%i.raw
+ExecStartPre=/bin/mount --move /home/src%i /home/.src%i.raw
+ExecStart=/usr/bin/dynexecfs -f -o uid=${UID_MERSDK},gid=${GID_MERSDK},allow_other,root=/home/.src%i.raw /home/src%i
+TimeoutSec=90
+Slice=system.slice
+
+[Install]
+WantedBy=basic.target
