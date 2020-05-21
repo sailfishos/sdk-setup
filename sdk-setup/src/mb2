@@ -226,7 +226,7 @@ COMMANDS
         -R    reverse apply patches (patch -R)
 
     build [-p|--doprep] [-d|--enable-debug] [-j <n>] [<project-dir-or-file>]
-          [[--] <rpmbuild-extra-args>]
+          [[--] <rpmbuild-extra-arg>...]
         Run rpmbuild. Execute all sections of the .spec file except for %prep
         unless told otherwise.
 
@@ -239,7 +239,7 @@ COMMANDS
         -d    enable debug build
         -j <n> run up to <n> jobs simultaneously
 
-    qmake [<project-dir-or-file>] [[--] <qmake-extra-args>]
+    qmake [<project-dir-or-file>] [[--] <qmake-extra-arg>...]
         Run rpmbuild. Execute just the %build section of the .spec file,
         suppressing any 'make' invocation figuring in that section.
 
@@ -248,8 +248,8 @@ COMMANDS
         project directory. (The file name part is ignored - project file
         selection is done by qmake call inside the .spec file.)
 
-    cmake [<project-dir>] [[--] <cmake-extra-args>]
-    cmake --build . [<cmake-extra-args>] [-- <build-tool-extra-args>]
+    cmake [<project-dir>] [[--] <cmake-extra-arg>...]
+    cmake --build . [<cmake-extra-arg>...] [-- <build-tool-extra-arg>...]
         Run rpmbuild. Execute just the %build section of the .spec file,
         suppressing any 'cmake' invocation figuring in that section, that does
         not match the execution form used here, i.e., does not trigger the
@@ -258,15 +258,15 @@ COMMANDS
 
         Additionally, any plain 'make' invocation will be recognized as
         implementing the 'build the project' action and will be treated
-        accordingly. Any possible <cmake-extra-args> will be silently ignored
-        and any possible <build-tools-extra-args> will be used equally for
+        accordingly. Any possible <cmake-extra-arg> will be silently ignored
+        and any possible <build-tools-extra-arg> will be used equally for
         each 'make' invocation in that case.
 
         If path to a <project-dir> is passed, shadow build will be done.
         Otherwise the current working directory is treated as the project
         directory.
 
-    make [<make-extra-args>]
+    make [<make-extra-arg>...]
         Run rpmbuild. Execute just the %build section of the .spec file,
         suppressing any command figuring in that section, that is recognized
         as a command to generate project buildsystem. The following is a
@@ -275,8 +275,8 @@ COMMANDS
         - any 'qmake' invocation
         - any 'cmake' invocation using the corresponding execution form
 
-        For CMake based projects the 'make <make-extra-args>' command is
-        equivalent to 'cmake --build . -- <make-extra-args>' (provided that
+        For CMake based projects the 'make <make-extra-arg>...' command is
+        equivalent to 'cmake --build . -- <make-extra-arg>...' (provided that
         'make' is the build tool used by the project).
 
     make-install
@@ -287,7 +287,8 @@ COMMANDS
         build binary packages.
 
     check --list-suites
-    check [-l|--levels [+|-]<level>...] [-s|--suites [+|-]<suite>...] [<artefact>]...
+    check [-l|--levels [+|-]<level>...] [-s|--suites [+|-]<suite>...]
+          [<artefact>...]
         Perform quality checks.
 
         By default, test suites operate on the artefacts associated with build
@@ -438,7 +439,7 @@ COMMANDS
             Uses 'zypper' to remove RPM package(s).  Requires 'zypper'
             installed on the device, requires root access to the device.
 
-    run [<command> [<args>]]
+    run [<command> [<arg>...]]
         Run the given command on the device specified with '--device'.  Can be
         used for running gdb and a gdb server.
 
