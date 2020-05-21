@@ -286,6 +286,10 @@ COMMANDS
         Run rpmbuild. Execute just the %install section of the .spec file, then
         build binary packages.
 
+    build-shell [<command> [<arg>...]]
+        Execute an arbitrary <command> in the build environment.  If no
+        <command> is specified, an interactive shell is opened.
+
     check --list-suites
     check [-l|--levels [+|-]<level>...] [-s|--suites [+|-]<suite>...]
           [<artefact>...]
@@ -1934,6 +1938,15 @@ run_package() {
     )
 }
 
+run_build_shell() {
+    if [[ $# -gt 0 ]]; then
+        oomadvice sb2 -t $OPT_TARGET -- "$@"
+    else
+        # Keep PS1 aligned with `sdk-manage maintain`
+        sb2 -t $OPT_TARGET -- env PS1="[$OPT_ORIGINAL_TARGET] \W $ " /bin/bash --noprofile --norc
+    fi
+}
+
 run_deploy() {
     [[ $device_type ]] || fatal "No device specified"
     [[ -e $STATEDIR/spec ]] || fatal "No previoud build found"
@@ -2626,7 +2639,7 @@ while [[ "$1" ]]; do
             fi
             break
             ;;
-        run | ssh | check | undeploy )
+        run | ssh | check | undeploy | build-shell )
             break
             ;;
         --version )
@@ -2684,7 +2697,7 @@ elif [[ ! $OPT_NO_SNAPSHOT && ! $MB2_SELF_TEST_RUN ]]; then
 fi
 
 case "$1" in
-    make | make-install | install | package | rpm | deploy | prepare | prep )
+    make | make-install | install | package | rpm | deploy | prepare | prep | build-shell )
         if [[ $1 == install ]]; then
             notice "The 'install' command is deprecated. Use 'make-install' instead."
             set -- make-install "${@:2}"
