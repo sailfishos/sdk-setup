@@ -867,7 +867,7 @@ filter_repo()
     createrepo_c "$output"
 }
 
-verify_target_dependencies() {
+maybe_verify_target_dependencies() {
     [[ $OPT_NO_DEPS ]] && return
 
     local deps=()
@@ -900,7 +900,7 @@ get_spec_tag() {
     rpmspec --query --srpm --queryformat="$1" "$OPT_SPEC"
 }
 
-fix_package_version() {
+maybe_fix_package_version() {
     local spec_file=$1
 
     local version_in_spec=$(sed -n 's/^Version:[[:space:]]*//p' "$spec_file")
@@ -1143,7 +1143,7 @@ maybe_cd_to_spec_setup_subdir() {
 #  if it only is x check if x is number
 #  if x is number => increment
 #  else leave untouched
-increment_build_number() {
+maybe_increment_build_number() {
     [[ $OPT_INC_BUILD_NUMBER -eq 0 ]] && return
 
     local release=$(get_spec_tag "%{release}")
@@ -1483,7 +1483,7 @@ run_build_requires() {
         # Refresh repos before installing dependencies
         sb2 -t "$OPT_TARGET" -m sdk-install -R zypper --non-interactive ref
     fi
-    verify_target_dependencies
+    maybe_verify_target_dependencies
 }
 
 run_apply() {
@@ -1524,9 +1524,9 @@ run_apply() {
 
 run_build() {
     # intended to provide mb build behaviour
-    verify_target_dependencies
+    maybe_verify_target_dependencies
 
-    increment_build_number;
+    maybe_increment_build_number;
     if [[ $BUILD_NOPREP ]]; then
         sed -e '/^%patch/d' "$OPT_SPEC" > "$TMP_SPEC"
     else
@@ -1538,7 +1538,7 @@ run_build() {
     # get rid of potential windows linefeeds
     sed -i "s/\x0D$//g" "$TMP_SPEC"
 
-    fix_package_version "$TMP_SPEC"
+    maybe_fix_package_version "$TMP_SPEC"
 
     local build_tgt=$(sb2 -t $OPT_TARGET gcc -dumpmachine)
     build_tgt=${build_tgt%-gnueabi}
@@ -1568,16 +1568,16 @@ run_build() {
 }
 
 run_prepare() {
-    verify_target_dependencies
+    maybe_verify_target_dependencies
 
-    increment_build_number;
+    maybe_increment_build_number;
     # TODO maybe add toggle here for disabling patch applying?
     cp "$OPT_SPEC" "$TMP_SPEC"
 
     # get rid of potential windows linefeeds
     sed -i "s/\x0D$//g" "$TMP_SPEC"
 
-    fix_package_version "$TMP_SPEC"
+    maybe_fix_package_version "$TMP_SPEC"
 
     local build_tgt=$(sb2 -t $OPT_TARGET gcc -dumpmachine)
     build_tgt=${build_tgt%-gnueabi}
@@ -1667,11 +1667,11 @@ run_cmake() {
     # get rid of potential windows linefeeds
     sed -i "s/\x0D$//g" "$TMP_SPEC"
 
-    fix_package_version "$TMP_SPEC"
+    maybe_fix_package_version "$TMP_SPEC"
 
     case $CMAKE_MODE in
         configure)
-            verify_target_dependencies
+            maybe_verify_target_dependencies
             init_cmake_wrapper $WRAPPERSDIR/cmake
             init_noop_wrapper $WRAPPERSDIR/make
             ;;
@@ -1707,10 +1707,10 @@ run_qmake() {
         # get rid of potential windows linefeeds
         sed -i "s/\x0D$//g" "$TMP_SPEC"
 
-        fix_package_version "$TMP_SPEC"
+        maybe_fix_package_version "$TMP_SPEC"
 
         # This is a good time to verify the target dependencies as per mb
-        verify_target_dependencies
+        maybe_verify_target_dependencies
 
         init_qmake_wrapper $WRAPPERSDIR/qmake "$@"
         init_noop_wrapper $WRAPPERSDIR/make
@@ -1738,7 +1738,7 @@ run_make() {
         # get rid of potential windows linefeeds
         sed -i "s/\x0D$//g" "$TMP_SPEC"
 
-        fix_package_version "$TMP_SPEC"
+        maybe_fix_package_version "$TMP_SPEC"
 
         local build_tgt=$(sb2 -t $OPT_TARGET gcc -dumpmachine)
         build_tgt=${build_tgt%-gnueabi}
@@ -1780,7 +1780,7 @@ run_make_install() {
     # get rid of potential windows linefeeds
     sed -i "s/\x0D$//g" "$TMP_SPEC"
 
-    fix_package_version "$TMP_SPEC"
+    maybe_fix_package_version "$TMP_SPEC"
 
     # Install to buildroot which should be rsync'ed to /opt/sdk/$package on device
     (
@@ -1807,10 +1807,10 @@ run_package() {
     # get rid of potential windows linefeeds
     sed -i "s/\x0D$//g" "$TMP_SPEC"
 
-    fix_package_version "$TMP_SPEC"
+    maybe_fix_package_version "$TMP_SPEC"
 
     (
-        increment_build_number;
+        maybe_increment_build_number
         maybe_cd_to_spec_setup_subdir
         [[ $OPT_CLEAN_OUTPUTDIR ]] && rm -f "$OPT_OUTPUTDIR/"*.rpm;
         oomadvice sb2 -t $OPT_TARGET rpmbuild --build-in-place --target=$build_tgt \
@@ -3601,7 +3601,7 @@ fix_version_tc() {
         OPT_FIX_VERSION=1
         OPT_FIX_VERSION_HINT=$hint
         OPT_NO_FIX_VERSION=
-        fix_package_version $version_file >&2
+        maybe_fix_package_version $version_file >&2
     ) || return
 
     local actual=$(sed 's/^Version: //' $version_file)
