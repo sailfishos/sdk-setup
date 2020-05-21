@@ -1114,7 +1114,7 @@ ssh_as() {
         ssh -F /etc/ssh/ssh_config.sdk -l $user $device_ip -p $device_sshport "$(quote "$@")"
 }
 
-cd_to_spec_setup_dir() {
+get_spec_setup_subdir() {
     # avoid spawning another process for | cut -s -f2 -d '/'
     local setup_dir=$(grep -Po '%(auto)?setup.*-n[[:space:]]+[^[:space:]]+' "$OPT_SPEC")
     # if setup_dir has '/' return the part after it
@@ -1122,9 +1122,13 @@ cd_to_spec_setup_dir() {
     # if it did not have a '/' then we got the original match => erase it
     setup_dir=${setup_dir/#%?(auto)setup*/}
 
-    if [[ -n "$setup_dir" ]]; then
-        # in case we got a spec %{tag} out of this, try to expand it
-        setup_dir=$(get_spec_tag "$setup_dir")
+    # in case we got a spec %{tag} out of this, try to expand it
+    get_spec_tag "$setup_dir"
+}
+
+maybe_cd_to_spec_setup_subdir() {
+    local setup_dir=$(get_spec_setup_subdir)
+    if [[ $setup_dir ]]; then
         is_shadow_build && mkdir -p "$setup_dir"
         cd "$setup_dir"
     fi
@@ -1506,7 +1510,7 @@ run_apply() {
     fi
 
     (
-        cd_to_spec_setup_dir
+        maybe_cd_to_spec_setup_subdir
         for p in $to_apply; do
             if [[ ! $auto_applied ]]; then
                 op="$(sed -n "s/^%patch$p \+\(.*\)/\1/p" "$OPT_SPEC")"
@@ -1545,7 +1549,7 @@ run_build() {
     fi
 
     (
-        cd_to_spec_setup_dir;
+        maybe_cd_to_spec_setup_subdir
         [[ $OPT_CLEAN_OUTPUTDIR ]] && rm -f "$OPT_OUTPUTDIR/"*.rpm;
         oomadvice sb2 -t $OPT_TARGET env PATH="$WRAPPERSDIR:$USERWRAPPERSDIR:$PATH" rpmbuild \
             --build-in-place --target=$build_tgt \
@@ -1578,7 +1582,7 @@ run_prepare() {
     local build_tgt=$(sb2 -t $OPT_TARGET gcc -dumpmachine)
     build_tgt=${build_tgt%-gnueabi}
     (
-        cd_to_spec_setup_dir;
+        maybe_cd_to_spec_setup_subdir
         [[ $OPT_CLEAN_OUTPUTDIR ]] && rm -f "$OPT_OUTPUTDIR/"*.rpm;
         oomadvice sb2 -t $OPT_TARGET rpmbuild --build-in-place --target=$build_tgt \
             "${BUILD_DEBUG[@]}" \
@@ -1682,7 +1686,7 @@ run_cmake() {
     esac
 
     (
-        cd_to_spec_setup_dir
+        maybe_cd_to_spec_setup_subdir
         oomadvice sb2 -t $OPT_TARGET env PATH="${WRAPPERSDIR}:${USERWRAPPERSDIR}:${PATH}" rpmbuild \
             --build-in-place --target=$build_tgt \
             --define "noecho 1" \
@@ -1712,7 +1716,7 @@ run_qmake() {
         init_noop_wrapper $WRAPPERSDIR/make
 
         (
-            cd_to_spec_setup_dir;
+            maybe_cd_to_spec_setup_subdir
             oomadvice sb2 -t $OPT_TARGET env PATH="$WRAPPERSDIR:$USERWRAPPERSDIR:$PATH" rpmbuild \
                 --build-in-place --target=$build_tgt \
                 --define "noecho 1" \
@@ -1746,7 +1750,7 @@ run_make() {
         init_simple_wrapper $WRAPPERSDIR/make "$@"
 
         (
-            cd_to_spec_setup_dir;
+            maybe_cd_to_spec_setup_subdir
             oomadvice sb2 -t $OPT_TARGET env PATH="$WRAPPERSDIR:$USERWRAPPERSDIR:$PATH" rpmbuild \
                 --build-in-place --target=$build_tgt \
                 --define "noecho 1" \
@@ -1780,7 +1784,7 @@ run_make_install() {
 
     # Install to buildroot which should be rsync'ed to /opt/sdk/$package on device
     (
-        cd_to_spec_setup_dir;
+        maybe_cd_to_spec_setup_subdir
         oomadvice sb2 -t $OPT_TARGET rpmbuild --build-in-place --target=$build_tgt \
             --define "noecho 1" \
             --define "_sourcedir $(dirname $OPT_SPEC)" \
@@ -1807,7 +1811,7 @@ run_package() {
 
     (
         increment_build_number;
-        cd_to_spec_setup_dir;
+        maybe_cd_to_spec_setup_subdir
         [[ $OPT_CLEAN_OUTPUTDIR ]] && rm -f "$OPT_OUTPUTDIR/"*.rpm;
         oomadvice sb2 -t $OPT_TARGET rpmbuild --build-in-place --target=$build_tgt \
             --define "noecho 1" \
