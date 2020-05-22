@@ -1193,6 +1193,13 @@ rpm_quote() {
     quote "$@" |sed 's/\\/&&/g'
 }
 
+# Sometime's better to be paranoid than sorry.
+clean_dir_no_recurse() {
+    local dir=$1
+    # Also ensure 'rmdir --parents' is not unnecessary verbose
+    find "$dir" -maxdepth 1 ! -type d -delete && rmdir --parents "$dir" &>/dev/null
+}
+
 init_wrappers_dir() {
     [[ -e $WRAPPERSDIR ]] || mkdir -p "$WRAPPERSDIR"
     [[ -e $USERWRAPPERSDIR ]] || mkdir -p "$USERWRAPPERSDIR"
@@ -1205,9 +1212,8 @@ init_wrappers_dir() {
 }
 
 remove_wrappers_dir() {
-    # Better be paranoid than sorry. And quieten the unnecessary verbose 'rmdir --parents'
-    rm -f "$WRAPPERSDIR"/* && rmdir --parents "$WRAPPERSDIR" &>/dev/null
-    rm -f "$USERWRAPPERSDIR"/* && rmdir --parents "$USERWRAPPERSDIR" &>/dev/null
+    [[ -d $WRAPPERSDIR ]] && clean_dir_no_recurse "$WRAPPERSDIR"
+    [[ -d $USERWRAPPERSDIR ]] && clean_dir_no_recurse "$USERWRAPPERSDIR"
 }
 
 # 1. Allows to pass extra arguments to qmake
