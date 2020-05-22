@@ -399,7 +399,7 @@ content_not_changed_since() {
     tmpfile=$(mktemp) || return
     touch --date "@$timestamp" "$tmpfile" || return
     local newer=
-    newer=$(find "$dir" -newer "$tmpfile" -print -quit) || return
+    newer=$(find "$dir" -mindepth 1 -newer "$tmpfile" -print -quit) || return
     [[ ! $newer ]]
 }
 
