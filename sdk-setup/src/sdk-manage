@@ -383,6 +383,26 @@ is_locked() {
     [[ -e $lock_file ]] && ! flock --nonblock 0 <"$lock_file"
 }
 
+content_not_changed_since() {
+    local dir=$1 timestamp=$2
+
+    local tmpfile=
+    content_not_changed_since_cleanup() (
+        trap 'echo cleaning up...' INT TERM HUP
+        if [[ $tmpfile ]]; then
+            rm -f "$tmpfile"
+        fi
+    )
+    trap 'content_not_changed_since_cleanup; trap - RETURN' RETURN
+    trap 'return 1' INT TERM HUP
+
+    tmpfile=$(mktemp) || return
+    touch --date "@$timestamp" "$tmpfile" || return
+    local newer=
+    newer=$(find "$dir" -newer "$tmpfile" -print -quit) || return
+    [[ ! $newer ]]
+}
+
 ################################################################'
 # Polymorphic utilities for common operations on targets, toolings and the SDK itself.
 #
@@ -1704,30 +1724,13 @@ snapshot_target() {
 target_snapshot_needs_reset() {
     local snapshot=$1 original=$2
 
-    local tmpfile=
-    target_snapshot_needs_reset_cleanup() (
-        trap 'echo cleaning up...' INT TERM HUP
-        if [[ $tmpfile ]]; then
-            rm -f "$tmpfile"
-        fi
-    )
-    trap 'target_snapshot_needs_reset_cleanup; trap - RETURN' RETURN
-    trap 'return 1' INT TERM HUP
-
     local snapshot_time=
     snapshot_time=$(object_config_get "target:$snapshot" "$SNAPSHOT_TIME_KEY") || return
     # Convert date to unix seconds
     snapshot_time=$(date --date "$snapshot_time" +%s) || return
 
     # Try to avoid querying RPM database as it takes considerable amount of time
-    tmpfile=$(mktemp) || return
-    # --date "@value" passes value as unix seconds
-    touch --date "@$snapshot_time" "$tmpfile" || return
-    local newer=
-    newer=$(find "$MER_TARGETS/$original/var/lib/rpm" -newer "$tmpfile" -print -quit) || return
-    if [[ ! $newer ]]; then
-        return 1
-    fi
+    content_not_changed_since "$MER_TARGETS/$object/var/lib/rpm" "$snapshot_time" && return 1
 
     local most_recent_install_time=
     most_recent_install_time=$(set -o pipefail; rpm --root="$MER_TARGETS/$original" -qa \
