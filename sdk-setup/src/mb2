@@ -290,6 +290,24 @@ COMMANDS
         Execute an arbitrary <command> in the build environment.  If no
         <command> is specified, an interactive shell is opened.
 
+    compiledb [<make-extra-arg>...]
+        Run rpmbuild. Execute just the %build section of the .spec file,
+        modifying any 'make' invocation figuring in that section in order to
+        generate Clang's JSON Compilation Database file
+        'compile_commands.json' as described below.
+
+        Unless the (top-level) makefile defines a target named 'compiledb' or
+        'compile_commands.json', 'make' will be wrapped with the 'compiledb'
+        tool as the default option to generate the compilation database.
+
+        A custom mechanism to generate the compilation database may be
+        supplied by defining one of the above mentioned targets. In that case
+        'make' will be invoked with command line modified by adding that
+        target name and removing any other target-like argument. (Any
+        non-option, non-assignment argument will be removed.  Options that
+        accept arguments need to be sticked together with their arguments with
+        '='.)
+
     check --list-suites
     check [-l|--levels [+|-]<level>...] [-s|--suites [+|-]<suite>...]
           [<artefact>...]
@@ -1516,6 +1534,68 @@ END
     chmod +x "$wrapper"
 )
 
+init_make_compiledb_wrapper() (
+    local wrapper=$1
+    local extra_args=("${@:2}")
+
+    main() {
+        local self=${0#$PWD/}
+        local command=${0##*/}
+
+        local path=${0%/*}
+        PATH=${PATH/$path:/}
+
+        local real=$(which "$command")
+        if [[ ! $real || $real == "$0" ]]; then
+            echo "$self: Cannot find real $command" >&2
+            exit 1
+        fi
+
+        # Check if the makefile defines any of the well known targets to
+        # generate compilation database a custom way.
+        local make_db=$("$real" "$@" --dry-run --silent \
+            --print-data-base --no-builtin-rules --no-builtin-variables)
+        local target= candidate_target=
+        for candidate_target in "${CANDIDATE_TARGETS[@]}"; do
+            if grep -q -e "^${candidate_target//./\\.}:" <<<"$make_db"; then
+                target=$candidate_target
+                break
+            fi
+        done
+
+        if [[ $target ]]; then
+            # Keep only options and variable assignments, drop targets
+            local filtered_args=() arg=
+            for arg in "$@"; do
+                [[ $arg == -* || $arg == *=* ]] && filtered_args+=("$arg")
+            done
+
+            echo "$self: Executing real $command:" >&2
+
+            set -x
+            "$real" "${filtered_args[@]}" "$target" "${EXTRA_ARGS[@]}"
+        else
+            echo "$self: Wrapping real $command with compiledb:" >&2
+
+            set -x
+            compiledb --no-build make "$@" "${EXTRA_ARGS[@]}"
+        fi
+    }
+
+    init_wrappers_dir
+    cat <<END >"$wrapper"
+#!/bin/bash
+
+CANDIDATE_TARGETS=(compiledb compile_commands.json)
+EXTRA_ARGS=($(quote "${extra_args[@]}"))
+
+$(declare -f main)
+
+main "\$@"
+END
+    chmod +x "$wrapper"
+)
+
 init_simple_wrapper() {
     local wrapper=$1
     local extra_args=("${@:2}")
@@ -1847,6 +1927,47 @@ run_qmake() {
     else
         sb2 -t $OPT_TARGET qmake "$@" ${OPT_PRO_FILE_OR_DIR:+"$OPT_PRO_FILE_OR_DIR"}
     fi
+}
+
+run_compiledb() {
+    cp -a "$OPT_SPEC" "$TMP_SPEC"
+
+    # get rid of potential windows linefeeds
+    sed -i "s/\x0D$//g" "$TMP_SPEC"
+
+    maybe_fix_package_version "$TMP_SPEC"
+
+    # This is a good time to verify the target dependencies as per mb
+    maybe_verify_target_dependencies
+
+    local build_tgt=$(sb2 -t $OPT_TARGET gcc -dumpmachine)
+    build_tgt=${build_tgt%-gnueabi}
+
+    if is_shadow_build; then
+        local subdir=$(get_spec_setup_subdir)
+        : ${subdir:=.}
+        local src_dir=$OPT_SRC_DIR/$subdir
+
+        init_qmake_wrapper $WRAPPERSDIR/qmake
+        init_cmake_wrapper $WRAPPERSDIR/cmake
+
+        if [[ -e $src_dir/Makefile.am ]]; then
+            init_autotools_wrappers "$subdir"
+        fi
+    fi
+
+    init_make_compiledb_wrapper $WRAPPERSDIR/make "$@"
+
+    (
+        maybe_cd_to_spec_setup_subdir
+        oomadvice sb2 -t $OPT_TARGET env PATH="$WRAPPERSDIR:$USERWRAPPERSDIR:$PATH" rpmbuild \
+            --build-in-place --target=$build_tgt \
+            --define "noecho 1" \
+            --define "_sourcedir $(dirname $OPT_SPEC)" \
+            --define "_buildhost $(get_hostname)" \
+            -bc --short-circuit \
+            "$TMP_SPEC"
+    )
 }
 
 run_make() {
@@ -2635,7 +2756,7 @@ while [[ "$1" ]]; do
             shift 2
             ;;
         make-install | install | package | rpm | deploy | build | build-requires | installdeps \
-            | apply | prepare | prep | cmake )
+            | apply | prepare | prep | cmake | compiledb )
             OPT_NEEDSPEC=1;
             break
             ;;
@@ -2703,7 +2824,7 @@ elif [[ ! $OPT_NO_SNAPSHOT && ! $MB2_SELF_TEST_RUN ]]; then
 fi
 
 case "$1" in
-    make | make-install | install | package | rpm | deploy | prepare | prep | build-shell )
+    make | make-install | install | package | rpm | deploy | prepare | prep | build-shell | compiledb )
         if [[ $1 == install ]]; then
             notice "The 'install' command is deprecated. Use 'make-install' instead."
             set -- make-install "${@:2}"
