@@ -1563,6 +1563,8 @@ init_make_compiledb_wrapper() (
             fi
         done
 
+        rm -f "$COMPILEDB_INPUT"
+
         if [[ $target ]]; then
             # Keep only options and variable assignments, drop targets
             local filtered_args=() arg=
@@ -1574,11 +1576,19 @@ init_make_compiledb_wrapper() (
 
             set -x
             "$real" "${filtered_args[@]}" "$target" "${EXTRA_ARGS[@]}"
-        else
+        elif which compiledb >/dev/null; then
             echo "$self: Wrapping real $command with compiledb:" >&2
 
             set -x
             compiledb --no-build make "$@" "${EXTRA_ARGS[@]}"
+        else
+            echo "$self: Executing real $command in dry-run mode:" >&2
+
+            (
+                set -x
+                "$real" "$@" --dry-run --always-make --print-directory --keep-going \
+                    "${EXTRA_ARGS[@]}"
+            ) >"$COMPILEDB_INPUT"
         fi
     }
 
@@ -1587,6 +1597,7 @@ init_make_compiledb_wrapper() (
 #!/bin/bash
 
 CANDIDATE_TARGETS=(compiledb compile_commands.json)
+COMPILEDB_INPUT=$(quote "$COMPILEDB_INPUT")
 EXTRA_ARGS=($(quote "${extra_args[@]}"))
 
 $(declare -f main)
@@ -1966,7 +1977,12 @@ run_compiledb() {
             --define "_sourcedir $(dirname $OPT_SPEC)" \
             --define "_buildhost $(get_hostname)" \
             -bc --short-circuit \
-            "$TMP_SPEC"
+            "$TMP_SPEC" \
+            || return
+
+        if [[ -e "$COMPILEDB_INPUT" ]]; then
+            compiledb --parse "$COMPILEDB_INPUT" && rm -f "$COMPILEDB_INPUT"
+        fi
     )
 }
 
@@ -2528,6 +2544,7 @@ deviceuser=nemo
 
 STATEDIR=$PWD/.mb2
 TMP_SPEC=$STATEDIR/spec
+COMPILEDB_INPUT=$STATEDIR/compiledb-input.txt
 SNAPSHOT_POOL_SUFFIX=mb2.XXX
 SNAPSHOT_POOL_SIZE=5
 
