@@ -1069,7 +1069,7 @@ get_device() {
                 maintag=$TAG_NAME
                 eval local $ATTRIBUTES
                 ;;
-            mac|index|subnet|ip|sshkeypath|sshport )
+            mac|index|subnet|ip|sshkeypath|sshport|username )
                 # Don't process and store nested tags if we're in
                 # device with wrong name
                 if [[ "$maintag" == "device" ]] && [[ $IN_DEVICE != 1 ]]; then
@@ -2136,12 +2136,12 @@ run_deploy() {
             ! behind_qtcreator || run_package || return
             rpms=$(find_rpms $all_opt "$OPT_OUTPUTDIR" "$STATEDIR/spec" "${patterns[@]}")
             [[ $rpms ]] || fatal "No package found or none matched the given criteria"
-            rsync_as $deviceuser -av ${rpms} $device_ip:/home/$deviceuser/RPMS/
+            rsync_as $device_username -av ${rpms} $device_ip:/home/$device_username/RPMS/
             [[ $? -ne 0 ]] && return 1
             device_rpms=$(sed "s,^$OPT_OUTPUTDIR/,RPMS/," <<<"$rpms")
-            ssh_as $deviceuser $method ${device_rpms}
+            ssh_as $device_username $method ${device_rpms}
             retcode=$?
-            ssh_as $deviceuser rm -f ${device_rpms}
+            ssh_as $device_username rm -f ${device_rpms}
             ;;
         --zypper )
             ! behind_qtcreator || run_package || return
@@ -2158,14 +2158,14 @@ run_deploy() {
         --rsync )
             ! behind_qtcreator || run_make_install || return
             name=$(get_spec_tag "%{name}")
-            rsync_as $deviceuser -av ${buildroot}/. $device_ip:/opt/sdk/$name
+            rsync_as $device_username -av ${buildroot}/. $device_ip:/opt/sdk/$name
             retcode=$?
             ;;
         --manual )
             ! behind_qtcreator || run_package || return
             rpms=$(find_rpms $all_opt "$OPT_OUTPUTDIR" "$STATEDIR/spec" "${patterns[@]}")
             [[ $rpms ]] || fatal "No package found or none matched the given criteria"
-            rsync_as $deviceuser -av ${rpms} $device_ip:/home/$deviceuser/RPMS/
+            rsync_as $device_username -av ${rpms} $device_ip:/home/$device_username/RPMS/
             [[ $? -ne 0 ]] && return 1
             retcode=0
             ;;
@@ -2234,7 +2234,7 @@ run_undeploy() {
     local user=
     case $UNDEPLOY_METHOD_OPT in
         --pkcon | --rsync )
-            user=$deviceuser
+            user=$device_username
             ;;
         --rpm | --zypper )
             user=root
@@ -2540,7 +2540,6 @@ OPT_SHARED_DIR=/etc/mersdk/share
 OPT_INC_BUILD_NUMBER=0
 OPT_NO_DEPS=
 OPT_WRAP=()
-deviceuser=nemo
 
 STATEDIR=$PWD/.mb2
 TMP_SPEC=$STATEDIR/spec
@@ -2979,7 +2978,7 @@ case "$1" in
         fi
         shift
         if [[ "$OPT_DEVICE" ]]; then
-            cmd="ssh_as $deviceuser"
+            cmd="ssh_as $device_username"
         else
             if behind_sfdk; then
                 fatal "No device specified"
