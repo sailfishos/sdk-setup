@@ -85,6 +85,7 @@ Requires:   git
 Requires:   tar
 Requires:   p7zip-full
 Requires:   gnu-cpio
+Requires:   compiledb
 Conflicts:  sdk-harbour-rpmvalidator < 1.49
 
 %description -n sdk-utils

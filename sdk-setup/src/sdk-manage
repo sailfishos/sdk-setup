@@ -33,6 +33,7 @@ usage:
     $SELF tooling package-install <name> <package-name>...
     $SELF tooling package-remove <name> <package-name>...
     $SELF tooling uuidgen {--all | <name>...}
+    $SELF tooling maintain <name> [--no-sync] [<command> [<arg>...]]
 
     $SELF target list [-l|--long] [--tooling <name>] [--snapshots-of <name>]
     $____             [--check-snapshots]
@@ -52,6 +53,7 @@ usage:
     $SELF target package-install <name> <package-name>...
     $SELF target package-remove <name> <package-name>...
     $SELF target uuidgen {--all | <name>...}
+    $SELF target maintain <name> [--no-sync] [<command> [<arg>...]]
 
     $SELF toolchain list <tooling>
     $SELF toolchain install <tooling> <name>...
@@ -383,6 +385,26 @@ is_locked() {
     [[ -e $lock_file ]] && ! flock --nonblock 0 <"$lock_file"
 }
 
+content_not_changed_since() {
+    local dir=$1 timestamp=$2
+
+    local tmpfile=
+    content_not_changed_since_cleanup() (
+        trap 'echo cleaning up...' INT TERM HUP
+        if [[ $tmpfile ]]; then
+            rm -f "$tmpfile"
+        fi
+    )
+    trap 'content_not_changed_since_cleanup; trap - RETURN' RETURN
+    trap 'return 1' INT TERM HUP
+
+    tmpfile=$(mktemp) || return
+    touch --date "@$timestamp" "$tmpfile" || return
+    local newer=
+    newer=$(find "$dir" -mindepth 1 -newer "$tmpfile" -print -quit) || return
+    [[ ! $newer ]]
+}
+
 ################################################################'
 # Polymorphic utilities for common operations on targets, toolings and the SDK itself.
 #
@@ -656,6 +678,59 @@ reset_machine_id() {
     done
 }
 
+maintain() {
+    local type=$1
+    shift
+
+    local opt_no_sync=
+    local object=
+    local command=()
+
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --no-sync)
+                opt_no_sync=1
+                ;;
+            -*)
+                echo >&2 "unrecognized option '$1'"
+                usage
+                return 1
+                ;;
+            *)
+                object=$1
+                shift
+                command=("$@")
+                shift $#
+                break
+                ;;
+        esac
+        shift
+    done
+
+    if [[ ! $object ]]; then
+        echo >&2 "$type name expected"
+        usage
+        return 1
+    fi
+
+    local session_start=
+    session_start=$(date +%s)
+
+    if [[ ${#command[@]} -gt 0 ]]; then
+        enter "$type:$object" "${command[@]}"
+    else
+        enter "$type:$object" env PS1="[$object] \W # " /bin/bash --noprofile --norc
+    fi
+
+    local rc=$?
+
+    if [[ ! $opt_no_sync ]]; then
+        maybe_synchronise_object "$type:$object" "$session_start"
+    fi
+
+    return $rc
+}
+
 ################################################################'
 # tooling management
 
@@ -901,6 +976,9 @@ manage_toolings() {
         ?(--)uuidgen ) shift
             reset_machine_id tooling "$@"
             ;;
+        ?(--)maintain ) shift
+            maintain tooling "$@"
+            ;;
         * )
             echo >&2 "unrecognized option '$1'"
             usage
@@ -1043,9 +1121,23 @@ manage_object_packages() {
     fi
 
     object_zypper "$type:$object" --no-refresh "$action" "${packages[@]}" || return
-    if [[ $INSIDE_VBOX && $type == target ]] && ! target_is_snapshot "$object"; then
-        synchronise_target "$object"
+    maybe_synchronise_object "$type:$object"
+}
+
+maybe_synchronise_object() {
+    local type=${1%:*} object=${1#*:} timestamp=${2:-}
+
+    [[ $INSIDE_VBOX ]] || return 0
+
+    # FIXME Currently we also synchronize bits from toolings, so ideally we
+    # should synchronize all targets when a tooling is changed
+    [[ $type == target ]] && ! target_is_snapshot "$object" || return 0
+
+    if [[ $timestamp ]]; then
+        content_not_changed_since "$MER_TARGETS/$object/var/lib/rpm" "$timestamp" && return 0
     fi
+
+    synchronise_target "$object"
 }
 
 manage_develpkgs() {
@@ -1704,30 +1796,13 @@ snapshot_target() {
 target_snapshot_needs_reset() {
     local snapshot=$1 original=$2
 
-    local tmpfile=
-    target_snapshot_needs_reset_cleanup() (
-        trap 'echo cleaning up...' INT TERM HUP
-        if [[ $tmpfile ]]; then
-            rm -f "$tmpfile"
-        fi
-    )
-    trap 'target_snapshot_needs_reset_cleanup; trap - RETURN' RETURN
-    trap 'return 1' INT TERM HUP
-
     local snapshot_time=
     snapshot_time=$(object_config_get "target:$snapshot" "$SNAPSHOT_TIME_KEY") || return
     # Convert date to unix seconds
     snapshot_time=$(date --date "$snapshot_time" +%s) || return
 
     # Try to avoid querying RPM database as it takes considerable amount of time
-    tmpfile=$(mktemp) || return
-    # --date "@value" passes value as unix seconds
-    touch --date "@$snapshot_time" "$tmpfile" || return
-    local newer=
-    newer=$(find "$MER_TARGETS/$original/var/lib/rpm" -newer "$tmpfile" -print -quit) || return
-    if [[ ! $newer ]]; then
-        return 1
-    fi
+    content_not_changed_since "$MER_TARGETS/$object/var/lib/rpm" "$snapshot_time" && return 1
 
     local most_recent_install_time=
     most_recent_install_time=$(set -o pipefail; rpm --root="$MER_TARGETS/$original" -qa \
@@ -1964,6 +2039,9 @@ manage_targets() {
             ;;
         ?(--)uuidgen ) shift
             reset_machine_id target "$@"
+            ;;
+        ?(--)maintain ) shift
+            maintain target "$@"
             ;;
 	* )
             echo >&2 "unrecognized option '$1'"

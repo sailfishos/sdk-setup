@@ -76,16 +76,19 @@ the "build" or "qmake" (or "cmake") command:
 
 Limitations related to shadow builds:
 
-    1. Shadow build is only available for packages that use qmake (or CMake).
-       Additionally, their build and install procedure must be fully realized
-       using qmake (or CMake) with no additional steps implemented at .spec
-       level.
+    1. Shadow build is only available for packages that use qmake (or CMake or
+       GNU Automake).  Additionally, their build and install procedure must be
+       fully realized using qmake (or CMake or GNU Automake) with no
+       additional steps implemented at .spec level.
     2. The "--doprep" option to the "build" command cannot be used with shadow
        builds.
     3. If "prepare" or "apply" is needed, it must be used directly on the
        source tree prior to starting a shadow build (shadow builds for
        multiple targets are still possible provided that the %prep section is
        target-independent).
+    4. GNU Automake, Autoconf and related tools, in case of packages that
+       invoke these at build time, still store their outputs (Makefile.in,
+       configure, etc.) under the source tree.
 
 
 SHARED OUTPUT DIRECTORY
@@ -223,7 +226,7 @@ COMMANDS
         -R    reverse apply patches (patch -R)
 
     build [-p|--doprep] [-d|--enable-debug] [-j <n>] [<project-dir-or-file>]
-          [[--] <rpmbuild-extra-args>]
+          [[--] <rpmbuild-extra-arg>...]
         Run rpmbuild. Execute all sections of the .spec file except for %prep
         unless told otherwise.
 
@@ -236,7 +239,7 @@ COMMANDS
         -d    enable debug build
         -j <n> run up to <n> jobs simultaneously
 
-    qmake [<project-dir-or-file>] [[--] <qmake-extra-args>]
+    qmake [<project-dir-or-file>] [[--] <qmake-extra-arg>...]
         Run rpmbuild. Execute just the %build section of the .spec file,
         suppressing any 'make' invocation figuring in that section.
 
@@ -245,8 +248,8 @@ COMMANDS
         project directory. (The file name part is ignored - project file
         selection is done by qmake call inside the .spec file.)
 
-    cmake [<project-dir>] [[--] <cmake-extra-args>]
-    cmake --build . [<cmake-extra-args>] [-- <build-tool-extra-args>]
+    cmake [<project-dir>] [[--] <cmake-extra-arg>...]
+    cmake --build . [<cmake-extra-arg>...] [-- <build-tool-extra-arg>...]
         Run rpmbuild. Execute just the %build section of the .spec file,
         suppressing any 'cmake' invocation figuring in that section, that does
         not match the execution form used here, i.e., does not trigger the
@@ -255,24 +258,25 @@ COMMANDS
 
         Additionally, any plain 'make' invocation will be recognized as
         implementing the 'build the project' action and will be treated
-        accordingly. Any possible <cmake-extra-args> will be silently ignored
-        and any possible <build-tools-extra-args> will be used equally for
+        accordingly. Any possible <cmake-extra-arg> will be silently ignored
+        and any possible <build-tools-extra-arg> will be used equally for
         each 'make' invocation in that case.
 
         If path to a <project-dir> is passed, shadow build will be done.
         Otherwise the current working directory is treated as the project
         directory.
 
-    make [<make-extra-args>]
+    make [<make-extra-arg>...]
         Run rpmbuild. Execute just the %build section of the .spec file,
         suppressing any command figuring in that section, that is recognized
-        as a command to generate project buildsystem, namely,
+        as a command to generate project buildsystem. The following is a
+        complete list of such commands:
 
         - any 'qmake' invocation
         - any 'cmake' invocation using the corresponding execution form
 
-        For CMake based projects the 'make <make-extra-args>' command is
-        equivalent to 'cmake --build . -- <make-extra-args>' (provided that
+        For CMake based projects the 'make <make-extra-arg>...' command is
+        equivalent to 'cmake --build . -- <make-extra-arg>...' (provided that
         'make' is the build tool used by the project).
 
     make-install
@@ -282,8 +286,31 @@ COMMANDS
         Run rpmbuild. Execute just the %install section of the .spec file, then
         build binary packages.
 
+    build-shell [<command> [<arg>...]]
+        Execute an arbitrary <command> in the build environment.  If no
+        <command> is specified, an interactive shell is opened.
+
+    compiledb [<make-extra-arg>...]
+        Run rpmbuild. Execute just the %build section of the .spec file,
+        modifying any 'make' invocation figuring in that section in order to
+        generate Clang's JSON Compilation Database file
+        'compile_commands.json' as described below.
+
+        Unless the (top-level) makefile defines a target named 'compiledb' or
+        'compile_commands.json', 'make' will be wrapped with the 'compiledb'
+        tool as the default option to generate the compilation database.
+
+        A custom mechanism to generate the compilation database may be
+        supplied by defining one of the above mentioned targets. In that case
+        'make' will be invoked with command line modified by adding that
+        target name and removing any other target-like argument. (Any
+        non-option, non-assignment argument will be removed.  Options that
+        accept arguments need to be sticked together with their arguments with
+        '='.)
+
     check --list-suites
-    check [-l|--levels [+|-]<level>...] [-s|--suites [+|-]<suite>...] [<artefact>]...
+    check [-l|--levels [+|-]<level>...] [-s|--suites [+|-]<suite>...]
+          [<artefact>...]
         Perform quality checks.
 
         By default, test suites operate on the artefacts associated with build
@@ -434,7 +461,7 @@ COMMANDS
             Uses 'zypper' to remove RPM package(s).  Requires 'zypper'
             installed on the device, requires root access to the device.
 
-    run [<command> [<args>]]
+    run [<command> [<arg>...]]
         Run the given command on the device specified with '--device'.  Can be
         used for running gdb and a gdb server.
 
@@ -867,7 +894,7 @@ filter_repo()
     createrepo_c "$output"
 }
 
-verify_target_dependencies() {
+maybe_verify_target_dependencies() {
     [[ $OPT_NO_DEPS ]] && return
 
     local deps=()
@@ -900,7 +927,7 @@ get_spec_tag() {
     rpmspec --query --srpm --queryformat="$1" "$OPT_SPEC"
 }
 
-fix_package_version() {
+maybe_fix_package_version() {
     local spec_file=$1
 
     local version_in_spec=$(sed -n 's/^Version:[[:space:]]*//p' "$spec_file")
@@ -1114,7 +1141,7 @@ ssh_as() {
         ssh -F /etc/ssh/ssh_config.sdk -l $user $device_ip -p $device_sshport "$(quote "$@")"
 }
 
-cd_to_spec_setup_dir() {
+get_spec_setup_subdir() {
     # avoid spawning another process for | cut -s -f2 -d '/'
     local setup_dir=$(grep -Po '%(auto)?setup.*-n[[:space:]]+[^[:space:]]+' "$OPT_SPEC")
     # if setup_dir has '/' return the part after it
@@ -1122,9 +1149,13 @@ cd_to_spec_setup_dir() {
     # if it did not have a '/' then we got the original match => erase it
     setup_dir=${setup_dir/#%?(auto)setup*/}
 
-    if [[ -n "$setup_dir" ]]; then
-        # in case we got a spec %{tag} out of this, try to expand it
-        setup_dir=$(get_spec_tag "$setup_dir")
+    # in case we got a spec %{tag} out of this, try to expand it
+    get_spec_tag "$setup_dir"
+}
+
+maybe_cd_to_spec_setup_subdir() {
+    local setup_dir=$(get_spec_setup_subdir)
+    if [[ $setup_dir ]]; then
         is_shadow_build && mkdir -p "$setup_dir"
         cd "$setup_dir"
     fi
@@ -1139,7 +1170,7 @@ cd_to_spec_setup_dir() {
 #  if it only is x check if x is number
 #  if x is number => increment
 #  else leave untouched
-increment_build_number() {
+maybe_increment_build_number() {
     [[ $OPT_INC_BUILD_NUMBER -eq 0 ]] && return
 
     local release=$(get_spec_tag "%{release}")
@@ -1180,6 +1211,13 @@ rpm_quote() {
     quote "$@" |sed 's/\\/&&/g'
 }
 
+# Sometime's better to be paranoid than sorry.
+clean_dir_no_recurse() {
+    local dir=$1
+    # Also ensure 'rmdir --parents' is not unnecessary verbose
+    find "$dir" -maxdepth 1 ! -type d -delete && rmdir --parents "$dir" &>/dev/null
+}
+
 init_wrappers_dir() {
     [[ -e $WRAPPERSDIR ]] || mkdir -p "$WRAPPERSDIR"
     [[ -e $USERWRAPPERSDIR ]] || mkdir -p "$USERWRAPPERSDIR"
@@ -1192,9 +1230,8 @@ init_wrappers_dir() {
 }
 
 remove_wrappers_dir() {
-    # Better be paranoid than sorry. And quieten the unnecessary verbose 'rmdir --parents'
-    rm -f "$WRAPPERSDIR"/* && rmdir --parents "$WRAPPERSDIR" &>/dev/null
-    rm -f "$USERWRAPPERSDIR"/* && rmdir --parents "$USERWRAPPERSDIR" &>/dev/null
+    [[ -d $WRAPPERSDIR ]] && clean_dir_no_recurse "$WRAPPERSDIR"
+    [[ -d $USERWRAPPERSDIR ]] && clean_dir_no_recurse "$USERWRAPPERSDIR"
 }
 
 # 1. Allows to pass extra arguments to qmake
@@ -1401,6 +1438,175 @@ END
     chmod +x "$wrapper"
 )
 
+init_autotools_wrappers() {
+    local src_subdir=${1?}
+    local src_dir=$OPT_SRC_DIR/$src_subdir
+
+    if [[ -e $src_dir/configure.ac || -e $src_dir/configure.in || -e $src_dir/configure ]]; then
+        init_source_tool_wrapper "$src_subdir/configure"
+    fi
+
+    if [[ -e $src_dir/autogen.sh ]]; then
+        init_source_tool_wrapper --cd "$src_subdir/autogen.sh"
+    fi
+
+    local tool=
+    for tool in "${AUTOTOOLS[@]}"; do
+        init_cd_to_sources_wrapper "$WRAPPERSDIR/$tool"
+    done
+}
+
+# Create a wrapper for a tool from source tree under the (shadow) build tree.
+init_source_tool_wrapper() {
+    local opt_cd=
+    if [[ $1 == --cd ]]; then
+        opt_cd=1
+        shift
+    fi
+    local file=$1
+
+    local subdir=${file%/*}
+
+    mkdir -p "$subdir" || return
+
+    {
+        cat <<END
+#!/bin/bash
+# This file was auto-generated by 'mb2'.
+END
+        if [[ $opt_cd ]]; then
+            cat <<END
+cd "$OPT_SRC_DIR/$subdir" || exit
+END
+        fi
+
+        cat <<END
+exec "$OPT_SRC_DIR/$file" "\$@"
+END
+    } >"$file"
+    chmod +x "$file"
+}
+
+init_cd_to_sources_wrapper() (
+    local wrapper=$1
+
+    main() {
+        local self=${0#$PWD/}
+        local command=${0##*/}
+
+        local path=${0%/*}
+        PATH=${PATH/$path:/}
+
+        local real=$(which "$command")
+        if [[ ! $real || $real == "$0" ]]; then
+            echo "$self: Cannot find real $command" >&2
+            exit 1
+        fi
+
+        if [[ $PWD/ != "$BUILD_DIR/"* ]]; then
+            # We are not under the build dir. This means we are invoked by
+            # another wrapped command that already did cd to sources. Execute
+            # the real command silently in this case.
+            "$real" "$@"
+            return
+        fi
+
+        local subdir=${PWD#$BUILD_DIR}
+        local src_dir=$SRC_DIR${subdir:+/$subdir}
+
+        echo "$self: Executing real $command:" >&2
+
+        set -x
+        cd "$src_dir" && "$real" "$@"
+    }
+
+    init_wrappers_dir
+    cat <<END >"$wrapper"
+#!/bin/bash
+
+BUILD_DIR=$(quote "$PWD")
+SRC_DIR=$(quote "${OPT_SRC_DIR:-$PWD}")
+
+$(declare -f main)
+
+main "\$@"
+END
+    chmod +x "$wrapper"
+)
+
+init_make_compiledb_wrapper() (
+    local wrapper=$1
+    local extra_args=("${@:2}")
+
+    main() {
+        local self=${0#$PWD/}
+        local command=${0##*/}
+
+        local path=${0%/*}
+        PATH=${PATH/$path:/}
+
+        local real=$(which "$command")
+        if [[ ! $real || $real == "$0" ]]; then
+            echo "$self: Cannot find real $command" >&2
+            exit 1
+        fi
+
+        # Check if the makefile defines any of the well known targets to
+        # generate compilation database a custom way.
+        local make_db=$("$real" "$@" --dry-run --silent \
+            --print-data-base --no-builtin-rules --no-builtin-variables)
+        local target= candidate_target=
+        for candidate_target in "${CANDIDATE_TARGETS[@]}"; do
+            if grep -q -e "^${candidate_target//./\\.}:" <<<"$make_db"; then
+                target=$candidate_target
+                break
+            fi
+        done
+
+        rm -f "$COMPILEDB_INPUT"
+
+        if [[ $target ]]; then
+            # Keep only options and variable assignments, drop targets
+            local filtered_args=() arg=
+            for arg in "$@"; do
+                [[ $arg == -* || $arg == *=* ]] && filtered_args+=("$arg")
+            done
+
+            echo "$self: Executing real $command:" >&2
+
+            set -x
+            "$real" "${filtered_args[@]}" "$target" "${EXTRA_ARGS[@]}"
+        elif which compiledb >/dev/null; then
+            echo "$self: Wrapping real $command with compiledb:" >&2
+
+            set -x
+            compiledb --no-build make "$@" "${EXTRA_ARGS[@]}"
+        else
+            echo "$self: Executing real $command in dry-run mode:" >&2
+
+            (
+                set -x
+                "$real" "$@" --dry-run --always-make --print-directory --keep-going \
+                    "${EXTRA_ARGS[@]}"
+            ) >"$COMPILEDB_INPUT"
+        fi
+    }
+
+    init_wrappers_dir
+    cat <<END >"$wrapper"
+#!/bin/bash
+
+CANDIDATE_TARGETS=(compiledb compile_commands.json)
+COMPILEDB_INPUT=$(quote "$COMPILEDB_INPUT")
+EXTRA_ARGS=($(quote "${extra_args[@]}"))
+
+$(declare -f main)
+
+main "\$@"
+END
+    chmod +x "$wrapper"
+)
+
 init_simple_wrapper() {
     local wrapper=$1
     local extra_args=("${@:2}")
@@ -1479,7 +1685,7 @@ run_build_requires() {
         # Refresh repos before installing dependencies
         sb2 -t "$OPT_TARGET" -m sdk-install -R zypper --non-interactive ref
     fi
-    verify_target_dependencies
+    maybe_verify_target_dependencies
 }
 
 run_apply() {
@@ -1506,7 +1712,7 @@ run_apply() {
     fi
 
     (
-        cd_to_spec_setup_dir
+        maybe_cd_to_spec_setup_subdir
         for p in $to_apply; do
             if [[ ! $auto_applied ]]; then
                 op="$(sed -n "s/^%patch$p \+\(.*\)/\1/p" "$OPT_SPEC")"
@@ -1520,9 +1726,9 @@ run_apply() {
 
 run_build() {
     # intended to provide mb build behaviour
-    verify_target_dependencies
+    maybe_verify_target_dependencies
 
-    increment_build_number;
+    maybe_increment_build_number;
     if [[ $BUILD_NOPREP ]]; then
         sed -e '/^%patch/d' "$OPT_SPEC" > "$TMP_SPEC"
     else
@@ -1534,18 +1740,26 @@ run_build() {
     # get rid of potential windows linefeeds
     sed -i "s/\x0D$//g" "$TMP_SPEC"
 
-    fix_package_version "$TMP_SPEC"
+    maybe_fix_package_version "$TMP_SPEC"
 
     local build_tgt=$(sb2 -t $OPT_TARGET gcc -dumpmachine)
     build_tgt=${build_tgt%-gnueabi}
 
     if is_shadow_build; then
+        local subdir=$(get_spec_setup_subdir)
+        : ${subdir:=.}
+        local src_dir=$OPT_SRC_DIR/$subdir
+
         init_qmake_wrapper $WRAPPERSDIR/qmake
         init_cmake_wrapper $WRAPPERSDIR/cmake
+
+        if [[ -e $src_dir/Makefile.am ]]; then
+            init_autotools_wrappers "$subdir"
+        fi
     fi
 
     (
-        cd_to_spec_setup_dir;
+        maybe_cd_to_spec_setup_subdir
         [[ $OPT_CLEAN_OUTPUTDIR ]] && rm -f "$OPT_OUTPUTDIR/"*.rpm;
         oomadvice sb2 -t $OPT_TARGET env PATH="$WRAPPERSDIR:$USERWRAPPERSDIR:$PATH" rpmbuild \
             --build-in-place --target=$build_tgt \
@@ -1564,21 +1778,21 @@ run_build() {
 }
 
 run_prepare() {
-    verify_target_dependencies
+    maybe_verify_target_dependencies
 
-    increment_build_number;
+    maybe_increment_build_number;
     # TODO maybe add toggle here for disabling patch applying?
     cp "$OPT_SPEC" "$TMP_SPEC"
 
     # get rid of potential windows linefeeds
     sed -i "s/\x0D$//g" "$TMP_SPEC"
 
-    fix_package_version "$TMP_SPEC"
+    maybe_fix_package_version "$TMP_SPEC"
 
     local build_tgt=$(sb2 -t $OPT_TARGET gcc -dumpmachine)
     build_tgt=${build_tgt%-gnueabi}
     (
-        cd_to_spec_setup_dir;
+        maybe_cd_to_spec_setup_subdir
         [[ $OPT_CLEAN_OUTPUTDIR ]] && rm -f "$OPT_OUTPUTDIR/"*.rpm;
         oomadvice sb2 -t $OPT_TARGET rpmbuild --build-in-place --target=$build_tgt \
             "${BUILD_DEBUG[@]}" \
@@ -1663,11 +1877,11 @@ run_cmake() {
     # get rid of potential windows linefeeds
     sed -i "s/\x0D$//g" "$TMP_SPEC"
 
-    fix_package_version "$TMP_SPEC"
+    maybe_fix_package_version "$TMP_SPEC"
 
     case $CMAKE_MODE in
         configure)
-            verify_target_dependencies
+            maybe_verify_target_dependencies
             init_cmake_wrapper $WRAPPERSDIR/cmake
             init_noop_wrapper $WRAPPERSDIR/make
             ;;
@@ -1682,7 +1896,7 @@ run_cmake() {
     esac
 
     (
-        cd_to_spec_setup_dir
+        maybe_cd_to_spec_setup_subdir
         oomadvice sb2 -t $OPT_TARGET env PATH="${WRAPPERSDIR}:${USERWRAPPERSDIR}:${PATH}" rpmbuild \
             --build-in-place --target=$build_tgt \
             --define "noecho 1" \
@@ -1703,16 +1917,16 @@ run_qmake() {
         # get rid of potential windows linefeeds
         sed -i "s/\x0D$//g" "$TMP_SPEC"
 
-        fix_package_version "$TMP_SPEC"
+        maybe_fix_package_version "$TMP_SPEC"
 
         # This is a good time to verify the target dependencies as per mb
-        verify_target_dependencies
+        maybe_verify_target_dependencies
 
         init_qmake_wrapper $WRAPPERSDIR/qmake "$@"
         init_noop_wrapper $WRAPPERSDIR/make
 
         (
-            cd_to_spec_setup_dir;
+            maybe_cd_to_spec_setup_subdir
             oomadvice sb2 -t $OPT_TARGET env PATH="$WRAPPERSDIR:$USERWRAPPERSDIR:$PATH" rpmbuild \
                 --build-in-place --target=$build_tgt \
                 --define "noecho 1" \
@@ -1726,6 +1940,52 @@ run_qmake() {
     fi
 }
 
+run_compiledb() {
+    cp -a "$OPT_SPEC" "$TMP_SPEC"
+
+    # get rid of potential windows linefeeds
+    sed -i "s/\x0D$//g" "$TMP_SPEC"
+
+    maybe_fix_package_version "$TMP_SPEC"
+
+    # This is a good time to verify the target dependencies as per mb
+    maybe_verify_target_dependencies
+
+    local build_tgt=$(sb2 -t $OPT_TARGET gcc -dumpmachine)
+    build_tgt=${build_tgt%-gnueabi}
+
+    if is_shadow_build; then
+        local subdir=$(get_spec_setup_subdir)
+        : ${subdir:=.}
+        local src_dir=$OPT_SRC_DIR/$subdir
+
+        init_qmake_wrapper $WRAPPERSDIR/qmake
+        init_cmake_wrapper $WRAPPERSDIR/cmake
+
+        if [[ -e $src_dir/Makefile.am ]]; then
+            init_autotools_wrappers "$subdir"
+        fi
+    fi
+
+    init_make_compiledb_wrapper $WRAPPERSDIR/make "$@"
+
+    (
+        maybe_cd_to_spec_setup_subdir
+        oomadvice sb2 -t $OPT_TARGET env PATH="$WRAPPERSDIR:$USERWRAPPERSDIR:$PATH" rpmbuild \
+            --build-in-place --target=$build_tgt \
+            --define "noecho 1" \
+            --define "_sourcedir $(dirname $OPT_SPEC)" \
+            --define "_buildhost $(get_hostname)" \
+            -bc --short-circuit \
+            "$TMP_SPEC" \
+            || return
+
+        if [[ -e "$COMPILEDB_INPUT" ]]; then
+            compiledb --parse "$COMPILEDB_INPUT" && rm -f "$COMPILEDB_INPUT"
+        fi
+    )
+}
+
 run_make() {
     if [[ "$OPT_SPEC" ]]; then
 
@@ -1734,7 +1994,7 @@ run_make() {
         # get rid of potential windows linefeeds
         sed -i "s/\x0D$//g" "$TMP_SPEC"
 
-        fix_package_version "$TMP_SPEC"
+        maybe_fix_package_version "$TMP_SPEC"
 
         local build_tgt=$(sb2 -t $OPT_TARGET gcc -dumpmachine)
         build_tgt=${build_tgt%-gnueabi}
@@ -1746,7 +2006,7 @@ run_make() {
         init_simple_wrapper $WRAPPERSDIR/make "$@"
 
         (
-            cd_to_spec_setup_dir;
+            maybe_cd_to_spec_setup_subdir
             oomadvice sb2 -t $OPT_TARGET env PATH="$WRAPPERSDIR:$USERWRAPPERSDIR:$PATH" rpmbuild \
                 --build-in-place --target=$build_tgt \
                 --define "noecho 1" \
@@ -1776,11 +2036,11 @@ run_make_install() {
     # get rid of potential windows linefeeds
     sed -i "s/\x0D$//g" "$TMP_SPEC"
 
-    fix_package_version "$TMP_SPEC"
+    maybe_fix_package_version "$TMP_SPEC"
 
     # Install to buildroot which should be rsync'ed to /opt/sdk/$package on device
     (
-        cd_to_spec_setup_dir;
+        maybe_cd_to_spec_setup_subdir
         oomadvice sb2 -t $OPT_TARGET rpmbuild --build-in-place --target=$build_tgt \
             --define "noecho 1" \
             --define "_sourcedir $(dirname $OPT_SPEC)" \
@@ -1803,11 +2063,11 @@ run_package() {
     # get rid of potential windows linefeeds
     sed -i "s/\x0D$//g" "$TMP_SPEC"
 
-    fix_package_version "$TMP_SPEC"
+    maybe_fix_package_version "$TMP_SPEC"
 
     (
-        increment_build_number;
-        cd_to_spec_setup_dir;
+        maybe_increment_build_number
+        maybe_cd_to_spec_setup_subdir
         [[ $OPT_CLEAN_OUTPUTDIR ]] && rm -f "$OPT_OUTPUTDIR/"*.rpm;
         oomadvice sb2 -t $OPT_TARGET rpmbuild --build-in-place --target=$build_tgt \
             --define "noecho 1" \
@@ -1819,6 +2079,15 @@ run_package() {
             -bb --noprep --nobuildstage --noclean \
             "$TMP_SPEC"
     )
+}
+
+run_build_shell() {
+    if [[ $# -gt 0 ]]; then
+        oomadvice sb2 -t $OPT_TARGET -- "$@"
+    else
+        # Keep PS1 aligned with `sdk-manage maintain`
+        sb2 -t $OPT_TARGET -- env PS1="[$OPT_ORIGINAL_TARGET] \W $ " /bin/bash --noprofile --norc
+    fi
 }
 
 run_deploy() {
@@ -2275,6 +2544,7 @@ deviceuser=nemo
 
 STATEDIR=$PWD/.mb2
 TMP_SPEC=$STATEDIR/spec
+COMPILEDB_INPUT=$STATEDIR/compiledb-input.txt
 SNAPSHOT_POOL_SUFFIX=mb2.XXX
 SNAPSHOT_POOL_SIZE=5
 
@@ -2289,6 +2559,8 @@ CHECK_ESSENTIAL=Essential
 CHECK_OPTIONAL=Optional
 
 CHECK_RPMSPEC=rpmspec
+
+AUTOTOOLS=(autoreconf autoconf autoheader aclocal automake autopoint libtoolize)
 
 # The working directory inside build engine is noexec and symlink creation under VirtualBox
 # shared folder shared from Windows requires special permissions
@@ -2501,7 +2773,7 @@ while [[ "$1" ]]; do
             shift 2
             ;;
         make-install | install | package | rpm | deploy | build | build-requires | installdeps \
-            | apply | prepare | prep | cmake )
+            | apply | prepare | prep | cmake | compiledb )
             OPT_NEEDSPEC=1;
             break
             ;;
@@ -2511,7 +2783,7 @@ while [[ "$1" ]]; do
             fi
             break
             ;;
-        run | ssh | check | undeploy )
+        run | ssh | check | undeploy | build-shell )
             break
             ;;
         --version )
@@ -2569,7 +2841,7 @@ elif [[ ! $OPT_NO_SNAPSHOT && ! $MB2_SELF_TEST_RUN ]]; then
 fi
 
 case "$1" in
-    make | make-install | install | package | rpm | deploy | prepare | prep )
+    make | make-install | install | package | rpm | deploy | prepare | prep | build-shell | compiledb )
         if [[ $1 == install ]]; then
             notice "The 'install' command is deprecated. Use 'make-install' instead."
             set -- make-install "${@:2}"
@@ -3597,7 +3869,7 @@ fix_version_tc() {
         OPT_FIX_VERSION=1
         OPT_FIX_VERSION_HINT=$hint
         OPT_NO_FIX_VERSION=
-        fix_package_version $version_file >&2
+        maybe_fix_package_version $version_file >&2
     ) || return
 
     local actual=$(sed 's/^Version: //' $version_file)
