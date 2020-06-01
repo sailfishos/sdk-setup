@@ -74,7 +74,7 @@ BuildArch:  noarch
 Requires:   createrepo_c
 Requires:   libxml2
 Requires:   rpm-build
-Requires:   python-lxml
+Requires:   python3-lxml
 Requires:   rsync
 Requires:   sudo
 Requires:   scratchbox2 >= 2.3.90+git2
