@@ -237,18 +237,18 @@ while True:
     if not len(line):
         break
     v1, v2 = line.rstrip().split()
-    print cmp_ver(v1, v2)
+    print(cmp_ver(v1, v2))
     sys.stdout.flush()
 END
         # coproc is not available in Bash older than 4.0
         if [[ ${BASH_VERSINFO[0]} -lt 4 ]]; then
-            version_compare_OUT=$(python -c "$python" <<<"$v1 $v2")
+            version_compare_OUT=$(python3 -c "$python" <<<"$v1 $v2")
             return
         fi
 
         # do not use the syntax with custom NAME to avoid syntax error on "near
         # unexpected token `}'" in Bash older than 4.0
-        coproc python -c "$python" || return
+        coproc python3 -c "$python" || return
         version_compare_COPROC=(${COPROC[*]})
     fi
 

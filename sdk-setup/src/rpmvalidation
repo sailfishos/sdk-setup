@@ -112,7 +112,7 @@ config.read(sys.argv[3:]);
 sec, val = sys.argv[1].split(".");
 type = sys.argv[2];
 if type == 'boolean':
-    print(config.getboolean(sec,val));
+    print(config.getboolean(sec, val));
 else:
     print(config[sec][val]);
 EOF
