@@ -1295,7 +1295,7 @@ init_qmake_wrapper() (
 IS_SHADOW_BUILD=$(is_shadow_build && echo 1)
 BUILD_DIR=$(quote "$PWD")
 SRC_DIR=$(quote "${OPT_SRC_DIR:-$PWD}")
-VARIABLES_CACHE=$STATEDIR/qmake_variables.cache
+VARIABLES_CACHE=$STATEDIR/qmake_variables.$OPT_TARGET.cache
 EXTRA_ARGS=($(quote "${extra_args[@]}"))
 
 $(declare -f main)
