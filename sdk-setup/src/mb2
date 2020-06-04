@@ -1908,36 +1908,32 @@ run_cmake() {
 }
 
 run_qmake() {
-    if [[ "$OPT_SPEC" ]]; then
-        local build_tgt=$(sb2 -t $OPT_TARGET gcc -dumpmachine)
-        build_tgt=${build_tgt%-gnueabi}
+    local build_tgt=$(sb2 -t $OPT_TARGET gcc -dumpmachine)
+    build_tgt=${build_tgt%-gnueabi}
 
-        cp -a "$OPT_SPEC" "$TMP_SPEC"
+    cp -a "$OPT_SPEC" "$TMP_SPEC"
 
-        # get rid of potential windows linefeeds
-        sed -i "s/\x0D$//g" "$TMP_SPEC"
+    # get rid of potential windows linefeeds
+    sed -i "s/\x0D$//g" "$TMP_SPEC"
 
-        maybe_fix_package_version "$TMP_SPEC"
+    maybe_fix_package_version "$TMP_SPEC"
 
-        # This is a good time to verify the target dependencies as per mb
-        maybe_verify_target_dependencies
+    # This is a good time to verify the target dependencies as per mb
+    maybe_verify_target_dependencies
 
-        init_qmake_wrapper $WRAPPERSDIR/qmake "$@"
-        init_noop_wrapper $WRAPPERSDIR/make
+    init_qmake_wrapper $WRAPPERSDIR/qmake "$@"
+    init_noop_wrapper $WRAPPERSDIR/make
 
-        (
-            maybe_cd_to_spec_setup_subdir
-            oomadvice sb2 -t $OPT_TARGET env PATH="$WRAPPERSDIR:$USERWRAPPERSDIR:$PATH" rpmbuild \
-                --build-in-place --target=$build_tgt \
-                --define "noecho 1" \
-                --define "_sourcedir $(dirname $OPT_SPEC)" \
-                --define "_buildhost $(get_hostname)" \
-                -bc --short-circuit \
-                "$TMP_SPEC"
-        )
-    else
-        sb2 -t $OPT_TARGET qmake "$@" ${OPT_PRO_FILE_OR_DIR:+"$OPT_PRO_FILE_OR_DIR"}
-    fi
+    (
+        maybe_cd_to_spec_setup_subdir
+        oomadvice sb2 -t $OPT_TARGET env PATH="$WRAPPERSDIR:$USERWRAPPERSDIR:$PATH" rpmbuild \
+            --build-in-place --target=$build_tgt \
+            --define "noecho 1" \
+            --define "_sourcedir $(dirname $OPT_SPEC)" \
+            --define "_buildhost $(get_hostname)" \
+            -bc --short-circuit \
+            "$TMP_SPEC"
+    )
 }
 
 run_compiledb() {
@@ -1987,37 +1983,32 @@ run_compiledb() {
 }
 
 run_make() {
-    if [[ "$OPT_SPEC" ]]; then
+    cp -a "$OPT_SPEC" "$TMP_SPEC"
 
-        cp -a "$OPT_SPEC" "$TMP_SPEC"
+    # get rid of potential windows linefeeds
+    sed -i "s/\x0D$//g" "$TMP_SPEC"
 
-        # get rid of potential windows linefeeds
-        sed -i "s/\x0D$//g" "$TMP_SPEC"
+    maybe_fix_package_version "$TMP_SPEC"
 
-        maybe_fix_package_version "$TMP_SPEC"
+    local build_tgt=$(sb2 -t $OPT_TARGET gcc -dumpmachine)
+    build_tgt=${build_tgt%-gnueabi}
 
-        local build_tgt=$(sb2 -t $OPT_TARGET gcc -dumpmachine)
-        build_tgt=${build_tgt%-gnueabi}
+    init_noop_wrapper $WRAPPERSDIR/qmake
+    CMAKE_MODE=build
+    CMAKE_EXTRA_BUILD_TOOL_ARGS=("$@")
+    init_cmake_wrapper $WRAPPERSDIR/cmake
+    init_simple_wrapper $WRAPPERSDIR/make "$@"
 
-        init_noop_wrapper $WRAPPERSDIR/qmake
-        CMAKE_MODE=build
-        CMAKE_EXTRA_BUILD_TOOL_ARGS=("$@")
-        init_cmake_wrapper $WRAPPERSDIR/cmake
-        init_simple_wrapper $WRAPPERSDIR/make "$@"
-
-        (
-            maybe_cd_to_spec_setup_subdir
-            oomadvice sb2 -t $OPT_TARGET env PATH="$WRAPPERSDIR:$USERWRAPPERSDIR:$PATH" rpmbuild \
-                --build-in-place --target=$build_tgt \
-                --define "noecho 1" \
-                --define "_sourcedir $(dirname $OPT_SPEC)" \
-                --define "_buildhost $(get_hostname)" \
-                -bc --short-circuit \
-                "$TMP_SPEC"
-        )
-    else
-        sb2 -t $OPT_TARGET make "$@"
-    fi
+    (
+        maybe_cd_to_spec_setup_subdir
+        oomadvice sb2 -t $OPT_TARGET env PATH="$WRAPPERSDIR:$USERWRAPPERSDIR:$PATH" rpmbuild \
+            --build-in-place --target=$build_tgt \
+            --define "noecho 1" \
+            --define "_sourcedir $(dirname $OPT_SPEC)" \
+            --define "_buildhost $(get_hostname)" \
+            -bc --short-circuit \
+            "$TMP_SPEC"
+    )
 }
 
 run_make_install() {
@@ -2771,15 +2762,9 @@ while [[ "$1" ]]; do
             notice "The '$1' option is deprecated and does nothing currently"
             shift 2
             ;;
-        make-install | install | package | rpm | deploy | build | build-requires | installdeps \
-            | apply | prepare | prep | cmake | compiledb )
+        apply | build | build-requires | cmake | compiledb | deploy | install | installdeps \
+            | make | make-install | package | prep | prepare | qmake | rpm )
             OPT_NEEDSPEC=1;
-            break
-            ;;
-        qmake | make )
-            if behind_sfdk; then
-                OPT_NEEDSPEC=1
-            fi
             break
             ;;
         run | ssh | check | undeploy | build-shell )
@@ -3064,16 +3049,14 @@ fi
 #  if there is a rpm/*.spec then that is used
 #  if there is a rpm/*.yaml then a spec is made and used
 
-if [[ ! "$OPT_SPEC" ]]; then
+if [[ $OPT_NEEDSPEC && ! $OPT_SPEC ]]; then
     # set nullglob on so that the shell glob expansions will return
     # empty if files are not found
     shopt -s nullglob
     spec_files=("$OPT_PKGDIR"/*.spec)
     numspec=${#spec_files[@]}
     if [[ $numspec -gt 1 ]]; then
-        [[ $OPT_NEEDSPEC ]] && fatal "Multiple spec files found - use --specfile to select one"
-        echo "Multiple spec files found - not using any. Use --specfile to select one"
-        # OPT_SPEC is not set
+        fatal "Multiple spec files found - please select one."
     elif [[ $numspec -eq 1 ]]; then
         OPT_SPEC="${spec_files[0]?}"
     else
@@ -3086,7 +3069,7 @@ if [[ ! "$OPT_SPEC" ]]; then
             spec_files=("$OPT_PKGDIR"/*.spec)
             OPT_SPEC="${spec_files[0]?}"
         else
-            [[ $OPT_NEEDSPEC ]] && fatal "No spec or yaml file found in '$OPT_PKGDIR/'"
+            fatal "No spec or yaml file found in '$OPT_PKGDIR/'"
         fi
     fi
 
