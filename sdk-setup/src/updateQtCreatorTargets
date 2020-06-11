@@ -109,8 +109,12 @@ def update(args, root):
     et.SubElement(new, "output", name="QmakeQuery"
                   ).text = sb2_command(args.name, "qmake", "-query")
 
-    et.SubElement(new, "output", name="CMakeVersion"
-                  ).text = sb2_command(args.name, "cmake", "--version")
+    # Older targets do not have CMake preinstalled
+    try:
+        et.SubElement(new, "output", name="CMakeVersion"
+                      ).text = sb2_command(args.name, "cmake", "--version")
+    except subprocess.CalledProcessError:
+        pass
 
     et.SubElement(new, "output", name="RpmValidationSuites"
                   ).text = rpmvalidation_list_suites(args.name)
