@@ -11,7 +11,7 @@ def assert_valid_sb2_name(name):
         raise Exception("%s is not a valid scratchbox2 target name" % name)
 
 def sb2_command(sb2, *args):
-    data = subprocess.check_output(["sb2", "-t", sb2] + list(args), stderr=subprocess.STDOUT)
+    data = subprocess.check_output(["sb2", "-t", sb2] + list(args), stderr=subprocess.STDOUT, text=True)
     if data:
         return data.strip()
     raise Exception("'%s' returned no data" % " ".join(args))
@@ -125,7 +125,7 @@ def delete(args, root):
 def save(args,root):
     # Save XML
     with open(args.target_xml, 'w') as f:
-        f.write(et.tostring(root, pretty_print=True))
+        f.write(et.tostring(root, encoding='unicode', pretty_print=True))
 
 
 parser = argparse.ArgumentParser(description='Updates QtCreator Target XML file with a new Mer Target')
