@@ -45,6 +45,23 @@ def process_gcc_dump_includes(dump):
             retv.append(line);
     return "\n".join(retv)
 
+# See gccInstallDir in gcctoolchain.cpp in Qt Creator sources. We are only
+# interested in "install" directory. The path is under tooling and needs to be
+# mapped to the respective directory under the target.
+def process_gcc_dump_install_dir(dump):
+    prefix = "install: "
+    line = dump.splitlines()[0]
+    if not line.startswith(prefix):
+        raise Exception("Unexpected content in GCC search dirs dump: '%s'" % line)
+
+    path = line[len(prefix):]
+    realpath = os.path.realpath(path)
+    replaced = re.sub(r"^/srv/mer/toolings/[^/]+/opt/cross/", "/opt/cross/", realpath)
+    if replaced == realpath:
+        raise Exception("Unhandled path in GCC search dirs dump: '%s'" % path)
+
+    return prefix + replaced
+
 def get_xml(args):
     # http://lxml.de/FAQ.html#why-doesn-t-the-pretty-print-option-reformat-my-xml-output
     parser = et.XMLParser(remove_blank_text=True)
@@ -105,6 +122,10 @@ def update(args, root):
     et.SubElement(new, "output", name="GccDumpIncludes"
                   ).text = process_gcc_dump_includes(
                           sb2_command(args.name, "gcc", "-x", "c++", "-E", "-v", "/dev/null"))
+
+    et.SubElement(new, "output", name="GccDumpInstallDir"
+                  ).text = process_gcc_dump_install_dir(
+                          sb2_command(args.name, "gcc", "-print-search-dirs"))
 
     et.SubElement(new, "output", name="QmakeQuery"
                   ).text = sb2_command(args.name, "qmake", "-query")
