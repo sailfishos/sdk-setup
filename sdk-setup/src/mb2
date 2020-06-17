@@ -2087,7 +2087,7 @@ run_build_shell() {
 
 run_deploy() {
     [[ $device_type ]] || fatal "No device specified"
-    [[ -e $STATEDIR/spec ]] || fatal "No previoud build found"
+    [[ -e $STATEDIR/spec ]] || fatal "No previous build found"
 
     local method_opt= all_opt= patterns=('-*-debug@(info|source)')
     while [[ $# -ne 0 ]]; do
@@ -2221,7 +2221,7 @@ run_undeploy__process_args() {
     [[ $UNDEPLOY_METHOD_OPT ]] || fatal "Argument expected"
 
     if [[ ! $UNDEPLOY_ALL ]]; then
-        [[ -e $STATEDIR/spec ]] || fatal "No previoud build found"
+        [[ -e $STATEDIR/spec ]] || fatal "No previous build found"
     fi
 }
 
