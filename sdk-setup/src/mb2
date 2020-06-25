@@ -1313,25 +1313,29 @@ init_cmake_wrapper() (
     local wrapper=$1
 
     do_configure() {
+        local src_dir=
         if [[ $IS_SHADOW_BUILD ]]; then
             local subdir=${PWD#$BUILD_DIR}
-            local src_dir=$SRC_DIR${subdir:+/$subdir}
-            local args=()
-            local pro_passed=
-            for arg in "$@"; do
-                # Allow .spec files do shadow build explicitly
-                prefixed_clean=$(readlink --canonicalize-missing "$src_dir/$arg")
-                if [[ -f $prefixed_clean/CMakeLists.txt ]]; then
-                    args+=("$prefixed_clean")
-                    pro_passed=1
-                else
-                    args+=("$arg")
-                fi
-            done
-            if [[ ! $pro_passed ]]; then
-                args+=("$src_dir")
+            src_dir=$SRC_DIR${subdir:+/$subdir}
+        else
+            src_dir=.
+        fi
+
+        local args=()
+        local maybe_src_arg=()
+        for arg in "$@"; do
+            # Allow .spec files do shadow build explicitly
+            local prefixed_clean=$(readlink --canonicalize-missing "$src_dir/$arg")
+            if [[ -f $prefixed_clean/CMakeLists.txt ]]; then
+                maybe_src_arg=("$prefixed_clean")
+            else
+                args+=("$arg")
             fi
-            set -- "${args[@]}"
+        done
+        set -- "${args[@]}"
+
+        if [[ $IS_SHADOW_BUILD && ${#maybe_src_arg[*]} -eq 0 ]]; then
+            maybe_src_arg=("$src_dir")
         fi
 
         # NBSP used to prevent Qt Creator treating this as an error when issued for 'cmake'
@@ -1339,7 +1343,7 @@ init_cmake_wrapper() (
 
         (
             set -x
-            "$real" "$@" "${EXTRA_CONFIGURE_ARGS[@]}"
+            "$real" "$@" "${EXTRA_CONFIGURE_ARGS[@]}" ${maybe_src_arg[@]:+"${maybe_src_arg[@]}"}
         )
     }
 
@@ -2083,7 +2087,7 @@ run_build_shell() {
 
 run_deploy() {
     [[ $device_type ]] || fatal "No device specified"
-    [[ -e $STATEDIR/spec ]] || fatal "No previoud build found"
+    [[ -e $STATEDIR/spec ]] || fatal "No previous build found"
 
     local method_opt= all_opt= patterns=('-*-debug@(info|source)')
     while [[ $# -ne 0 ]]; do
@@ -2217,7 +2221,7 @@ run_undeploy__process_args() {
     [[ $UNDEPLOY_METHOD_OPT ]] || fatal "Argument expected"
 
     if [[ ! $UNDEPLOY_ALL ]]; then
-        [[ -e $STATEDIR/spec ]] || fatal "No previoud build found"
+        [[ -e $STATEDIR/spec ]] || fatal "No previous build found"
     fi
 }
 
