@@ -337,7 +337,7 @@ configure()
         python_version_sort_reverse()
         {
             local field=$(($1-1))
-            python3 -c '
+            python -c '
 from sys import exit, stdin, stdout, stderr
 import errno
 import csv
