@@ -822,10 +822,22 @@ find_latest_rpms() {
             zypper --plus-repo "$dir/" search --repo ~plus-repo-1 --details \
             `# drop header` \
             |sed '1,/^--/d' \
-            `# zypper sorts by version: revert it and keep first for each name` \
-            |tac |sort --stable -t '|' -k 2,2 -u \
+            `# name|epoch|version|release|arch` \
+            |awk -F ' *\\| *' -v OFS='|' '{
+                    evr = gensub(/((.+):)?([^-]+)(-(.*))?/, "\\2|\\3|\\5", 1, $4);
+                    print $2, evr, $5
+                }' \
+            `# sort by name and e-v-r` \
+            |sort -t '|' -k 1,1 -k2,2rV -k3,3rV -k4,4rV \
+            `# keep first for each name` \
+            |sort -t '|' --stable -k 1,1 -u \
             `# $name $dir/$name-$evr.$arch.rpm` \
-            |awk -F ' *\\| *' -v dir="$dir" '{print $2, dir "/" $2 "-" $4 "." $5 ".rpm"}'
+            |awk -F '|' -v dir="$dir" '{
+                        evr=$3 "-" $4;
+                        if ($2)
+                            evr=$2 ":" evr;
+                        print $1, dir "/" $1 "-" evr "." $5 ".rpm"
+                    }'
     )
 
     [[ $latest ]] || return
