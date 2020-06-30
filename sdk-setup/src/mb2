@@ -3282,6 +3282,7 @@ sb2_stub() {
 
     [[ $1 == -t ]] && shift 2 || { bad_args; return 1; }
     [[ $1 == -m ]] && shift 2
+    [[ $1 == -- ]] && shift
     [[ $1 != -* ]] || { bad_args; return 1; }
 
     env=(env)
@@ -3304,6 +3305,9 @@ sb2_stub() {
                     return 1
                     ;;
             esac
+            ;;
+        make)
+            exec "${env[@]}" "$@"
             ;;
         rpmbuild)
             # rpmbuild writes some progress messages to stdout
@@ -4886,6 +4890,211 @@ run_tc special_packaging_cmake "Pass project dir" \
 run_tc special_packaging_cmake "Pass project dir (shadow)" \
     NOSET   Y       Y        Y         Y
 tear_down_ts special_packaging_cmake
+
+###############################################################################
+# Test compatibility with various packaging options (Autotools based projects)
+
+# Checks that 'configure.ac' exists and creates 'configure' from template.
+# Checks that 'Makefile.am' exists and copies it as 'Makefile.in'.
+special_packaging_autotools_autoreconf_stub() {
+    if [[ $# -ne 0 ]]; then
+        echo "stub autoreconf: unexpected argument: '$1'" >&2
+        return 1
+    fi
+
+    if [[ ! -e Makefile.am ]]; then
+        echo "stub autoreconf: no Makefile.am under '$PWD'" >&2
+        return 1
+    fi
+
+    if [[ $(head -n1 Makefile.am) != "# bogus" ]]; then
+        echo "stub autoreconf: unexpected content in Makefile.am under '$PWD'" >&2
+        return 1
+    fi
+
+    cp Makefile.am Makefile.in || return
+
+    if [[ ! -e configure.ac ]]; then
+        echo "stub autoreconf: no configure.ac under '$PWD'" >&2
+        return 1
+    fi
+
+    if [[ $(<configure.ac) != "dnl bogus" ]]; then
+        echo "stub autoreconf: unexpected content in configure.ac under '$PWD'" >&2
+        return 1
+    fi
+
+    # Creates 'Makefile' from 'Makefile.in', replacing @SRCDIR@ and @OUTDIR@
+    special_packaging_autotools_configure_template() {
+        local srcdir=$(dirname "$0")
+        if [[ ! -f $srcdir/Makefile.in ]]; then
+            echo "$0: no Makefile.in under '$srcdir'" >&2
+            return 1
+        fi
+        sed < "$srcdir/Makefile.in" > ./Makefile \
+            -e "s,@SRCDIR@,$srcdir,g" \
+            -e "s,@OUTDIR@,$PWD,g"
+    }
+
+    # Cannot do '|| return' here. BASH would produce an invalid dump of
+    # special_packaging_autotools_autoreconf_stub with 'declare -f', putting
+    # 'return' on a separate line after 'END'
+    cat <<END > configure #|| return
+#!/bin/bash
+$(declare -f special_packaging_autotools_configure_template)
+special_packaging_autotools_configure_template "\$@"
+END
+    chmod +x configure || return
+}
+
+special_packaging_autotools_ts_set_up() {
+    sb2_stub_create || return
+
+    cat >"$STUBS_DIR/autoreconf" <<END || return
+#!/bin/bash
+$(declare -f special_packaging_autotools_autoreconf_stub)
+special_packaging_autotools_autoreconf_stub "\$@"
+END
+    chmod +x "$STUBS_DIR/autoreconf" || return
+}
+
+special_packaging_autotools_ts_tear_down() {
+    sb2_stub_remove || return
+    rm -f "$STUBS_DIR/autotools" || return
+}
+
+# Accepts 2 arguments described inline
+special_packaging_autotools_tc() {
+    # SUBDIR: Put sources under subdirectory
+    #   - N: No
+    #   - Y: Yes
+    local maybe_subdir=$([[ $1 == Y ]] && echo test)
+    local maybe_setupdir=$([[ $1 == Y ]] && echo "/%{name}")
+
+    # SHADOW BUILD: Do shadow build
+    #   - Y/N
+    local enable_shadow=$([[ $2 == Y ]] && echo 1)
+
+    local srcdir=test
+    local maybe_srcdir_on_cmdln=
+    local builddir=test
+
+    if [[ $enable_shadow ]]; then
+        maybe_srcdir_on_cmdln=../test
+        builddir=test-build
+    fi
+
+    mkdir -p "$srcdir" || return
+    mkdir -p "$builddir" || return
+
+    mkdir "$srcdir/rpm" || return
+    cat >"$srcdir/rpm/test.spec" <<END || return
+Name:       test
+
+# This is to not require meego-rpm-config installed for self-test execution
+%global __os_install_post %{nil}
+
+# Make it noop
+%define setup echo
+
+Summary:    Test
+Version:    0.1
+Release:    1
+Group:      Qt/Qt
+License:    LICENSE
+URL:        http://example.org/
+Source0:    %{name}-%{version}.tar.bz2
+
+%description
+Test
+
+%prep
+%setup -n %{name}-%{version}${maybe_setupdir}
+
+%build
+./autogen.sh
+./configure
+make
+
+%install
+mkdir -p %{buildroot}
+make DESTDIR=%{buildroot} install
+
+%files
+%defattr(-,root,root,-)
+/foo
+END
+
+    mkdir -p "$srcdir/$maybe_subdir" || return
+
+    echo foo > "$srcdir/$maybe_subdir/foo.src" || return
+
+    cat <<END > "$srcdir/$maybe_subdir/Makefile.am" || return
+# bogus
+all:
+	cat "@SRCDIR@/foo.src" > "@OUTDIR@/foo"
+
+install:
+	cp "@OUTDIR@/foo" \$(DESTDIR)/foo
+END
+
+    cat <<END > "$srcdir/$maybe_subdir/configure.ac" || return
+dnl bogus
+END
+
+    cat <<END > "$srcdir/$maybe_subdir/autogen.sh" || return
+#!/bin/bash
+autoreconf
+END
+    chmod +x "$srcdir/$maybe_subdir/autogen.sh" || return
+
+    find -ls >&2
+
+    (
+        cd "$builddir" || return
+
+        (
+            echo "--- Running build" >&2
+            set -x
+            "$SELF" build ${maybe_srcdir_on_cmdln:+"$maybe_srcdir_on_cmdln"} || return
+        ) || return
+
+        (
+            echo "--- Running build-shell-make/package" >&2
+            set -x
+            "$SELF" build-shell make ${maybe_subdir:+-C "$maybe_subdir"} >&2 || return
+            "$SELF" package || return
+        ) || return
+    )
+
+    if [[ $? -ne 0 ]]; then
+        cat <<END
+Test case failed: $TC_NAME
+END
+        return 1
+    fi
+
+    return 0
+}
+
+special_packaging_autotools_tc_tear_down() {
+    rm -rf "$buildroot" || return
+    rm -rf ./test ./test-build || return
+}
+
+#   SUBDIR  SHADOW
+#           BUILD
+
+set_up_ts special_packaging_autotools "Compatibility / Autotools"
+run_tc special_packaging_autotools "Flat package" \
+    N       N
+run_tc special_packaging_autotools "Flat package (shadow)" \
+    N       Y
+run_tc special_packaging_autotools "Subtree package" \
+    Y       N
+run_tc special_packaging_autotools "Subtree package (shadow)" \
+    Y       Y
+tear_down_ts special_packaging_autotools
 
 ################################################################################
 # Test the match_multi function
