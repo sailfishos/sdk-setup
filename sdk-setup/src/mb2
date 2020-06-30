@@ -4553,7 +4553,7 @@ tear_down_ts special_packaging
 #   SUBDIR  MULTI  PATCH  SHADOW  PROJECT  PROJECT   AUTO
 #                         BUILD   IN SPEC  ON CMDLN  SETUP
 
-set_up_ts special_packaging "Compatibility - Subtree package / With patches"
+set_up_ts special_packaging "Compatibility / Subtree package / With patches"
 run_tc special_packaging "Use apply" \
     Y       N      APPLY  N       N        N         N
 run_tc special_packaging "Use apply (shadow)" \
@@ -4569,7 +4569,7 @@ tear_down_ts special_packaging
 #   SUBDIR  MULTI  PATCH  SHADOW  PROJECT  PROJECT   AUTO
 #                         BUILD   IN SPEC  ON CMDLN  SETUP
 
-set_up_ts special_packaging "Compatibility - Subtree package / With patches and %autosetup"
+set_up_ts special_packaging "Compatibility / Subtree package / With patches and %autosetup"
 run_tc special_packaging "Use apply" \
     Y       N      APPLY  N       N        N         Y
 run_tc special_packaging "Use apply (shadow)" \
