@@ -3980,7 +3980,7 @@ run_tc readarray "Test readarray behavior"
 # Test build phases separation
 
 rpmbuild_phases_ts_set_up() {
-    RPMBUILD_STUBS=(my_setup qmake cmake:a make my_install my_check)
+    RPMBUILD_STUBS=(my_setup qmake cmake:a make compiledb my_install my_check)
     arg_pass_stub_create "${RPMBUILD_STUBS[@]}"
     RPMBUILD_STUBS=("${RPMBUILD_STUBS[@]%:*}")
 
@@ -4079,7 +4079,9 @@ rpmbuild_phases_tc() {
         actual="$actual -cmake-b"
     fi
 
-    if arg_pass_stub_results make &>/dev/null; then
+    if arg_pass_stub_results make |grep -q -F -e --dry-run; then
+        actual="$actual ~make"
+    elif arg_pass_stub_results make &>/dev/null; then
         actual="$actual +make"
     else
         actual="$actual -make"
@@ -4140,6 +4142,8 @@ run_tc rpmbuild_phases "make-install" \
     "-prepare -qmake -cmake-c -cmake-b -make +make-install -check -package" make-install
 run_tc rpmbuild_phases "package" \
     "-prepare -qmake -cmake-c -cmake-b -make +make-install +check +package" package
+run_tc rpmbuild_phases "compiledb" \
+    "-prepare +qmake +cmake-c +cmake-b ~make -make-install -check -package" compiledb
 
 tear_down_ts rpmbuild_phases
 
