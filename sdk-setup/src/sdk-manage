@@ -1433,7 +1433,7 @@ amend_target_hosts() {
 	return 0
     fi
 
-    sb2 -t "$mytarget" -m sdk-install -R sed -i "s,\(127.0.0.1.*\),\1 $myhostname," /etc/hosts
+    enter_target "$mytarget" sed -i "s,\(127.0.0.1.*\),\1 $myhostname," /etc/hosts
 }
 
 # Download and install a rootfs
