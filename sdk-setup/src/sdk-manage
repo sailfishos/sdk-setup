@@ -1433,7 +1433,18 @@ amend_target_hosts() {
 	return 0
     fi
 
-    sb2 -t "$mytarget" -m sdk-install -R sed -i "s,\(127.0.0.1.*\),\1 $myhostname," /etc/hosts
+    enter_target "$mytarget" sed -i "s,\(127.0.0.1.*\),\1 $myhostname," /etc/hosts
+}
+
+amend_target_rpm_macros() {
+    local target=$1
+
+    # Older targets define __cmake with absolute path. mb2 needs it relative to
+    # be able to wrap it.
+    enter_target "$target" tee /etc/rpm/macros.cmake.sdk >/dev/null <<END
+# Created by sdk-manage
+%__cmake cmake
+END
 }
 
 # Download and install a rootfs
@@ -1657,6 +1668,8 @@ install_target() {
 
     # fix target's /etc/hosts
     amend_target_hosts "$target" || return
+
+    amend_target_rpm_macros "$target" || return
 
     assert_target_exists "$target" || return
 
