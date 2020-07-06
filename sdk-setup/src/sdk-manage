@@ -1137,7 +1137,8 @@ maybe_synchronise_object() {
         content_not_changed_since "$MER_TARGETS/$object/var/lib/rpm" "$timestamp" && return 0
     fi
 
-    synchronise_target "$object"
+    synchronise_target "$object" || return
+    updateQtCreatorTargets --name "$object" --target-xml "$TARGETS_XML" || return
 }
 
 manage_develpkgs() {
