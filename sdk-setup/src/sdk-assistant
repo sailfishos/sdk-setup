@@ -372,6 +372,8 @@ if [[ $OPT_UPDATE || $OPT_REMOVE || ($OPT_REGISTER && $OPT_NAME) \
         if [[ ! $OPT_TYPE ]]; then
             fail "$OPT_NAME: No such tooling or target"
         fi
+    elif ! have "$OPT_TYPE" "$OPT_NAME"; then
+        fail "$OPT_NAME: No such $OPT_TYPE"
     fi
 fi
 
