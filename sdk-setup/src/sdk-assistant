@@ -51,9 +51,11 @@ usage() {
 SDK assistant tool
 
 Usage:
-    $(basename $0) [tooling|target] create <name> <URL>
+    $(basename $0) [tooling|target] create <name> <URL> [--tooling <tooling>]
                             : create a new sb2 tooling or target <name>,
-                              using the image at <URL>.
+                              using the image at <URL>. In case of a new
+                              target, an appropriate tooling will be selected
+                              automatically unless overridden with '--tooling'.
 
     $(basename $0) [tooling|target] update <name>
                             : update the given sb2 tooling or target.
@@ -197,6 +199,11 @@ while [[ ${1:-} ]]; do
         --password )
             [[ $# -ge 2 && $2 ]] || fail "missing argument for $1"
             OPT_PASSWORD=$2
+            shift
+            ;;
+        --tooling )
+            [[ $# -ge 2 && $2 ]] || fail "missing argument for $1"
+            OPT_TOOLING_NAME=$2
             shift
             ;;
         --all )
@@ -459,7 +466,11 @@ if [[ -z $OPT_YES ]]; then
 fi
 
 if [[ $OPT_CREATE ]]; then
-    _ sdk-manage "$OPT_TYPE" install "$OPT_NAME" "$OPT_URL"
+    if [[ $OPT_TOOLING_NAME ]]; then
+        _ sdk-manage "$OPT_TYPE" install "$OPT_NAME" "$OPT_URL" --tooling "$OPT_TOOLING_NAME"
+    else
+        _ sdk-manage "$OPT_TYPE" install "$OPT_NAME" "$OPT_URL"
+    fi
     exit
 fi
 
