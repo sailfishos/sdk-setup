@@ -1,10 +1,5 @@
 Name:       sdk-setup
 
-%define systemd_post() \
-# Initial installation \
-/bin/systemctl -f preset %{?*} >/dev/null 2>&1 || : \
-%{nil}
-
 Summary:    SDK setup packages for Mer SDK
 Version:    0.63
 Release:    1
