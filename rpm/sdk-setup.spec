@@ -38,8 +38,8 @@ Requires:   kbd
 Requires:   ncurses
 Requires:   python3-fuse
 Requires(post): /bin/ln
-Requires(post): systemd
 Conflicts:  sdk-chroot
+%systemd_requires
 
 %description -n sdk-vm
 Contains the supporting configs for VMs
@@ -92,7 +92,7 @@ Group:      System/Base
 BuildArch:  noarch
 Requires:   util-linux
 Requires:   e2fsprogs
-Requires(post): systemd
+%systemd_requires
 
 %description -n sdk-resize-rootfs
 Provides a startup service that will automatically expand the root FS to utilize
