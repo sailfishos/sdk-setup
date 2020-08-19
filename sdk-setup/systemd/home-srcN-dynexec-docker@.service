@@ -12,7 +12,7 @@ EnvironmentFile=-/etc/mersdk.env.systemd
 EnvironmentFile=-/etc/login.defs.systemd
 ExecStartPre=/bin/mkdir -p /home/.src%i.raw
 ExecStartPre=/bin/mount --move /home/src%i /home/.src%i.raw
-ExecStart=/usr/bin/dynexecfs -f -o uid=${UID_MERSDK},gid=${GID_MERSDK},allow_other,root=/home/.src%i.raw /home/src%i
+ExecStart=/usr/bin/dynexecfs -f -o uid=${UID_MERSDK},gid=${GID_MERSDK},allow_other,${DYNEXECFS_FLAGS},root=/home/.src%i.raw /home/src%i
 TimeoutSec=90
 Slice=system.slice
 
