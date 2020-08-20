@@ -203,6 +203,7 @@ cp src/sdk-init %{buildroot}%{_bindir}/
 mkdir -p %{buildroot}%{_libexecdir}/%{name}
 cp src/oomadvice %{buildroot}%{_libexecdir}/%{name}/
 cp src/sdk-setup-swap %{buildroot}%{_libexecdir}/%{name}/
+cp src/ssh-askpass %{buildroot}%{_libexecdir}/%{name}/
 mkdir -p %{buildroot}%{_datadir}/%{name}
 cp README.tips.wiki %{buildroot}%{_datadir}/%{name}/
 
@@ -349,6 +350,7 @@ fi
 %{_bindir}/sdk-init
 %{_libexecdir}/%{name}/oomadvice
 %{_libexecdir}/%{name}/sdk-setup-swap
+%{_libexecdir}/%{name}/ssh-askpass
 %config %{_sysconfdir}/ssh/ssh_config.sdk
 %config %{_sysconfdir}/bash_completion.d/mb2.bash
 %config %{_sysconfdir}/bash_completion.d/sdk-assistant.bash
