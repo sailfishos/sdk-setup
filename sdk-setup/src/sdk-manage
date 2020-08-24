@@ -1821,7 +1821,7 @@ target_snapshot_needs_reset() {
     snapshot_time=$(date --date "$snapshot_time" +%s) || return
 
     # Try to avoid querying RPM database as it takes considerable amount of time
-    content_not_changed_since "$MER_TARGETS/$object/var/lib/rpm" "$snapshot_time" && return 1
+    content_not_changed_since "$MER_TARGETS/$original/var/lib/rpm" "$snapshot_time" && return 1
 
     local most_recent_install_time=
     most_recent_install_time=$(set -o pipefail; rpm --root="$MER_TARGETS/$original" -qa \
