@@ -43,7 +43,7 @@ fail() {
 
 # dry run function
 _() {
-    [[ -n $OPT_DRY_RUN ]] && echo "$@" || eval $@
+    [[ -n $OPT_DRY_RUN ]] && echo "$@" || "$@"
 }
 
 usage() {
