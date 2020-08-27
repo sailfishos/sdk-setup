@@ -1310,6 +1310,10 @@ list_targets() {
 
 synchronise_target() {
     local target=$1
+    local libdir=/usr/lib
+    if [[ $target == *64 ]]; then
+        libdir=/usr/lib64
+    fi
     # This is now a minimal set of files to sync
     if ! [[ -d $MER_TARGETS/$target ]]; then
         echo >&2 "No target called '$target'"
@@ -1366,18 +1370,18 @@ synchronise_target() {
 # Ensure all dirs are copied (--prune-empty-dirs will clean up)
 + */
 # We want this for QtCreator to determine the architecture
-+ /usr/lib/libQt*Core.so
++ $libdir/libQt*Core.so
 # Don't need any other .so files
 - *.so
 # All the import, include and qt* shares
-+ /usr/lib/qt*/imports**
++ $libdir/qt*/imports**
 # Qt5 qml imports are here
-+ /usr/lib/qt5/qml**
++ $libdir/qt5/qml**
 + /usr/include**
 + /usr/share/qt**
-+ /usr/lib/pkgconfig**
++ $libdir/pkgconfig**
 + /usr/share/pkgconfig**
-+ /usr/lib/cmake**
++ $libdir/cmake**
 # and nothing else
 - *
 EOF
@@ -1396,7 +1400,7 @@ EOF
     mkdir -p "$HOST_TARGETS/$target/usr/bin" || return
     touch "$HOST_TARGETS/$target/usr/bin/stopCreatorSegfaulting" || return
     # For Qt5, QtCreator needs to see this dir or it thinks Qt version is not properly installed
-    mkdir -p "$HOST_TARGETS/$target/usr/lib/qt5/bin/" || return
+    mkdir -p "$HOST_TARGETS/$target$libdir/qt5/bin/" || return
     # Qt Creator does not like GCC reporting include paths that do not exist
     mkdir -p "$HOST_TARGETS/$target/usr/local/include" || return
     # Qt Creator needs to know where to search for Linguist and Designer binaries
