@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# This is a helper script for the Mer SDK to manage sb2 target and
+# This is a helper script for the Sailfish SDK to manage sb2 target and
 # toolchain installation
 
 set -o nounset
@@ -1321,6 +1321,11 @@ synchronise_target() {
         return 1
     fi
 
+    local libdir=/usr/lib
+    if [[ -d $MER_TARGETS/$target/usr/lib64 ]]; then
+        libdir=/usr/lib64
+    fi
+
     # See GccToolChain::gccHeaderPaths() in Qt Creator sources.
     local system_includes=$(
         sb2 -t "$target" gcc -x c++ -E -v /dev/null 2>&1 |awk '
@@ -1366,18 +1371,18 @@ synchronise_target() {
 # Ensure all dirs are copied (--prune-empty-dirs will clean up)
 + */
 # We want this for QtCreator to determine the architecture
-+ /usr/lib/libQt*Core.so
++ $libdir/libQt*Core.so
 # Don't need any other .so files
 - *.so
 # All the import, include and qt* shares
-+ /usr/lib/qt*/imports**
++ $libdir/qt*/imports**
 # Qt5 qml imports are here
-+ /usr/lib/qt5/qml**
++ $libdir/qt5/qml**
 + /usr/include**
 + /usr/share/qt**
-+ /usr/lib/pkgconfig**
++ $libdir/pkgconfig**
 + /usr/share/pkgconfig**
-+ /usr/lib/cmake**
++ $libdir/cmake**
 # and nothing else
 - *
 EOF
@@ -1396,7 +1401,7 @@ EOF
     mkdir -p "$HOST_TARGETS/$target/usr/bin" || return
     touch "$HOST_TARGETS/$target/usr/bin/stopCreatorSegfaulting" || return
     # For Qt5, QtCreator needs to see this dir or it thinks Qt version is not properly installed
-    mkdir -p "$HOST_TARGETS/$target/usr/lib/qt5/bin/" || return
+    mkdir -p "$HOST_TARGETS/$target$libdir/qt5/bin/" || return
     # Qt Creator does not like GCC reporting include paths that do not exist
     mkdir -p "$HOST_TARGETS/$target/usr/local/include" || return
     # Qt Creator needs to know where to search for Linguist and Designer binaries
