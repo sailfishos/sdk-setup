@@ -1120,6 +1120,11 @@ with_specific_or_default_keys() {
     fi
 
     add_specific_or_default_keys() {
+
+        ssh-add() {
+            DISPLAY=:0 SSH_ASKPASS=/usr/libexec/sdk-setup/ssh-askpass command ssh-add "$@"
+        } 
+
         local key=$1
         if [[ $key ]]; then
             ssh-add -q - <"$key" || return
@@ -1130,7 +1135,7 @@ with_specific_or_default_keys() {
             # genericlinuxdeviceconfigurationwizardpages.cpp
             for default_key in "$real_home"/.ssh/id_{rsa,ecdsa,ed25519}; do
                 if [[ -f $default_key ]]; then
-                    ssh-add -q - <"$default_key" # allow failure
+                    ssh-add -q - <"$default_key" || :
                 fi
             done
         fi
