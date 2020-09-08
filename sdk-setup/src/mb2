@@ -225,7 +225,7 @@ COMMANDS
 
         -R    reverse apply patches (patch -R)
 
-    build [-p|--doprep] [-d|--enable-debug] [-j <n>] [<project-dir-or-file>]
+    build [-p|--prepare] [-d|--enable-debug] [-j <n>] [<project-dir-or-file>]
           [[--] <rpmbuild-extra-arg>...]
         Run rpmbuild. Execute all sections of the .spec file except for %prep
         unless told otherwise.
@@ -2963,7 +2963,11 @@ case "$1" in
                         BUILD_JOBS="$2"; shift 2;
                     fi
                     ;;
-                -p|--doprep) shift
+                -p|--prepare|--doprep)
+                    if [[ $1 == --doprep ]]; then
+                        notice "The '--doprep' option is deprecated. Use '--prepare|-p' instead."
+                    fi
+                    shift
                     BUILD_NOPREP=()
                     ;;
                 --) shift
