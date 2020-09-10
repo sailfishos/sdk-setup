@@ -611,6 +611,30 @@ object_upgradable() {
     object_zypper "$type:$object" --quiet --no-refresh list-updates
 }
 
+rebuild_rpmdb() {
+    local object=$1
+
+    rebuilddb_output_filter() {
+        output="$(< /dev/stdin)"
+        expected_output='error: failed to replace old database with new database!
+error: replace files in /var/lib/rpm with files from /var/lib/rpmrebuilddb.[0-9]* to recover'
+        [[ "$output" =~ $expected_output ]] || echo "$output"
+    }
+
+    # rpm can't overwrite directory on a different overlay layer
+    if [[ $(findmnt --noheadings --output FSTYPE / ) == overlay ]]; then
+        enter "$object" rpm --rebuilddb 2>&1 | rebuilddb_output_filter
+        local new_db=$(enter "$object" find /var/lib -maxdepth 1 -name 'rpmrebuilddb.*' |head -n1)
+        if [[ $new_db ]]; then
+            # sb2 recreates rpm directory on startup, so we need to do these in
+            # a single session
+            enter "$object" sh -c "rm -rf /var/lib/rpm && mv $new_db /var/lib/rpm"
+        fi
+    else
+        enter "$object" rpm --rebuilddb
+    fi
+}
+
 upgrade_object() {
     local type=$1 object=${2:-}
 
@@ -622,13 +646,13 @@ upgrade_object() {
     # version mismatch" errors e.g. after upgrading RPM
     if [[ $type == target ]]; then
         # Ignore possible errors here in hope that they will disappear after the upgrade
-        enter_target "$object" rpm --rebuilddb
+        rebuild_rpmdb "$type:$object"
     fi
 
     object_zypper "$type:$object" dup || return
 
     if [[ $type == target ]]; then
-        enter_target "$object" rpm --rebuilddb || return
+        rebuild_rpmdb "$type:$object" || return
     fi
 }
 
