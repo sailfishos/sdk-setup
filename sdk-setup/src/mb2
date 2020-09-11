@@ -1746,6 +1746,19 @@ run_build_requires() {
     maybe_verify_target_dependencies
 }
 
+run_apply__process_args() {
+    APPLY_REVERSE=
+    while [[ "$1" ]]; do
+        case "$1" in
+            -R) shift
+                APPLY_REVERSE=1 ;;
+            *)
+                short_usage quit
+                ;;
+        esac
+    done
+}
+
 run_apply() {
     local message="Applying"
     local common_op=()
@@ -2904,7 +2917,7 @@ fi
 
 case "$1" in
     cmake | make | make-install | install | package | rpm | deploy | undeploy | build-requires \
-            | installdeps | prepare | prep | build-shell | compiledb )
+            | installdeps | prepare | prep | apply | build-shell | compiledb )
         if [[ $1 == install ]]; then
             notice "The 'install' command is deprecated. Use 'make-install' instead."
             set -- make-install "${@:2}"
@@ -2927,19 +2940,6 @@ case "$1" in
             ${cmd}__process_args "$@"
             shift $#
         fi
-        ;;
-    apply )
-        cmd=run_$1; shift
-        APPLY_REVERSE=
-        while [[ "$1" ]]; do
-            case "$1" in
-                -R) shift
-                    APPLY_REVERSE=1 ;;
-                *)
-                    short_usage quit
-                    ;;
-            esac
-        done
         ;;
     qmake )
         cmd=run_$1; shift
