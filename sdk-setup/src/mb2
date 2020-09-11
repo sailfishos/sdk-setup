@@ -1979,6 +1979,26 @@ run_cmake() {
     )
 }
 
+run_qmake__process_args() {
+    QMAKE_EXTRA_ARGS=()
+    while [[ "$1" ]]; do
+        case "$1" in
+            --) shift
+                break
+                ;;
+            *)
+                if [[ -e $1 ]]; then
+                    OPT_PRO_FILE_OR_DIR="${1%%+(/)}"
+                    shift
+                fi
+                break
+                ;;
+        esac
+    done
+    QMAKE_EXTRA_ARGS=("$@")
+    handle_pro_file_or_dir_option
+}
+
 run_qmake() {
     local build_tgt=$(sb2 -t $OPT_TARGET gcc -dumpmachine)
     build_tgt=${build_tgt%-gnueabi}
@@ -1993,7 +2013,7 @@ run_qmake() {
     # This is a good time to verify the target dependencies as per mb
     maybe_verify_target_dependencies
 
-    init_qmake_wrapper $WRAPPERSDIR/qmake "$@"
+    init_qmake_wrapper $WRAPPERSDIR/qmake "${QMAKE_EXTRA_ARGS[@]}"
     init_noop_wrapper $WRAPPERSDIR/make
 
     (
@@ -2908,8 +2928,8 @@ elif [[ ! $OPT_NO_SNAPSHOT && ! $MB2_SELF_TEST_RUN ]]; then
 fi
 
 case "$1" in
-    cmake | make | make-install | install | package | rpm | deploy | undeploy | build-requires \
-            | installdeps | prepare | prep | apply | build-shell | compiledb )
+    qmake | cmake | make | make-install | install | package | rpm | deploy | undeploy \
+            | build-requires | installdeps | prepare | prep | apply | build-shell | compiledb )
         if [[ $1 == install ]]; then
             notice "The 'install' command is deprecated. Use 'make-install' instead."
             set -- make-install "${@:2}"
@@ -2932,24 +2952,6 @@ case "$1" in
             ${cmd}__process_args "$@"
             shift $#
         fi
-        ;;
-    qmake )
-        cmd=run_$1; shift
-        while [[ "$1" ]]; do
-            case "$1" in
-                --) shift
-                    break
-                    ;;
-                *)
-                    if [[ -e $1 ]]; then
-                        OPT_PRO_FILE_OR_DIR="${1%%+(/)}"
-                        shift
-                    fi
-                    break
-                    ;;
-            esac
-        done
-        handle_pro_file_or_dir_option
         ;;
     build )
         cmd=run_$1; shift
