@@ -2242,6 +2242,7 @@ run_undeploy__process_args() {
 
     if [[ ! $UNDEPLOY_ALL ]]; then
         [[ -e $STATEDIR/spec ]] || fatal "No previous build found"
+        OPT_NEEDSPEC=1
     fi
 }
 
@@ -2849,7 +2850,7 @@ elif [[ ! $OPT_NO_SNAPSHOT && ! $MB2_SELF_TEST_RUN ]]; then
 fi
 
 case "$1" in
-    make | make-install | install | package | rpm | deploy | prepare | prep | build-shell | compiledb )
+    cmake | make | make-install | install | package | rpm | deploy | undeploy | prepare | prep | build-shell | compiledb )
         if [[ $1 == install ]]; then
             notice "The 'install' command is deprecated. Use 'make-install' instead."
             set -- make-install "${@:2}"
@@ -2864,14 +2865,10 @@ case "$1" in
         fi
         cmd=run_${1//-/_}
         shift
-        ;;
-    undeploy )
-        cmd=run_$1; shift
-        run_undeploy__process_args "$@"
-        if [[ ! $UNDEPLOY_ALL ]]; then
-            OPT_NEEDSPEC=1
+        if [[ $(type -t ${cmd}__process_args) == function ]]; then
+            ${cmd}__process_args "$@"
+            shift $#
         fi
-        shift $#
         ;;
     build-requires | installdeps )
         if [[ $1 == installdeps ]]; then
@@ -2938,11 +2935,6 @@ case "$1" in
             esac
         done
         handle_pro_file_or_dir_option "$pro_file_or_dir"
-        ;;
-    cmake )
-        cmd=run_$1; shift
-        run_cmake__process_args "$@"
-        shift $#
         ;;
     build )
         cmd=run_$1; shift
