@@ -1798,6 +1798,53 @@ run_apply() {
     )
 }
 
+run_build__process_args() {
+    BUILD_DEBUG=(--define "debug_package %{nil}")
+    BUILD_JOBS=
+    BUILD_NOPREP=(--noprep)
+    BUILD_NOCHECK=()
+    BUILD_EXTRA_ARGS=()
+    while [[ "$1" ]]; do
+        case "$1" in
+            -d|--enable-debug) shift
+                BUILD_DEBUG=() ;;
+            -j*)
+                # support giving -j with and without space between
+                # it and the 'n'
+                if [[ ${#1} -gt 2 ]]; then
+                    BUILD_JOBS=${1:2}; shift
+                else
+                    [[ -z "$2" ]] && short_usage quit
+                    BUILD_JOBS="$2"; shift 2;
+                fi
+                ;;
+            -p|--prepare|--doprep)
+                if [[ $1 == --doprep ]]; then
+                    notice "The '--doprep' option is deprecated. Use '--prepare|-p' instead."
+                fi
+                shift
+                BUILD_NOPREP=()
+                ;;
+            --no-check) shift
+                BUILD_NOCHECK=(--nocheck)
+                ;;
+            --) shift
+                break
+                ;;
+            *)
+                if [[ -e $1 ]]; then
+                    OPT_PRO_FILE_OR_DIR="${1%%+(/)}"
+                    shift
+                fi
+                break
+                ;;
+        esac
+    done
+    BUILD_EXTRA_ARGS=("$@")
+    handle_pro_file_or_dir_option
+    [[ $BUILD_JOBS ]] || BUILD_JOBS=$(getconf _NPROCESSORS_ONLN)
+}
+
 run_build() {
     # intended to provide mb build behaviour
     maybe_verify_target_dependencies
@@ -1847,7 +1894,7 @@ run_build() {
             "${BUILD_NOPREP[@]}" "${BUILD_NOCHECK[@]}" \
             -bb \
             "$TMP_SPEC" \
-            "$@"
+            "${BUILD_EXTRA_ARGS[@]}"
     )
 }
 
@@ -2928,7 +2975,7 @@ elif [[ ! $OPT_NO_SNAPSHOT && ! $MB2_SELF_TEST_RUN ]]; then
 fi
 
 case "$1" in
-    qmake | cmake | make | make-install | install | package | rpm | deploy | undeploy \
+    build | qmake | cmake | make | make-install | install | package | rpm | deploy | undeploy \
             | build-requires | installdeps | prepare | prep | apply | build-shell | compiledb )
         if [[ $1 == install ]]; then
             notice "The 'install' command is deprecated. Use 'make-install' instead."
@@ -2952,51 +2999,6 @@ case "$1" in
             ${cmd}__process_args "$@"
             shift $#
         fi
-        ;;
-    build )
-        cmd=run_$1; shift
-        BUILD_DEBUG=(--define "debug_package %{nil}")
-        BUILD_JOBS=
-        BUILD_NOPREP=(--noprep)
-        BUILD_NOCHECK=()
-        while [[ "$1" ]]; do
-            case "$1" in
-                -d|--enable-debug) shift
-                    BUILD_DEBUG=() ;;
-                -j*)
-                    # support giving -j with and without space between
-                    # it and the 'n'
-                    if [[ ${#1} -gt 2 ]]; then
-                        BUILD_JOBS=${1:2}; shift
-                    else
-                        [[ -z "$2" ]] && short_usage quit
-                        BUILD_JOBS="$2"; shift 2;
-                    fi
-                    ;;
-                -p|--prepare|--doprep)
-                    if [[ $1 == --doprep ]]; then
-                        notice "The '--doprep' option is deprecated. Use '--prepare|-p' instead."
-                    fi
-                    shift
-                    BUILD_NOPREP=()
-                    ;;
-                --no-check) shift
-                    BUILD_NOCHECK=(--nocheck)
-                    ;;
-                --) shift
-                    break
-                    ;;
-                *)
-                    if [[ -e $1 ]]; then
-                        OPT_PRO_FILE_OR_DIR="${1%%+(/)}"
-                        shift
-                    fi
-                    break
-                    ;;
-            esac
-        done
-        handle_pro_file_or_dir_option
-        [[ $BUILD_JOBS ]] || BUILD_JOBS=$(getconf _NPROCESSORS_ONLN)
         ;;
     run | ssh )
         if [[ $1 == ssh ]]; then
