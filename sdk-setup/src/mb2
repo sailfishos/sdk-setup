@@ -174,7 +174,7 @@ testing on one or more of the four recognized test levels:
        the RPM .spec file if present.
 
        Testing at this level is normally performed by the 'build' and
-       'package' commands (unless used with the '--nocheck' option) and so it
+       'package' commands (unless used with the '--no-check' option) and so it
        is not enabled by default for this command. Performed with this
        command, it involves execution of the 'make-install' command.
 
@@ -225,8 +225,8 @@ COMMANDS
 
         -R    reverse apply patches (patch -R)
 
-    build [-p|--prepare] [-d|--enable-debug] [-j <n>] [<project-dir-or-file>]
-          [[--] <rpmbuild-extra-arg>...]
+    build [-p|--prepare] [--no-check] [-d|--enable-debug] [-j <n>]
+          [<project-dir-or-file>] [[--] <rpmbuild-extra-arg>...]
         Run rpmbuild. Execute all sections of the .spec file except for %prep
         unless told otherwise.
 
@@ -235,9 +235,10 @@ COMMANDS
         project directory. (The file name part is ignored - project file
         selection is done by qmake call inside the .spec file.)
 
-        -p    run %prep phase as well
-        -d    enable debug build
-        -j <n> run up to <n> jobs simultaneously
+        --prepare         Run %prep section as well
+        --no-check        Skip the %check section
+        --enable-debug    Enable debug build
+        -j <n>            Run up to <n> jobs simultaneously
 
     qmake [<project-dir-or-file>] [[--] <qmake-extra-arg>...]
         Run rpmbuild. Execute just the %build section of the .spec file,
@@ -282,9 +283,10 @@ COMMANDS
     make-install
         Run rpmbuild. Execute just the %install section of the .spec file.
 
-    package
+    package [--no-check]
         Run rpmbuild. Execute just the %install section of the .spec file, then
-        build binary packages.
+        build binary packages. Unless '--no-check' is passed, execute also the
+        %check section if present.
 
     build-shell [<command> [<arg>...]]
         Execute an arbitrary <command> in the build environment.  If no
@@ -1794,7 +1796,7 @@ run_build() {
             --define "_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm" \
             --define "_buildhost $(get_hostname)" \
             --buildroot="$buildroot" \
-            "${BUILD_NOPREP[@]}" \
+            "${BUILD_NOPREP[@]}" "${BUILD_NOCHECK[@]}" \
             -bb \
             "$TMP_SPEC" \
             "$@"
@@ -2067,6 +2069,22 @@ run_make_install() {
     )
 }
 
+run_package__process_args() {
+    PACKAGE_NOCHECK=()
+
+    while [[ $# -ne 0 ]]; do
+        case $1 in
+            --no-check)
+                PACKAGE_NOCHECK=(--nocheck)
+                ;;
+            *)
+                fatal "Unexpected argument: $1"
+                ;;
+        esac
+        shift
+    done
+}
+
 run_package() {
     local build_tgt=$(sb2 -t $OPT_TARGET gcc -dumpmachine)
     build_tgt=${build_tgt%-gnueabi}
@@ -2091,7 +2109,7 @@ run_package() {
             --define "_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm" \
             --define "_buildhost $(get_hostname)" \
             --buildroot="$buildroot" \
-            -bb --noprep --nobuildstage --noclean \
+            -bb --noprep --nobuildstage "${PACKAGE_NOCHECK[@]}" --noclean \
             "$TMP_SPEC"
     )
 }
@@ -2941,6 +2959,7 @@ case "$1" in
         BUILD_DEBUG=(--define "debug_package %{nil}")
         BUILD_JOBS=
         BUILD_NOPREP=(--noprep)
+        BUILD_NOCHECK=()
         while [[ "$1" ]]; do
             case "$1" in
                 -d|--enable-debug) shift
@@ -2961,6 +2980,9 @@ case "$1" in
                     fi
                     shift
                     BUILD_NOPREP=()
+                    ;;
+                --no-check) shift
+                    BUILD_NOCHECK=(--nocheck)
                     ;;
                 --) shift
                     break
@@ -3558,7 +3580,6 @@ run_tc sb2_arg_pass "make-install" \
         /tmp/@TMPDIR@/.mb2/spec)" \
     make-install "a b" "c  d" e f
 
-KNOWN_ISSUE "Silently ignores extra arguments"
 run_tc sb2_arg_pass "package" \
     "$(expect_args \
         -t "$DEFAULT_TARGET" rpmbuild --build-in-place --target= \
@@ -3570,7 +3591,7 @@ run_tc sb2_arg_pass "package" \
         --buildroot='/tmp/@TMPDIR@/installroot' \
         -bb --noprep --nobuildstage --noclean \
         /tmp/@TMPDIR@/.mb2/spec)" \
-    package "a b" "c  d" e f
+    package
 
 tear_down_ts sb2_arg_pass
 
