@@ -1698,6 +1698,41 @@ switch_to_snapshot() {
     notice "Using the '$OPT_TARGET' snapshot of the build target"
 }
 
+run_build_requires__process_args() {
+    BUILD_REQUIRES_MODE=
+    BUILD_REQUIRES_NOREFRESH=
+
+    if [[ $OPT_SNAPSHOT ]]; then
+        BUILD_REQUIRES_NOREFRESH=1
+    fi
+    while [[ "$1" ]]; do
+        case "$1" in
+            --refresh) shift
+                BUILD_REQUIRES_NOREFRESH= ;;
+            --no-refresh) shift
+                BUILD_REQUIRES_NOREFRESH=1 ;;
+            reset|--reset)
+                if [[ $1 == --reset ]]; then
+                    notice "The '--reset' option is deprecated. Use 'reset' (non-option) instead."
+                fi
+                shift
+                if [[ ! $OPT_SNAPSHOT ]]; then
+                    fatal "Cannot do 'build-requires reset' without '--snapshot'"
+                fi
+                BUILD_REQUIRES_MODE=reset ;;
+            pull) shift
+                BUILD_REQUIRES_MODE=pull ;;
+            *)
+                short_usage quit
+                ;;
+        esac
+    done
+    if [[ ! $BUILD_REQUIRES_MODE ]]; then
+        notice "Omitting 'pull' is deprecated. Pass 'pull' explicitly."
+        BUILD_REQUIRES_MODE=pull
+    fi
+}
+
 run_build_requires() {
     if [[ $BUILD_REQUIRES_MODE == reset ]]; then
         if ! sdk-manage target snapshot --reset=force "$OPT_ORIGINAL_TARGET" "$OPT_TARGET"; then
@@ -2868,10 +2903,15 @@ elif [[ ! $OPT_NO_SNAPSHOT && ! $MB2_SELF_TEST_RUN ]]; then
 fi
 
 case "$1" in
-    cmake | make | make-install | install | package | rpm | deploy | undeploy | prepare | prep | build-shell | compiledb )
+    cmake | make | make-install | install | package | rpm | deploy | undeploy | build-requires \
+            | installdeps | prepare | prep | build-shell | compiledb )
         if [[ $1 == install ]]; then
             notice "The 'install' command is deprecated. Use 'make-install' instead."
             set -- make-install "${@:2}"
+        fi
+        if [[ $1 == installdeps ]]; then
+            notice "The 'installdeps' command is deprecated. Use 'build-requires' instead."
+            set -- build-requires "${@:2}"
         fi
         if [[ $1 == rpm ]]; then
             notice "The 'rpm' command is deprecated. Use 'package' instead."
@@ -2886,41 +2926,6 @@ case "$1" in
         if [[ $(type -t ${cmd}__process_args) == function ]]; then
             ${cmd}__process_args "$@"
             shift $#
-        fi
-        ;;
-    build-requires | installdeps )
-        if [[ $1 == installdeps ]]; then
-            notice "The 'installdeps' command is deprecated. Use 'build-requires' instead."
-        fi
-        cmd=run_build_requires; shift
-        if [[ $OPT_SNAPSHOT ]]; then
-            BUILD_REQUIRES_NOREFRESH=1
-        fi
-        while [[ "$1" ]]; do
-            case "$1" in
-                --refresh) shift
-                    BUILD_REQUIRES_NOREFRESH= ;;
-                --no-refresh) shift
-                    BUILD_REQUIRES_NOREFRESH=1 ;;
-                reset|--reset)
-                    if [[ $1 == --reset ]]; then
-                        notice "The '--reset' option is deprecated. Use 'reset' (non-option) instead."
-                    fi
-                    shift
-                    if [[ ! $OPT_SNAPSHOT ]]; then
-                        fatal "Cannot do 'build-requires reset' without '--snapshot'"
-                    fi
-                    BUILD_REQUIRES_MODE=reset ;;
-                pull) shift
-                    BUILD_REQUIRES_MODE=pull ;;
-                *)
-                    short_usage quit
-                    ;;
-            esac
-        done
-        if [[ ! $BUILD_REQUIRES_MODE ]]; then
-            notice "Omitting 'pull' is deprecated. Pass 'pull' explicitly."
-            BUILD_REQUIRES_MODE=pull
         fi
         ;;
     apply )
