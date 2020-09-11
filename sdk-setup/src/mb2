@@ -1918,8 +1918,6 @@ run_cmake__process_args() {
         *)
             CMAKE_MODE=configure
 
-            local project_dir=
-
             while [[ $# -gt 0 ]]; do
                 case $1 in
                     --)
@@ -1928,7 +1926,7 @@ run_cmake__process_args() {
                         ;;
                     *)
                         if [[ -e $1 ]]; then
-                            project_dir=${1%%+(/)}
+                            OPT_PRO_FILE_OR_DIR=${1%%+(/)}
                             shift
                         fi
                         break
@@ -1937,7 +1935,7 @@ run_cmake__process_args() {
             done
 
             CMAKE_EXTRA_CONFIGURE_ARGS=("$@")
-            handle_pro_file_or_dir_option "$project_dir"
+            handle_pro_file_or_dir_option
             ;;
     esac
 }
@@ -2675,19 +2673,17 @@ if [[ $1 != --self-test ]]; then  ###  M A I N  EXECUTION BEGINS HERE  #########
 #
 # If this is called with an empty argument, the default settings is restored.
 handle_pro_file_or_dir_option() {
-    local pro_file_or_dir=$1
-
     rm -f "$STATEDIR/src"
 
-    if [[ ! $pro_file_or_dir ]]; then
+    if [[ ! $OPT_PRO_FILE_OR_DIR ]]; then
         return
     fi
 
     local pro_dir=
-    if [[ -d $pro_file_or_dir ]]; then
-        pro_dir=$(readlink -f "$pro_file_or_dir")
+    if [[ -d $OPT_PRO_FILE_OR_DIR ]]; then
+        pro_dir=$(readlink -f "$OPT_PRO_FILE_OR_DIR")
     else
-        pro_dir=$(dirname "$(readlink -f "$pro_file_or_dir")")
+        pro_dir=$(dirname "$(readlink -f "$OPT_PRO_FILE_OR_DIR")")
     fi
 
     local src_dir=
@@ -2713,8 +2709,6 @@ handle_pro_file_or_dir_option() {
     # without spec file
     : ${src_dir:=$pro_dir}
 
-    OPT_PRO_FILE_OR_DIR=$pro_file_or_dir
-
     # The project file/directory might be specified explicitly for non-shadow builds as well
     if [[ $src_dir != "$(readlink -f "$PWD")" ]]; then
         maybe_symlink_create "$src_dir" "$STATEDIR/src"
@@ -2729,8 +2723,6 @@ maybe_restore_shadow_build() {
 }
 
 is_shadow_build() [[ -e $STATEDIR/src ]]
-
-pro_file_or_dir=
 
 while [[ "$1" ]]; do
     # only set variables in this loop
@@ -2765,7 +2757,7 @@ while [[ "$1" ]]; do
         "-p" | "--projectdir")
             notice "The '$1' option is deprecated. Try '$ME --help' for more information."
             [[ -d "$2" ]] || fatal "'$2' is not a directory"
-            pro_file_or_dir="${2%%+(/)}"
+            OPT_PRO_FILE_OR_DIR="${2%%+(/)}"
             shift 2
             ;;
         "--search-output-dir") shift
@@ -2950,14 +2942,14 @@ case "$1" in
                     ;;
                 *)
                     if [[ -e $1 ]]; then
-                        pro_file_or_dir="${1%%+(/)}"
+                        OPT_PRO_FILE_OR_DIR="${1%%+(/)}"
                         shift
                     fi
                     break
                     ;;
             esac
         done
-        handle_pro_file_or_dir_option "$pro_file_or_dir"
+        handle_pro_file_or_dir_option
         ;;
     build )
         cmd=run_$1; shift
@@ -2994,14 +2986,14 @@ case "$1" in
                     ;;
                 *)
                     if [[ -e $1 ]]; then
-                        pro_file_or_dir="${1%%+(/)}"
+                        OPT_PRO_FILE_OR_DIR="${1%%+(/)}"
                         shift
                     fi
                     break
                     ;;
             esac
         done
-        handle_pro_file_or_dir_option "$pro_file_or_dir"
+        handle_pro_file_or_dir_option
         [[ $BUILD_JOBS ]] || BUILD_JOBS=$(getconf _NPROCESSORS_ONLN)
         ;;
     run | ssh )
