@@ -2482,6 +2482,54 @@ run_undeploy() {
 }
 
 run_check__process_args() {
+    CHECK_LIST_SUITES=
+    check_levels=
+    check_suites=
+    check_artefacts=()
+    while [[ "$1" ]]; do
+        case "$1" in
+            --list-suites) shift
+                CHECK_LIST_SUITES=1
+                ;;
+            -l|--levels) shift
+                [[ $1 ]] || short_usage quit
+                check_levels=$1
+                shift
+                ;;
+            -s|--suites) shift
+                [[ $1 ]] || short_usage quit
+                check_suites=$1
+                shift
+                ;;
+            --) shift
+                check_artefacts+=(${@:+"$@"})
+                break
+                ;;
+            -*)
+                short_usage quit
+                ;;
+            *)
+                check_artefacts+=("$1")
+                shift
+                ;;
+        esac
+    done
+
+    if [[ ! $CHECK_LIST_SUITES ]]; then
+        run_check__process_args_helper "$check_levels" "$check_suites" \
+            ${check_artefacts:+"${check_artefacts[@]}"}
+
+        notice "Testing on levels: ${CHECK_LEVELS[*]}"
+        notice "Testing with suites: ${CHECK_SUITES[*]}"
+
+        if set_contains CHECK_LEVELS "$CHECK_LEVEL_PACKAGE" && [[ ${#CHECK_PACKAGE_ARTEFACTS[*]} -eq 0 ]] \
+            || set_contains CHECK_LEVELS "$CHECK_LEVEL_UNIT"; then
+            OPT_NEEDSPEC=1
+        fi
+    fi
+}
+
+run_check__process_args_helper() {
     local check_levels=$1
     local check_suites=$2
     local check_artefacts=("${@:3}")
@@ -2976,7 +3024,8 @@ fi
 
 case "$1" in
     build | qmake | cmake | make | make-install | install | package | rpm | deploy | undeploy \
-            | build-requires | installdeps | prepare | prep | apply | build-shell | compiledb )
+            | build-requires | installdeps | prepare | prep | apply | build-shell | compiledb \
+            | check )
         if [[ $1 == install ]]; then
             notice "The 'install' command is deprecated. Use 'make-install' instead."
             set -- make-install "${@:2}"
@@ -3014,53 +3063,6 @@ case "$1" in
                 notice "Using the 'run' command without '--device' is deprecated"
             fi
             cmd=""
-        fi
-        ;;
-    check )
-        cmd=run_$1; shift
-        CHECK_LIST_SUITES=
-        check_levels=
-        check_suites=
-        check_artefacts=()
-        while [[ "$1" ]]; do
-            case "$1" in
-                --list-suites) shift
-                    CHECK_LIST_SUITES=1
-                    ;;
-                -l|--levels) shift
-                    [[ $1 ]] || short_usage quit
-                    check_levels=$1
-                    shift
-                    ;;
-                -s|--suites) shift
-                    [[ $1 ]] || short_usage quit
-                    check_suites=$1
-                    shift
-                    ;;
-                --) shift
-                    check_artefacts+=(${@:+"$@"})
-                    break
-                    ;;
-                -*)
-                    short_usage quit
-                    ;;
-                *)
-                    check_artefacts+=("$1")
-                    shift
-                    ;;
-            esac
-        done
-
-        if [[ ! $CHECK_LIST_SUITES ]]; then
-            run_check__process_args "$check_levels" "$check_suites" ${check_artefacts:+"${check_artefacts[@]}"}
-
-            notice "Testing on levels: ${CHECK_LEVELS[*]}"
-            notice "Testing with suites: ${CHECK_SUITES[*]}"
-
-            if set_contains CHECK_LEVELS "$CHECK_LEVEL_PACKAGE" && [[ ${#CHECK_PACKAGE_ARTEFACTS[*]} -eq 0 ]] \
-                || set_contains CHECK_LEVELS "$CHECK_LEVEL_UNIT"; then
-                OPT_NEEDSPEC=1
-            fi
         fi
         ;;
     *)
