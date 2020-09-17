@@ -40,7 +40,7 @@ SELF=$(basename "$0")
 synopsis()
 {
     cat <<END
-usage: oomadvice [--adj <oom_adj>] [--] command [args...]
+usage: oomadvice [--adj <oom-score-adj>] [--] command [args...]
 END
 }
 
@@ -111,7 +111,7 @@ subprocess()
 
 set_defaults()
 {
-    OPT_OOM_ADJ=10
+    OPT_OOM_SCORE_ADJ=750
     OPT_USAGE=
     OPT_COMMAND=
 }
@@ -129,7 +129,7 @@ parse_opts()
                     bad_usage "Option requires argument: '$1'"
                     return 1
                 fi
-                OPT_OOM_ADJ=$2
+                OPT_OOM_SCORE_ADJ=$2
                 shift
                 ;;
             --)
@@ -169,12 +169,12 @@ main()
     slave()
     {
         local adj=$1
-        echo "$adj" > /proc/self/oom_adj
+        echo "$adj" > /proc/self/oom_score_adj
         shift
         exec "$@"
     }
 
-    subprocess slave "$OPT_OOM_ADJ" "${OPT_COMMAND[@]}"
+    subprocess slave "$OPT_OOM_SCORE_ADJ" "${OPT_COMMAND[@]}"
     local rc=$?
 
     if (( rc != 0 )); then
