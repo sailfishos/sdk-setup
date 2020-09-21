@@ -174,7 +174,7 @@ testing on one or more of the four recognized test levels:
        the RPM .spec file if present.
 
        Testing at this level is normally performed by the 'build' and
-       'package' commands (unless used with the '--nocheck' option) and so it
+       'package' commands (unless used with the '--no-check' option) and so it
        is not enabled by default for this command. Performed with this
        command, it involves execution of the 'make-install' command.
 
@@ -225,8 +225,8 @@ COMMANDS
 
         -R    reverse apply patches (patch -R)
 
-    build [-p|--doprep] [-d|--enable-debug] [-j <n>] [<project-dir-or-file>]
-          [[--] <rpmbuild-extra-arg>...]
+    build [-p|--prepare] [--no-check] [-d|--enable-debug] [-j <n>]
+          [<project-dir-or-file>] [[--] <rpmbuild-extra-arg>...]
         Run rpmbuild. Execute all sections of the .spec file except for %prep
         unless told otherwise.
 
@@ -235,9 +235,10 @@ COMMANDS
         project directory. (The file name part is ignored - project file
         selection is done by qmake call inside the .spec file.)
 
-        -p    run %prep phase as well
-        -d    enable debug build
-        -j <n> run up to <n> jobs simultaneously
+        --prepare         Run %prep section as well
+        --no-check        Skip the %check section
+        --enable-debug    Enable debug build
+        -j <n>            Run up to <n> jobs simultaneously
 
     qmake [<project-dir-or-file>] [[--] <qmake-extra-arg>...]
         Run rpmbuild. Execute just the %build section of the .spec file,
@@ -282,9 +283,10 @@ COMMANDS
     make-install
         Run rpmbuild. Execute just the %install section of the .spec file.
 
-    package
+    package [--no-check]
         Run rpmbuild. Execute just the %install section of the .spec file, then
-        build binary packages.
+        build binary packages. Unless '--no-check' is passed, execute also the
+        %check section if present.
 
     build-shell [<command> [<arg>...]]
         Execute an arbitrary <command> in the build environment.  If no
@@ -1696,6 +1698,41 @@ switch_to_snapshot() {
     notice "Using the '$OPT_TARGET' snapshot of the build target"
 }
 
+run_build_requires__process_args() {
+    BUILD_REQUIRES_MODE=
+    BUILD_REQUIRES_NOREFRESH=
+
+    if [[ $OPT_SNAPSHOT ]]; then
+        BUILD_REQUIRES_NOREFRESH=1
+    fi
+    while [[ "$1" ]]; do
+        case "$1" in
+            --refresh) shift
+                BUILD_REQUIRES_NOREFRESH= ;;
+            --no-refresh) shift
+                BUILD_REQUIRES_NOREFRESH=1 ;;
+            reset|--reset)
+                if [[ $1 == --reset ]]; then
+                    notice "The '--reset' option is deprecated. Use 'reset' (non-option) instead."
+                fi
+                shift
+                if [[ ! $OPT_SNAPSHOT ]]; then
+                    fatal "Cannot do 'build-requires reset' without '--snapshot'"
+                fi
+                BUILD_REQUIRES_MODE=reset ;;
+            pull) shift
+                BUILD_REQUIRES_MODE=pull ;;
+            *)
+                short_usage quit
+                ;;
+        esac
+    done
+    if [[ ! $BUILD_REQUIRES_MODE ]]; then
+        notice "Omitting 'pull' is deprecated. Pass 'pull' explicitly."
+        BUILD_REQUIRES_MODE=pull
+    fi
+}
+
 run_build_requires() {
     if [[ $BUILD_REQUIRES_MODE == reset ]]; then
         if ! sdk-manage target snapshot --reset=force "$OPT_ORIGINAL_TARGET" "$OPT_TARGET"; then
@@ -1707,6 +1744,19 @@ run_build_requires() {
         sb2 -t "$OPT_TARGET" -m sdk-install -R zypper --non-interactive ref
     fi
     maybe_verify_target_dependencies
+}
+
+run_apply__process_args() {
+    APPLY_REVERSE=
+    while [[ "$1" ]]; do
+        case "$1" in
+            -R) shift
+                APPLY_REVERSE=1 ;;
+            *)
+                short_usage quit
+                ;;
+        esac
+    done
 }
 
 run_apply() {
@@ -1746,6 +1796,53 @@ run_apply() {
             patch "${common_op[@]}" $op < "$(dirname "$OPT_SPEC")/$patch_file" >&2
         done
     )
+}
+
+run_build__process_args() {
+    BUILD_DEBUG=(--define "debug_package %{nil}")
+    BUILD_JOBS=
+    BUILD_NOPREP=(--noprep)
+    BUILD_NOCHECK=()
+    BUILD_EXTRA_ARGS=()
+    while [[ "$1" ]]; do
+        case "$1" in
+            -d|--enable-debug) shift
+                BUILD_DEBUG=() ;;
+            -j*)
+                # support giving -j with and without space between
+                # it and the 'n'
+                if [[ ${#1} -gt 2 ]]; then
+                    BUILD_JOBS=${1:2}; shift
+                else
+                    [[ -z "$2" ]] && short_usage quit
+                    BUILD_JOBS="$2"; shift 2;
+                fi
+                ;;
+            -p|--prepare|--doprep)
+                if [[ $1 == --doprep ]]; then
+                    notice "The '--doprep' option is deprecated. Use '--prepare|-p' instead."
+                fi
+                shift
+                BUILD_NOPREP=()
+                ;;
+            --no-check) shift
+                BUILD_NOCHECK=(--nocheck)
+                ;;
+            --) shift
+                break
+                ;;
+            *)
+                if [[ -e $1 ]]; then
+                    OPT_PRO_FILE_OR_DIR="${1%%+(/)}"
+                    shift
+                fi
+                break
+                ;;
+        esac
+    done
+    BUILD_EXTRA_ARGS=("$@")
+    handle_pro_file_or_dir_option
+    [[ $BUILD_JOBS ]] || BUILD_JOBS=$(getconf _NPROCESSORS_ONLN)
 }
 
 run_build() {
@@ -1794,10 +1891,10 @@ run_build() {
             --define "_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm" \
             --define "_buildhost $(get_hostname)" \
             --buildroot="$buildroot" \
-            "${BUILD_NOPREP[@]}" \
+            "${BUILD_NOPREP[@]}" "${BUILD_NOCHECK[@]}" \
             -bb \
             "$TMP_SPEC" \
-            "$@"
+            "${BUILD_EXTRA_ARGS[@]}"
     )
 }
 
@@ -1868,8 +1965,6 @@ run_cmake__process_args() {
         *)
             CMAKE_MODE=configure
 
-            local project_dir=
-
             while [[ $# -gt 0 ]]; do
                 case $1 in
                     --)
@@ -1878,7 +1973,7 @@ run_cmake__process_args() {
                         ;;
                     *)
                         if [[ -e $1 ]]; then
-                            project_dir=${1%%+(/)}
+                            OPT_PRO_FILE_OR_DIR=${1%%+(/)}
                             shift
                         fi
                         break
@@ -1887,7 +1982,7 @@ run_cmake__process_args() {
             done
 
             CMAKE_EXTRA_CONFIGURE_ARGS=("$@")
-            handle_pro_file_or_dir_option "$project_dir"
+            handle_pro_file_or_dir_option
             ;;
     esac
 }
@@ -1931,6 +2026,26 @@ run_cmake() {
     )
 }
 
+run_qmake__process_args() {
+    QMAKE_EXTRA_ARGS=()
+    while [[ "$1" ]]; do
+        case "$1" in
+            --) shift
+                break
+                ;;
+            *)
+                if [[ -e $1 ]]; then
+                    OPT_PRO_FILE_OR_DIR="${1%%+(/)}"
+                    shift
+                fi
+                break
+                ;;
+        esac
+    done
+    QMAKE_EXTRA_ARGS=("$@")
+    handle_pro_file_or_dir_option
+}
+
 run_qmake() {
     local build_tgt=$(sb2 -t $OPT_TARGET gcc -dumpmachine)
     build_tgt=${build_tgt%-gnueabi}
@@ -1945,7 +2060,7 @@ run_qmake() {
     # This is a good time to verify the target dependencies as per mb
     maybe_verify_target_dependencies
 
-    init_qmake_wrapper $WRAPPERSDIR/qmake "$@"
+    init_qmake_wrapper $WRAPPERSDIR/qmake "${QMAKE_EXTRA_ARGS[@]}"
     init_noop_wrapper $WRAPPERSDIR/make
 
     (
@@ -2067,6 +2182,22 @@ run_make_install() {
     )
 }
 
+run_package__process_args() {
+    PACKAGE_NOCHECK=()
+
+    while [[ $# -ne 0 ]]; do
+        case $1 in
+            --no-check)
+                PACKAGE_NOCHECK=(--nocheck)
+                ;;
+            *)
+                fatal "Unexpected argument: $1"
+                ;;
+        esac
+        shift
+    done
+}
+
 run_package() {
     local build_tgt=$(sb2 -t $OPT_TARGET gcc -dumpmachine)
     build_tgt=${build_tgt%-gnueabi}
@@ -2091,7 +2222,7 @@ run_package() {
             --define "_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm" \
             --define "_buildhost $(get_hostname)" \
             --buildroot="$buildroot" \
-            -bb --noprep --nobuildstage --noclean \
+            -bb --noprep --nobuildstage "${PACKAGE_NOCHECK[@]}" --noclean \
             "$TMP_SPEC"
     )
 }
@@ -2242,6 +2373,7 @@ run_undeploy__process_args() {
 
     if [[ ! $UNDEPLOY_ALL ]]; then
         [[ -e $STATEDIR/spec ]] || fatal "No previous build found"
+        OPT_NEEDSPEC=1
     fi
 }
 
@@ -2350,6 +2482,54 @@ run_undeploy() {
 }
 
 run_check__process_args() {
+    CHECK_LIST_SUITES=
+    check_levels=
+    check_suites=
+    check_artefacts=()
+    while [[ "$1" ]]; do
+        case "$1" in
+            --list-suites) shift
+                CHECK_LIST_SUITES=1
+                ;;
+            -l|--levels) shift
+                [[ $1 ]] || short_usage quit
+                check_levels=$1
+                shift
+                ;;
+            -s|--suites) shift
+                [[ $1 ]] || short_usage quit
+                check_suites=$1
+                shift
+                ;;
+            --) shift
+                check_artefacts+=(${@:+"$@"})
+                break
+                ;;
+            -*)
+                short_usage quit
+                ;;
+            *)
+                check_artefacts+=("$1")
+                shift
+                ;;
+        esac
+    done
+
+    if [[ ! $CHECK_LIST_SUITES ]]; then
+        run_check__process_args_helper "$check_levels" "$check_suites" \
+            ${check_artefacts:+"${check_artefacts[@]}"}
+
+        notice "Testing on levels: ${CHECK_LEVELS[*]}"
+        notice "Testing with suites: ${CHECK_SUITES[*]}"
+
+        if set_contains CHECK_LEVELS "$CHECK_LEVEL_PACKAGE" && [[ ${#CHECK_PACKAGE_ARTEFACTS[*]} -eq 0 ]] \
+            || set_contains CHECK_LEVELS "$CHECK_LEVEL_UNIT"; then
+            OPT_NEEDSPEC=1
+        fi
+    fi
+}
+
+run_check__process_args_helper() {
     local check_levels=$1
     local check_suites=$2
     local check_artefacts=("${@:3}")
@@ -2608,19 +2788,17 @@ if [[ $1 != --self-test ]]; then  ###  M A I N  EXECUTION BEGINS HERE  #########
 #
 # If this is called with an empty argument, the default settings is restored.
 handle_pro_file_or_dir_option() {
-    local pro_file_or_dir=$1
-
     rm -f "$STATEDIR/src"
 
-    if [[ ! $pro_file_or_dir ]]; then
+    if [[ ! $OPT_PRO_FILE_OR_DIR ]]; then
         return
     fi
 
     local pro_dir=
-    if [[ -d $pro_file_or_dir ]]; then
-        pro_dir=$(readlink -f "$pro_file_or_dir")
+    if [[ -d $OPT_PRO_FILE_OR_DIR ]]; then
+        pro_dir=$(readlink -f "$OPT_PRO_FILE_OR_DIR")
     else
-        pro_dir=$(dirname "$(readlink -f "$pro_file_or_dir")")
+        pro_dir=$(dirname "$(readlink -f "$OPT_PRO_FILE_OR_DIR")")
     fi
 
     local src_dir=
@@ -2646,8 +2824,6 @@ handle_pro_file_or_dir_option() {
     # without spec file
     : ${src_dir:=$pro_dir}
 
-    OPT_PRO_FILE_OR_DIR=$pro_file_or_dir
-
     # The project file/directory might be specified explicitly for non-shadow builds as well
     if [[ $src_dir != "$(readlink -f "$PWD")" ]]; then
         maybe_symlink_create "$src_dir" "$STATEDIR/src"
@@ -2662,8 +2838,6 @@ maybe_restore_shadow_build() {
 }
 
 is_shadow_build() [[ -e $STATEDIR/src ]]
-
-pro_file_or_dir=
 
 while [[ "$1" ]]; do
     # only set variables in this loop
@@ -2698,7 +2872,7 @@ while [[ "$1" ]]; do
         "-p" | "--projectdir")
             notice "The '$1' option is deprecated. Try '$ME --help' for more information."
             [[ -d "$2" ]] || fatal "'$2' is not a directory"
-            pro_file_or_dir="${2%%+(/)}"
+            OPT_PRO_FILE_OR_DIR="${2%%+(/)}"
             shift 2
             ;;
         "--search-output-dir") shift
@@ -2849,10 +3023,16 @@ elif [[ ! $OPT_NO_SNAPSHOT && ! $MB2_SELF_TEST_RUN ]]; then
 fi
 
 case "$1" in
-    make | make-install | install | package | rpm | deploy | prepare | prep | build-shell | compiledb )
+    build | qmake | cmake | make | make-install | install | package | rpm | deploy | undeploy \
+            | build-requires | installdeps | prepare | prep | apply | build-shell | compiledb \
+            | check )
         if [[ $1 == install ]]; then
             notice "The 'install' command is deprecated. Use 'make-install' instead."
             set -- make-install "${@:2}"
+        fi
+        if [[ $1 == installdeps ]]; then
+            notice "The 'installdeps' command is deprecated. Use 'build-requires' instead."
+            set -- build-requires "${@:2}"
         fi
         if [[ $1 == rpm ]]; then
             notice "The 'rpm' command is deprecated. Use 'package' instead."
@@ -2864,122 +3044,10 @@ case "$1" in
         fi
         cmd=run_${1//-/_}
         shift
-        ;;
-    undeploy )
-        cmd=run_$1; shift
-        run_undeploy__process_args "$@"
-        if [[ ! $UNDEPLOY_ALL ]]; then
-            OPT_NEEDSPEC=1
+        if [[ $(type -t ${cmd}__process_args) == function ]]; then
+            ${cmd}__process_args "$@"
+            shift $#
         fi
-        shift $#
-        ;;
-    build-requires | installdeps )
-        if [[ $1 == installdeps ]]; then
-            notice "The 'installdeps' command is deprecated. Use 'build-requires' instead."
-        fi
-        cmd=run_build_requires; shift
-        if [[ $OPT_SNAPSHOT ]]; then
-            BUILD_REQUIRES_NOREFRESH=1
-        fi
-        while [[ "$1" ]]; do
-            case "$1" in
-                --refresh) shift
-                    BUILD_REQUIRES_NOREFRESH= ;;
-                --no-refresh) shift
-                    BUILD_REQUIRES_NOREFRESH=1 ;;
-                reset|--reset)
-                    if [[ $1 == --reset ]]; then
-                        notice "The '--reset' option is deprecated. Use 'reset' (non-option) instead."
-                    fi
-                    shift
-                    if [[ ! $OPT_SNAPSHOT ]]; then
-                        fatal "Cannot do 'build-requires reset' without '--snapshot'"
-                    fi
-                    BUILD_REQUIRES_MODE=reset ;;
-                pull) shift
-                    BUILD_REQUIRES_MODE=pull ;;
-                *)
-                    short_usage quit
-                    ;;
-            esac
-        done
-        if [[ ! $BUILD_REQUIRES_MODE ]]; then
-            notice "Omitting 'pull' is deprecated. Pass 'pull' explicitly."
-            BUILD_REQUIRES_MODE=pull
-        fi
-        ;;
-    apply )
-        cmd=run_$1; shift
-        APPLY_REVERSE=
-        while [[ "$1" ]]; do
-            case "$1" in
-                -R) shift
-                    APPLY_REVERSE=1 ;;
-                *)
-                    short_usage quit
-                    ;;
-            esac
-        done
-        ;;
-    qmake )
-        cmd=run_$1; shift
-        while [[ "$1" ]]; do
-            case "$1" in
-                --) shift
-                    break
-                    ;;
-                *)
-                    if [[ -e $1 ]]; then
-                        pro_file_or_dir="${1%%+(/)}"
-                        shift
-                    fi
-                    break
-                    ;;
-            esac
-        done
-        handle_pro_file_or_dir_option "$pro_file_or_dir"
-        ;;
-    cmake )
-        cmd=run_$1; shift
-        run_cmake__process_args "$@"
-        shift $#
-        ;;
-    build )
-        cmd=run_$1; shift
-        BUILD_DEBUG=(--define "debug_package %{nil}")
-        BUILD_JOBS=
-        BUILD_NOPREP=(--noprep)
-        while [[ "$1" ]]; do
-            case "$1" in
-                -d|--enable-debug) shift
-                    BUILD_DEBUG=() ;;
-                -j*)
-                    # support giving -j with and without space between
-                    # it and the 'n'
-                    if [[ ${#1} -gt 2 ]]; then
-                        BUILD_JOBS=${1:2}; shift
-                    else
-                        [[ -z "$2" ]] && short_usage quit
-                        BUILD_JOBS="$2"; shift 2;
-                    fi
-                    ;;
-                -p|--doprep) shift
-                    BUILD_NOPREP=()
-                    ;;
-                --) shift
-                    break
-                    ;;
-                *)
-                    if [[ -e $1 ]]; then
-                        pro_file_or_dir="${1%%+(/)}"
-                        shift
-                    fi
-                    break
-                    ;;
-            esac
-        done
-        handle_pro_file_or_dir_option "$pro_file_or_dir"
-        [[ $BUILD_JOBS ]] || BUILD_JOBS=$(getconf _NPROCESSORS_ONLN)
         ;;
     run | ssh )
         if [[ $1 == ssh ]]; then
@@ -2995,53 +3063,6 @@ case "$1" in
                 notice "Using the 'run' command without '--device' is deprecated"
             fi
             cmd=""
-        fi
-        ;;
-    check )
-        cmd=run_$1; shift
-        CHECK_LIST_SUITES=
-        check_levels=
-        check_suites=
-        check_artefacts=()
-        while [[ "$1" ]]; do
-            case "$1" in
-                --list-suites) shift
-                    CHECK_LIST_SUITES=1
-                    ;;
-                -l|--levels) shift
-                    [[ $1 ]] || short_usage quit
-                    check_levels=$1
-                    shift
-                    ;;
-                -s|--suites) shift
-                    [[ $1 ]] || short_usage quit
-                    check_suites=$1
-                    shift
-                    ;;
-                --) shift
-                    check_artefacts+=(${@:+"$@"})
-                    break
-                    ;;
-                -*)
-                    short_usage quit
-                    ;;
-                *)
-                    check_artefacts+=("$1")
-                    shift
-                    ;;
-            esac
-        done
-
-        if [[ ! $CHECK_LIST_SUITES ]]; then
-            run_check__process_args "$check_levels" "$check_suites" ${check_artefacts:+"${check_artefacts[@]}"}
-
-            notice "Testing on levels: ${CHECK_LEVELS[*]}"
-            notice "Testing with suites: ${CHECK_SUITES[*]}"
-
-            if set_contains CHECK_LEVELS "$CHECK_LEVEL_PACKAGE" && [[ ${#CHECK_PACKAGE_ARTEFACTS[*]} -eq 0 ]] \
-                || set_contains CHECK_LEVELS "$CHECK_LEVEL_UNIT"; then
-                OPT_NEEDSPEC=1
-            fi
         fi
         ;;
     *)
@@ -3562,7 +3583,6 @@ run_tc sb2_arg_pass "make-install" \
         /tmp/@TMPDIR@/.mb2/spec)" \
     make-install "a b" "c  d" e f
 
-KNOWN_ISSUE "Silently ignores extra arguments"
 run_tc sb2_arg_pass "package" \
     "$(expect_args \
         -t "$DEFAULT_TARGET" rpmbuild --build-in-place --target= \
@@ -3574,7 +3594,7 @@ run_tc sb2_arg_pass "package" \
         --buildroot='/tmp/@TMPDIR@/installroot' \
         -bb --noprep --nobuildstage --noclean \
         /tmp/@TMPDIR@/.mb2/spec)" \
-    package "a b" "c  d" e f
+    package
 
 tear_down_ts sb2_arg_pass
 
