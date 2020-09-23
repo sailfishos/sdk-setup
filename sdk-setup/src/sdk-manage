@@ -509,6 +509,19 @@ object_zypper() {
     local object=$1 args=("${@:2}")
 
     enter "$object" zypper --non-interactive "${args[@]}"
+    case $? in
+        100|101|102)
+            # Ignored exit codes:
+            # 100 - ZYPPER_EXIT_INF_UPDATE_NEEDED
+            # 101 - ZYPPER_EXIT_INF_SEC_UPDATE_NEEDED
+            # 102 - ZYPPER_EXIT_INF_REBOOT_NEEDED
+            true
+            ;;
+        103)
+            # 103 - ZYPPER_EXIT_INF_RESTART_NEEDED
+            object_zypper "$@"
+            ;;
+    esac
 }
 
 register_object() {
