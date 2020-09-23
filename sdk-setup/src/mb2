@@ -568,8 +568,9 @@ GLOBAL OPTIONS
     -X, --no-fix-version
         Override --fix-version option.
 
-    -n, --no-deps
-        Do not update target dependencies
+    -n, --no-pull-build-requires
+        Do not update build-time dependencies unless required explicitly with
+        'build-requires pull'.
 
     -c, --git-change-log[=<args>]
         Include change log generated from Git history with 'git-change-log'
@@ -909,7 +910,7 @@ filter_repo()
 }
 
 maybe_verify_target_dependencies() {
-    [[ $OPT_NO_DEPS ]] && return
+    [[ $OPT_PULL_BUILD_REQUIRES ]] || return 0
 
     local deps=()
     readarray -t deps < <(sb2 -t "$OPT_TARGET" rpmspec --query --buildrequires "$OPT_SPEC" |sed 's/\s*$//')
@@ -2733,7 +2734,7 @@ OPT_GIT_CHANGE_LOG=
 OPT_GIT_CHANGE_LOG_ARGS=
 OPT_SHARED_DIR=/etc/mersdk/share
 OPT_INC_BUILD_NUMBER=0
-OPT_NO_DEPS=
+OPT_PULL_BUILD_REQUIRES=1
 OPT_WRAP=()
 
 STATEDIR=$PWD/.mb2
@@ -2945,8 +2946,11 @@ while [[ "$1" ]]; do
             OPT_FIX_VERSION_HINT=
             OPT_NO_FIX_VERSION=1
             ;;
-        "-n" | "--no-deps") shift
-            OPT_NO_DEPS=1
+        "-n" | "--no-deps" | "--no-pull-build-requires" ) shift
+            if [[ $1 == --no-deps ]]; then
+                notice "The '$1' option is deprecated. Use '--no-pull-build-requires|-n' instead."
+            fi
+            OPT_PULL_BUILD_REQUIRES=
             ;;
         "-c" | "--git-change-log" ) shift
             OPT_GIT_CHANGE_LOG=1
