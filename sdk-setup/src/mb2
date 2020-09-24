@@ -2589,10 +2589,12 @@ run_check__process_args_helper() {
     RPMVALIDATION_ALL_SUITES=($(awk '{print $1}' <<<"$rpmvalidation_suites_info"))
     local rpmvalidation_essential_suites=($(awk -v essential="$CHECK_ESSENTIAL" \
         '($2 == essential) { print $1 }' <<<"$rpmvalidation_suites_info"))
-    CHECK_SUITES=($CHECK_RPMSPEC ${rpmvalidation_essential_suites[*]})
+    local known_suites=($CHECK_RPMSPEC $CHECK_RPMLINT ${RPMVALIDATION_ALL_SUITES[*]})
+
+    CHECK_SUITES=($CHECK_RPMSPEC $CHECK_RPMLINT ${rpmvalidation_essential_suites[*]})
     if [[ $check_suites ]]; then
         for suite in ${check_suites//[,+-]/ }; do
-            if [[ $suite != $CHECK_RPMSPEC ]] && ! set_contains RPMVALIDATION_ALL_SUITES "$suite"; then
+            if ! set_contains known_suites "$suite"; then
                 fatal "Not a known test suite '$suite'"
             fi
         done
@@ -2612,6 +2614,9 @@ run_check() {
             {
                 print_suite "$CHECK_RPMSPEC" "$CHECK_ESSENTIAL" "$CHECK_LEVEL_UNIT" "-" \
                     "Execute the %check section of the .spec file"
+
+                print_suite "$CHECK_RPMLINT" "$CHECK_ESSENTIAL" "$CHECK_LEVEL_PACKAGE" "-" \
+                    "Check for common packaging problems with rpmlint"
 
                 local name= essential= url= description=
                 rpmvalidation --target "$OPT_TARGET" --list-suites \
@@ -2635,12 +2640,21 @@ run_check() {
             run_make_install --check || rc=1
         fi
     fi
+
     if set_contains CHECK_LEVELS "$CHECK_LEVEL_PACKAGE"; then
         local selected_rpmvalidation_suites=()
         set_intersect selected_rpmvalidation_suites RPMVALIDATION_ALL_SUITES CHECK_SUITES
         selected_rpmvalidation_suites=$(IFS=,; printf '%s' "${selected_rpmvalidation_suites[*]}")
-        if [[ $selected_rpmvalidation_suites ]]; then
-            local packages=(${CHECK_PACKAGE_ARTEFACTS:+"${CHECK_PACKAGE_ARTEFACTS[@]}"})
+
+        local have_selected_suites=
+        if [[ $selected_rpmvalidation_suites ]] \
+                || set_contains CHECK_SUITES "$CHECK_RPMLINT"; then
+            have_selected_suites=1
+        fi
+
+        local packages=
+        if [[ $have_selected_suites ]]; then
+            packages=(${CHECK_PACKAGE_ARTEFACTS:+"${CHECK_PACKAGE_ARTEFACTS[@]}"})
             if [[ ${#packages[*]} -eq 0 ]]; then
                 if [[ ! -e $STATEDIR/spec ]]; then
                     notice "No previous build found and no package to verify specified explicitly"
@@ -2652,11 +2666,22 @@ run_check() {
                     fi
                 fi
             fi
-            local package=
+        fi
+
+        local package=
+
+        if [[ $selected_rpmvalidation_suites ]]; then
             for package in "${packages[@]}"; do
                 let done_count++
                 rpmvalidation -t "$OPT_TARGET" --suites "$selected_rpmvalidation_suites" "$package" \
                     || rc=1
+            done
+        fi
+
+        if set_contains CHECK_SUITES "$CHECK_RPMLINT"; then
+            for package in "${packages[@]}"; do
+                let done_count++
+                sb2 -t "$OPT_TARGET" -m sdk-build+pp rpmlint "$package" || rc=1
             done
         fi
     fi
@@ -2754,6 +2779,7 @@ CHECK_ESSENTIAL=Essential
 CHECK_OPTIONAL=Optional
 
 CHECK_RPMSPEC=rpmspec
+CHECK_RPMLINT=rpmlint
 
 AUTOTOOLS=(autoreconf autoconf autoheader aclocal automake autopoint libtoolize)
 
