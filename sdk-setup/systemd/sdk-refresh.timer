@@ -5,7 +5,7 @@
 # The refresh service will ensure it does not run more than once#
 # a day
 OnActiveSec=1d
-OnBootSec=5m
+OnStartupSec=5m
 
 [Unit]
 Description=SDK Engine Refresh service
