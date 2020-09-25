@@ -339,14 +339,17 @@ COMMANDS
         -l, --levels [+|-]<level>...
             Select testing levels. Levels are selected using the keywords
             'source', 'package', 'static', 'unit', 'system' and 'dynamic' as
-            described before.
+            described before. The default selection is indicated in the above
+            table and can be overriden with the global option
+            '--check-levels'.
 
         --list-suites
             List available test suites.
 
         -s, --suites [+|-]<suite>...
             Select test suites to use. By default all and only the essential
-            suites are selected. See '--list-suites'.
+            suites are selected. See '--list-suites'. The default selection
+            may be overriden with the global option '--check-suites'.
 
         The '--levels' and '--suites' options may be passed multiple values,
         separated with comma. If a name is prefixed with '+' or '-', the
@@ -579,6 +582,14 @@ GLOBAL OPTIONS
         '.changes.run' extension to instruct $ME to generate changelog with
         'git-change-log <args>' instead.
 
+    --check-levels [+|-]<level>...
+        Override the default test levels the 'check' command operates on. See
+        the '--levels' option to the 'check' command for more details.
+
+    --check-suites [+|-]<suite>...
+        Override the default test suites the 'check' command executes. See
+        the '--suites' option to the 'check' command for more details.
+
 
 KNOWN ISSUES
 
@@ -678,6 +689,20 @@ set_contains() {
     local item=$2
 
     [[ " ${set[*]} " == *" $item "* ]]
+}
+
+# Combine two recipes in form of comma separated list of "[+-]<item>" items
+combine_set_update_recipes() {
+    local recipe1=$1
+    local recipe2=$2
+
+    if [[ ! $recipe2 ]]; then
+        printf '%s' "$recipe1"
+    elif [[ $recipe1 && $recipe2 == [+-]* ]]; then
+        printf '%s,%s' "$recipe1" "$recipe2"
+    else
+        printf '%s' "$recipe2"
+    fi
 }
 
 git_() (
@@ -2517,6 +2542,9 @@ run_check__process_args() {
     done
 
     if [[ ! $CHECK_LIST_SUITES ]]; then
+        check_levels=$(combine_set_update_recipes "$OPT_CHECK_LEVELS" "$check_levels")
+        check_suites=$(combine_set_update_recipes "$OPT_CHECK_SUITES" "$check_suites")
+
         run_check__process_args_helper "$check_levels" "$check_suites" \
             ${check_artefacts:+"${check_artefacts[@]}"}
 
@@ -2761,6 +2789,8 @@ OPT_SHARED_DIR=/etc/mersdk/share
 OPT_INC_BUILD_NUMBER=0
 OPT_PULL_BUILD_REQUIRES=1
 OPT_WRAP=()
+OPT_CHECK_LEVELS=
+OPT_CHECK_SUITES=
 
 STATEDIR=$PWD/.mb2
 TMP_SPEC=$STATEDIR/spec
@@ -2988,6 +3018,16 @@ while [[ "$1" ]]; do
             ;;
         "-m" | "--submodule" )
             notice "The '$1' option is deprecated and does nothing currently"
+            shift 2
+            ;;
+        "--check-levels" )
+            [[ $2 ]] || fatal "The '$1' option requires an argument"
+            OPT_CHECK_LEVELS=$2
+            shift 2
+            ;;
+        "--check-suites" )
+            [[ $2 ]] || fatal "The '$1' option requires an argument"
+            OPT_CHECK_SUITES=$2
             shift 2
             ;;
         apply | build | build-requires | cmake | compiledb | deploy | install | installdeps \
