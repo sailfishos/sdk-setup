@@ -1825,15 +1825,15 @@ run_apply() {
 }
 
 run_build__process_args() {
-    BUILD_DEBUG=(--define "debug_package %{nil}")
+    BUILD_DEBUG_ARGS=(--define "debug_package %{nil}")
     BUILD_JOBS=
-    BUILD_NOPREP=(--noprep)
-    BUILD_NOCHECK=()
+    BUILD_NOPREP_ARGS=(--noprep)
+    BUILD_NOCHECK_ARGS=()
     BUILD_EXTRA_ARGS=()
     while [[ "$1" ]]; do
         case "$1" in
             -d|--enable-debug) shift
-                BUILD_DEBUG=() ;;
+                BUILD_DEBUG_ARGS=() ;;
             -j*)
                 # support giving -j with and without space between
                 # it and the 'n'
@@ -1849,10 +1849,10 @@ run_build__process_args() {
                     notice "The '--doprep' option is deprecated. Use '--prepare|-p' instead."
                 fi
                 shift
-                BUILD_NOPREP=()
+                BUILD_NOPREP_ARGS=()
                 ;;
             --no-check) shift
-                BUILD_NOCHECK=(--nocheck)
+                BUILD_NOCHECK_ARGS=(--nocheck)
                 ;;
             --) shift
                 break
@@ -1876,7 +1876,7 @@ run_build() {
     maybe_verify_target_dependencies
 
     maybe_increment_build_number;
-    if [[ $BUILD_NOPREP ]]; then
+    if [[ $BUILD_NOPREP_ARGS ]]; then
         sed -e '/^%patch/d' "$OPT_SPEC" > "$TMP_SPEC"
     else
         cp "$OPT_SPEC" "$TMP_SPEC"
@@ -1910,14 +1910,14 @@ run_build() {
         [[ $OPT_CLEAN_OUTPUTDIR ]] && rm -f "$OPT_OUTPUTDIR/"*.rpm;
         oomadvice sb2 -t $OPT_TARGET env PATH="$WRAPPERSDIR:$USERWRAPPERSDIR:$PATH" rpmbuild \
             --build-in-place --target=$build_tgt \
-            "${BUILD_DEBUG[@]}" \
+            "${BUILD_DEBUG_ARGS[@]}" \
             --define "_smp_mflags -j$(rpm_quote "$BUILD_JOBS")" \
             --define "_rpmdir $OPT_OUTPUTDIR" \
             --define "_sourcedir $(dirname $OPT_SPEC)" \
             --define "_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm" \
             --define "_buildhost $(get_hostname)" \
             --buildroot="$buildroot" \
-            "${BUILD_NOPREP[@]}" "${BUILD_NOCHECK[@]}" \
+            "${BUILD_NOPREP_ARGS[@]}" "${BUILD_NOCHECK_ARGS[@]}" \
             -bb \
             "$TMP_SPEC" \
             "${BUILD_EXTRA_ARGS[@]}"
@@ -2208,12 +2208,12 @@ run_make_install() {
 }
 
 run_package__process_args() {
-    PACKAGE_NOCHECK=()
+    PACKAGE_NOCHECK_ARGS=()
 
     while [[ $# -ne 0 ]]; do
         case $1 in
             --no-check)
-                PACKAGE_NOCHECK=(--nocheck)
+                PACKAGE_NOCHECK_ARGS=(--nocheck)
                 ;;
             *)
                 fatal "Unexpected argument: $1"
@@ -2247,7 +2247,7 @@ run_package() {
             --define "_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm" \
             --define "_buildhost $(get_hostname)" \
             --buildroot="$buildroot" \
-            -bb --noprep --nobuildstage "${PACKAGE_NOCHECK[@]}" --noclean \
+            -bb --noprep --nobuildstage "${PACKAGE_NOCHECK_ARGS[@]}" --noclean \
             "$TMP_SPEC"
     )
 }
