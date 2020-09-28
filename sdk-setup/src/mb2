@@ -1942,7 +1942,6 @@ run_prepare() {
         maybe_cd_to_spec_setup_subdir
         [[ $OPT_CLEAN_OUTPUTDIR ]] && rm -f "$OPT_OUTPUTDIR/"*.rpm;
         oomadvice sb2 -t $OPT_TARGET rpmbuild --build-in-place --target=$build_tgt \
-            "${BUILD_DEBUG[@]}" \
             --define "_smp_mflags -j$BUILD_JOBS" \
             --define "_rpmdir $OPT_OUTPUTDIR" \
             --define "_sourcedir $(dirname $OPT_SPEC)" \
