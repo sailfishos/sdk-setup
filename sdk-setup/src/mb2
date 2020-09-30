@@ -803,6 +803,24 @@ ensure_spec_newer_than_yaml() {
     # it's ok also not to have a yaml
 }
 
+warn_if_crlf_is_used() {
+    local crlf_used=
+
+    local file=
+    # Assume that these two are sufficient indicators
+    for file in "${OPT_SPEC%.spec}"{.spec,.yaml}; do
+        if [[ -f $file && $(file "$file") == *"CRLF line terminators"* ]]; then
+            crlf_used=1
+            break
+        fi
+    done
+
+    if [[ $crlf_used ]]; then
+        notice "Files with CRLF line endings found." \
+            "Consult the Sailfish SDK FAQ to learn why to avoid that and how."
+    fi
+}
+
 match_multi() {
     local name=$1 patterns=("${@:2}")
 
@@ -3196,6 +3214,7 @@ if [[ "$OPT_SPEC" ]]; then
     # turn 'OPT_SPEC' into an absolute path
     OPT_SPEC=$(readlink -f "$OPT_SPEC")
     ensure_spec_newer_than_yaml
+    warn_if_crlf_is_used
 fi
 
 remove_wrappers_dir
