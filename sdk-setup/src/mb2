@@ -339,14 +339,17 @@ COMMANDS
         -l, --levels [+|-]<level>...
             Select testing levels. Levels are selected using the keywords
             'source', 'package', 'static', 'unit', 'system' and 'dynamic' as
-            described before.
+            described before. The default selection is indicated in the above
+            table and can be overriden with the global option
+            '--check-levels'.
 
         --list-suites
             List available test suites.
 
         -s, --suites [+|-]<suite>...
             Select test suites to use. By default all and only the essential
-            suites are selected. See '--list-suites'.
+            suites are selected. See '--list-suites'. The default selection
+            may be overriden with the global option '--check-suites'.
 
         The '--levels' and '--suites' options may be passed multiple values,
         separated with comma. If a name is prefixed with '+' or '-', the
@@ -579,6 +582,14 @@ GLOBAL OPTIONS
         '.changes.run' extension to instruct $ME to generate changelog with
         'git-change-log <args>' instead.
 
+    --check-levels [+|-]<level>...
+        Override the default test levels the 'check' command operates on. See
+        the '--levels' option to the 'check' command for more details.
+
+    --check-suites [+|-]<suite>...
+        Override the default test suites the 'check' command executes. See
+        the '--suites' option to the 'check' command for more details.
+
 
 KNOWN ISSUES
 
@@ -678,6 +689,20 @@ set_contains() {
     local item=$2
 
     [[ " ${set[*]} " == *" $item "* ]]
+}
+
+# Combine two recipes in form of comma separated list of "[+-]<item>" items
+combine_set_update_recipes() {
+    local recipe1=$1
+    local recipe2=$2
+
+    if [[ ! $recipe2 ]]; then
+        printf '%s' "$recipe1"
+    elif [[ $recipe1 && $recipe2 == [+-]* ]]; then
+        printf '%s,%s' "$recipe1" "$recipe2"
+    else
+        printf '%s' "$recipe2"
+    fi
 }
 
 git_() (
@@ -1800,15 +1825,15 @@ run_apply() {
 }
 
 run_build__process_args() {
-    BUILD_DEBUG=(--define "debug_package %{nil}")
+    BUILD_DEBUG_ARGS=(--define "debug_package %{nil}")
     BUILD_JOBS=
-    BUILD_NOPREP=(--noprep)
-    BUILD_NOCHECK=()
+    BUILD_NOPREP_ARGS=(--noprep)
+    BUILD_NOCHECK_ARGS=()
     BUILD_EXTRA_ARGS=()
     while [[ "$1" ]]; do
         case "$1" in
             -d|--enable-debug) shift
-                BUILD_DEBUG=() ;;
+                BUILD_DEBUG_ARGS=() ;;
             -j*)
                 # support giving -j with and without space between
                 # it and the 'n'
@@ -1824,10 +1849,10 @@ run_build__process_args() {
                     notice "The '--doprep' option is deprecated. Use '--prepare|-p' instead."
                 fi
                 shift
-                BUILD_NOPREP=()
+                BUILD_NOPREP_ARGS=()
                 ;;
             --no-check) shift
-                BUILD_NOCHECK=(--nocheck)
+                BUILD_NOCHECK_ARGS=(--nocheck)
                 ;;
             --) shift
                 break
@@ -1851,7 +1876,7 @@ run_build() {
     maybe_verify_target_dependencies
 
     maybe_increment_build_number;
-    if [[ $BUILD_NOPREP ]]; then
+    if [[ $BUILD_NOPREP_ARGS ]]; then
         sed -e '/^%patch/d' "$OPT_SPEC" > "$TMP_SPEC"
     else
         cp "$OPT_SPEC" "$TMP_SPEC"
@@ -1885,14 +1910,14 @@ run_build() {
         [[ $OPT_CLEAN_OUTPUTDIR ]] && rm -f "$OPT_OUTPUTDIR/"*.rpm;
         oomadvice sb2 -t $OPT_TARGET env PATH="$WRAPPERSDIR:$USERWRAPPERSDIR:$PATH" rpmbuild \
             --build-in-place --target=$build_tgt \
-            "${BUILD_DEBUG[@]}" \
+            "${BUILD_DEBUG_ARGS[@]}" \
             --define "_smp_mflags -j$(rpm_quote "$BUILD_JOBS")" \
             --define "_rpmdir $OPT_OUTPUTDIR" \
             --define "_sourcedir $(dirname $OPT_SPEC)" \
             --define "_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm" \
             --define "_buildhost $(get_hostname)" \
             --buildroot="$buildroot" \
-            "${BUILD_NOPREP[@]}" "${BUILD_NOCHECK[@]}" \
+            "${BUILD_NOPREP_ARGS[@]}" "${BUILD_NOCHECK_ARGS[@]}" \
             -bb \
             "$TMP_SPEC" \
             "${BUILD_EXTRA_ARGS[@]}"
@@ -1917,7 +1942,6 @@ run_prepare() {
         maybe_cd_to_spec_setup_subdir
         [[ $OPT_CLEAN_OUTPUTDIR ]] && rm -f "$OPT_OUTPUTDIR/"*.rpm;
         oomadvice sb2 -t $OPT_TARGET rpmbuild --build-in-place --target=$build_tgt \
-            "${BUILD_DEBUG[@]}" \
             --define "_smp_mflags -j$BUILD_JOBS" \
             --define "_rpmdir $OPT_OUTPUTDIR" \
             --define "_sourcedir $(dirname $OPT_SPEC)" \
@@ -2184,12 +2208,12 @@ run_make_install() {
 }
 
 run_package__process_args() {
-    PACKAGE_NOCHECK=()
+    PACKAGE_NOCHECK_ARGS=()
 
     while [[ $# -ne 0 ]]; do
         case $1 in
             --no-check)
-                PACKAGE_NOCHECK=(--nocheck)
+                PACKAGE_NOCHECK_ARGS=(--nocheck)
                 ;;
             *)
                 fatal "Unexpected argument: $1"
@@ -2223,7 +2247,7 @@ run_package() {
             --define "_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm" \
             --define "_buildhost $(get_hostname)" \
             --buildroot="$buildroot" \
-            -bb --noprep --nobuildstage "${PACKAGE_NOCHECK[@]}" --noclean \
+            -bb --noprep --nobuildstage "${PACKAGE_NOCHECK_ARGS[@]}" --noclean \
             "$TMP_SPEC"
     )
 }
@@ -2517,6 +2541,9 @@ run_check__process_args() {
     done
 
     if [[ ! $CHECK_LIST_SUITES ]]; then
+        check_levels=$(combine_set_update_recipes "$OPT_CHECK_LEVELS" "$check_levels")
+        check_suites=$(combine_set_update_recipes "$OPT_CHECK_SUITES" "$check_suites")
+
         run_check__process_args_helper "$check_levels" "$check_suites" \
             ${check_artefacts:+"${check_artefacts[@]}"}
 
@@ -2589,10 +2616,12 @@ run_check__process_args_helper() {
     RPMVALIDATION_ALL_SUITES=($(awk '{print $1}' <<<"$rpmvalidation_suites_info"))
     local rpmvalidation_essential_suites=($(awk -v essential="$CHECK_ESSENTIAL" \
         '($2 == essential) { print $1 }' <<<"$rpmvalidation_suites_info"))
-    CHECK_SUITES=($CHECK_RPMSPEC ${rpmvalidation_essential_suites[*]})
+    local known_suites=($CHECK_RPMSPEC $CHECK_RPMLINT ${RPMVALIDATION_ALL_SUITES[*]})
+
+    CHECK_SUITES=($CHECK_RPMSPEC $CHECK_RPMLINT ${rpmvalidation_essential_suites[*]})
     if [[ $check_suites ]]; then
         for suite in ${check_suites//[,+-]/ }; do
-            if [[ $suite != $CHECK_RPMSPEC ]] && ! set_contains RPMVALIDATION_ALL_SUITES "$suite"; then
+            if ! set_contains known_suites "$suite"; then
                 fatal "Not a known test suite '$suite'"
             fi
         done
@@ -2612,6 +2641,9 @@ run_check() {
             {
                 print_suite "$CHECK_RPMSPEC" "$CHECK_ESSENTIAL" "$CHECK_LEVEL_UNIT" "-" \
                     "Execute the %check section of the .spec file"
+
+                print_suite "$CHECK_RPMLINT" "$CHECK_ESSENTIAL" "$CHECK_LEVEL_PACKAGE" "-" \
+                    "Check for common packaging problems with rpmlint"
 
                 local name= essential= url= description=
                 rpmvalidation --target "$OPT_TARGET" --list-suites \
@@ -2635,12 +2667,21 @@ run_check() {
             run_make_install --check || rc=1
         fi
     fi
+
     if set_contains CHECK_LEVELS "$CHECK_LEVEL_PACKAGE"; then
         local selected_rpmvalidation_suites=()
         set_intersect selected_rpmvalidation_suites RPMVALIDATION_ALL_SUITES CHECK_SUITES
         selected_rpmvalidation_suites=$(IFS=,; printf '%s' "${selected_rpmvalidation_suites[*]}")
-        if [[ $selected_rpmvalidation_suites ]]; then
-            local packages=(${CHECK_PACKAGE_ARTEFACTS:+"${CHECK_PACKAGE_ARTEFACTS[@]}"})
+
+        local have_selected_suites=
+        if [[ $selected_rpmvalidation_suites ]] \
+                || set_contains CHECK_SUITES "$CHECK_RPMLINT"; then
+            have_selected_suites=1
+        fi
+
+        local packages=
+        if [[ $have_selected_suites ]]; then
+            packages=(${CHECK_PACKAGE_ARTEFACTS:+"${CHECK_PACKAGE_ARTEFACTS[@]}"})
             if [[ ${#packages[*]} -eq 0 ]]; then
                 if [[ ! -e $STATEDIR/spec ]]; then
                     notice "No previous build found and no package to verify specified explicitly"
@@ -2652,11 +2693,22 @@ run_check() {
                     fi
                 fi
             fi
-            local package=
+        fi
+
+        local package=
+
+        if [[ $selected_rpmvalidation_suites ]]; then
             for package in "${packages[@]}"; do
                 let done_count++
                 rpmvalidation -t "$OPT_TARGET" --suites "$selected_rpmvalidation_suites" "$package" \
                     || rc=1
+            done
+        fi
+
+        if set_contains CHECK_SUITES "$CHECK_RPMLINT"; then
+            for package in "${packages[@]}"; do
+                let done_count++
+                sb2 -t "$OPT_TARGET" -m sdk-build+pp rpmlint "$package" || rc=1
             done
         fi
     fi
@@ -2736,6 +2788,8 @@ OPT_SHARED_DIR=/etc/mersdk/share
 OPT_INC_BUILD_NUMBER=0
 OPT_PULL_BUILD_REQUIRES=1
 OPT_WRAP=()
+OPT_CHECK_LEVELS=
+OPT_CHECK_SUITES=
 
 STATEDIR=$PWD/.mb2
 TMP_SPEC=$STATEDIR/spec
@@ -2754,6 +2808,7 @@ CHECK_ESSENTIAL=Essential
 CHECK_OPTIONAL=Optional
 
 CHECK_RPMSPEC=rpmspec
+CHECK_RPMLINT=rpmlint
 
 AUTOTOOLS=(autoreconf autoconf autoheader aclocal automake autopoint libtoolize)
 
@@ -2962,6 +3017,16 @@ while [[ "$1" ]]; do
             ;;
         "-m" | "--submodule" )
             notice "The '$1' option is deprecated and does nothing currently"
+            shift 2
+            ;;
+        "--check-levels" )
+            [[ $2 ]] || fatal "The '$1' option requires an argument"
+            OPT_CHECK_LEVELS=$2
+            shift 2
+            ;;
+        "--check-suites" )
+            [[ $2 ]] || fatal "The '$1' option requires an argument"
+            OPT_CHECK_SUITES=$2
             shift 2
             ;;
         apply | build | build-requires | cmake | compiledb | deploy | install | installdeps \
