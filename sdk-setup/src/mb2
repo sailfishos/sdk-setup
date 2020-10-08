@@ -1761,7 +1761,7 @@ run_build_requires__process_args() {
                 fi
                 shift
                 if [[ ! $OPT_SNAPSHOT ]]; then
-                    fatal "Cannot do 'build-requires reset' without '--snapshot'"
+                    fatal "The 'reset' command is only effective with build target snapshots."
                 fi
                 BUILD_REQUIRES_MODE=reset ;;
             pull) shift
@@ -3116,8 +3116,7 @@ if [[ $OPT_SNAPSHOT ]]; then
 elif [[ ! $OPT_NO_SNAPSHOT && ! $MB2_SELF_TEST_RUN ]]; then
     if [[ $(sdk-manage target list --snapshots-of "$OPT_TARGET") ]]; then
         if [[ $OPT_NEEDTARGET ]]; then
-            echo >&2 "The '$OPT_TARGET' target has snapshots."
-            echo >&2 "Pass '--no-snapshot' to confirm you really want to use the target directly."
+            echo >&2 "The '$OPT_TARGET' target has snapshots - refusing to use it directly."
             exit 1
         else
             # Just in case we failed to set OPT_NEEDTARGET correctly
