@@ -2797,6 +2797,7 @@ OPT_PKGDIR="./rpm"
 OPT_PRO_FILE_OR_DIR=
 OPT_SRC_DIR=
 OPT_NEEDSPEC=
+OPT_NEEDTARGET=
 OPT_FIX_VERSION=
 OPT_FIX_VERSION_HINT=
 OPT_NO_FIX_VERSION=
@@ -3047,12 +3048,23 @@ while [[ "$1" ]]; do
             OPT_CHECK_SUITES=$2
             shift 2
             ;;
-        apply | build | build-requires | cmake | compiledb | deploy | install | installdeps \
+        # Note that OPT_NEEDSPEC and OPT_NEEDTARGET may be additionaly set later
+        # during command options parsing!
+        build | build-requires | cmake | compiledb | deploy | install | installdeps \
             | make | make-install | package | prep | prepare | qmake | rpm )
-            OPT_NEEDSPEC=1;
+            OPT_NEEDSPEC=1
+            OPT_NEEDTARGET=1
             break
             ;;
-        run | ssh | check | undeploy | build-shell )
+        apply )
+            OPT_NEEDSPEC=1
+            break
+            ;;
+        check | build-shell )
+            OPT_NEEDTARGET=1
+            break;
+            ;;
+        run | ssh | undeploy )
             break
             ;;
         --version )
@@ -3103,9 +3115,14 @@ if [[ $OPT_SNAPSHOT ]]; then
     switch_to_snapshot || fatal "Failed to init build target snapshot"
 elif [[ ! $OPT_NO_SNAPSHOT && ! $MB2_SELF_TEST_RUN ]]; then
     if [[ $(sdk-manage target list --snapshots-of "$OPT_TARGET") ]]; then
-        echo >&2 "The '$OPT_TARGET' target has snapshots."
-        echo >&2 "Pass '--no-snapshot' to confirm you really want to use the target directly."
-        exit 1
+        if [[ $OPT_NEEDTARGET ]]; then
+            echo >&2 "The '$OPT_TARGET' target has snapshots."
+            echo >&2 "Pass '--no-snapshot' to confirm you really want to use the target directly."
+            exit 1
+        else
+            # Just in case we failed to set OPT_NEEDTARGET correctly
+            OPT_TARGET+=--some-garbage-to-prevent-accidental-use
+        fi
     fi
 fi
 
