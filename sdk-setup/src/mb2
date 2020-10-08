@@ -3157,16 +3157,10 @@ case "$1" in
             notice "The 'ssh' command is deprecated. Use 'run' instead."
         fi
         shift
-        if [[ "$OPT_DEVICE" ]]; then
-            cmd="ssh_as $device_username"
-        else
-            if behind_sfdk; then
-                fatal "No device specified"
-            else
-                notice "Using the 'run' command without '--device' is deprecated"
-            fi
-            cmd=""
+        if [[ ! "$OPT_DEVICE" ]]; then
+            fatal "No device specified"
         fi
+        cmd="ssh_as $device_username"
         ;;
     *)
         short_usage quit
@@ -3871,18 +3865,6 @@ END
 }
 
 set_up_ts ssh_arg_pass "Passing arguments using run|ssh subcommand"
-
-run_tc ssh_arg_pass "local - just spaces" \
-    "$(printf '%q ' 'a b' 'c  d' e f)" \
-    run printf '%q ' 'a b' 'c  d' e f
-
-run_tc ssh_arg_pass "local - spaces and newlines" \
-    "$(printf '%q'$'\n' 'echo b' 'c  d' e f)" \
-    run printf '%q'$'\n' 'echo b' 'c  d' e f
-
-run_tc ssh_arg_pass "local - spaces and backslashes" \
-    "$(printf '%q\n' 'a\ b' 'c  d' e f)" \
-    run printf '%q\n' 'a\ b' 'c  d' e f
 
 if [[ $DEFAULT_DEVICE ]]; then
     run_tc ssh_arg_pass "remote - just spaces" \
