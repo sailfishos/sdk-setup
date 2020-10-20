@@ -706,11 +706,15 @@ combine_set_update_recipes() {
 }
 
 git_() (
+    local args=("$@")
+    local extra_args=()
+
     # Cannot use the '-C' option - it requires newer Git.
     # Cannot use '--git-dir' + '--work-tree' options - they break at least git-stash.
     if [[ $OPT_SRC_DIR ]]; then
         cd "$OPT_SRC_DIR" || return
     fi
+
     # At least git-stash requires an explicitly set user identity. Setting environment
     # variables compared to passing options with '-c' works also for subprocesses invoked via
     # `git-submodule foreach`
@@ -719,7 +723,12 @@ git_() (
         export GIT_COMMITTER_NAME='mersdk' GIT_COMMITTER_EMAIL='mersdk@mersdk'
     fi
 
-    git "$@"
+    # File mode is not handled transparently on shared files
+    if inside_build_engine; then
+	extra_args+=(-c core.fileMode=false)
+    fi
+
+    git "${extra_args[@]}" "${args[@]}"
 )
 
 oomadvice() {
