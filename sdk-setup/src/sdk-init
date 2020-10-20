@@ -99,6 +99,30 @@ bad_usage()
 
 inside_build_engine() [[ -f /etc/mer-sdk-vbox ]]
 
+with_tmp_file()
+{
+    local file=$1 cmd=("${@:2}")
+    local tmp_file=
+
+    with_tmp_file_cleanup()
+    (
+        trap 'echo cleaning up...' INT TERM HUP
+        if [[ $tmp_file ]]; then
+            rm -f "$tmp_file"
+        fi
+    )
+    trap 'with_tmp_file_cleanup; trap - RETURN' RETURN
+    trap 'return 1' INT TERM HUP
+
+    tmp_file=$(mktemp "$file.XXX") || return
+
+    if "${cmd[@]}" <&3 >"$tmp_file"; then
+        cat <"$tmp_file" >"$file" || return
+    else
+        return $?
+    fi
+} 3<&0 <&-
+
 list_types()
 {
     echo "$DEF_TEMPLATE_NAME ... Qt Quick Application"
@@ -122,16 +146,17 @@ install_template()
             ;;
     esac
 
-    install -D --no-target-directory "$source" "./$target" || return
+    install -m 0644 -D --no-target-directory "$source" "./$target" || return
 
     case $source in
         *.png)
             return 0
     esac
 
+    # When used on top of dynexecfs, plain `sed -i` would change installed file's permissions.
     # For the double backslash processing see Utils::TemplateEngine::processText in Qt Creator
     # sources
-    sed -i "./$target" \
+    with_tmp_file "./$target" sed "./$target" \
         -e "s/%{ProjectName}/$OPT_NAME/g" \
         -e "s/%{Summary}/My $OPT_NAME application/g" \
         -e 's/%{Version}/0/g' \
