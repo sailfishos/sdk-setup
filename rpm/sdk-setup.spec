@@ -246,6 +246,7 @@ rm -Rf /home/.zypp-cache
 %systemd_preun host_targets.service
 %systemd_preun information.service
 %systemd_preun sdk-enginelan.service
+%systemd_preun sdk-webappstub.service
 
 %post -n sdk-vm
 %systemd_post home-mersdk-share-raw.service
@@ -262,6 +263,7 @@ rm -Rf /home/.zypp-cache
 %systemd_post sdk-refresh.timer
 %systemd_post sdk-setup-swap.service
 %systemd_post sshd.socket
+%systemd_post sdk-webappstub.service
 # this could be mounted read-only so to avoid a
 # cpio: chmod failed - Read-only file system
 if [ $1 -eq 1 ] ; then
@@ -310,6 +312,7 @@ fi
 %{_unitdir}/sdk-refresh.service
 %{_unitdir}/sdk-refresh.timer
 %{_unitdir}/sdk-setup-swap.service
+%{_unitdir}/sdk-webappstub.service
 %config %{_sysconfdir}/systemd/system/default.target
 %config %{_sysconfdir}/ssh/ssh-env.conf
 %config %{_sysconfdir}/ssh/sshd_config_engine
