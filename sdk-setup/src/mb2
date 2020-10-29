@@ -406,7 +406,7 @@ COMMANDS
         and "package" commands unless the '--all' option or '--rsync' method is
         used.
 
-    undeploy {--pkcon|--rpm|--rsync|--zypper} [--all] [-n|--dry-run]
+    undeploy {--sdk|--pkcon|--rpm|--rsync|--zypper} [--all] [-n|--dry-run]
              [--] [[+|-]<pattern>...]
         Undeploy build results previously deployed to a device.
 
@@ -461,6 +461,11 @@ COMMANDS
             '/opt/sdk/' with 'deploy --rsync'.  With this method, the origin
             of the data is not taken into consideration.  Does not require
             root access to the device.
+
+        --sdk
+            Uses the method native to the SDK to remove RPM package(s).
+            Requires developer mode enabled on the device, does not require
+            root access. Not available with older devices.
 
         --zypper
             Uses 'zypper' to remove RPM package(s).  Requires 'zypper'
@@ -2385,7 +2390,7 @@ run_undeploy__process_args() {
 
     while [[ $# -ne 0 ]]; do
         case $1 in
-            --pkcon | --rpm | --rsync | --zypper )
+            --sdk | --pkcon | --rpm | --rsync | --zypper )
                 if [[ $UNDEPLOY_METHOD_OPT ]]; then
                     fatal "Cannot combine '$1' and '$UNDEPLOY_METHOD_OPT'"
                 fi
@@ -2432,7 +2437,7 @@ run_undeploy__process_args() {
 run_undeploy() {
     local user=
     case $UNDEPLOY_METHOD_OPT in
-        --pkcon | --rsync )
+        --sdk | --pkcon | --rsync )
             user=$device_username
             ;;
         --rpm | --zypper )
@@ -2514,6 +2519,9 @@ run_undeploy() {
     fi
 
     case $UNDEPLOY_METHOD_OPT in
+        --sdk )
+            ssh_as "$user" sdk-deploy-rpm --undeploy $candidates
+            ;;
         --pkcon )
             ssh_as "$user" pkcon --plain --noninteractive remove $candidates
             ;;
