@@ -3098,8 +3098,6 @@ while [[ "$1" ]]; do
     esac
 done
 
-mkdir -p "$STATEDIR" || exit
-echo '*' > "$STATEDIR/.gitignore"
 
 if [[ -n "$OPT_SPEC" ]]; then
     try_to_make_spec "$OPT_SPEC"
@@ -3127,6 +3125,67 @@ fi
 OPT_ORIGINAL_TARGET=$OPT_TARGET
 
 [[ -d ~/.scratchbox2/$OPT_TARGET ]] || fatal "'$OPT_TARGET' is not a known build target"
+
+maybe_set_task_name_from_git_branch_name
+
+if [[ $OPT_OUTPUT_PREFIX ]]; then
+    OPT_OUTPUTDIR=$OPT_OUTPUT_PREFIX/${OPT_TASK:+$OPT_TASK-}$OPT_ORIGINAL_TARGET
+fi
+
+if [[ $OPT_SEARCH_OUTPUTDIR ]]; then
+    mkdir -p "$OPT_OUTPUTDIR"
+fi
+
+if [[ $OPT_FIX_VERSION_HINT && ! $(git_ tag --list "$OPT_FIX_VERSION_HINT") ]]; then
+    fatal "'$OPT_FIX_VERSION_HINT': no such Git tag"
+fi
+
+# spec rules are complex:
+#  a .spec is required for some but not all operations
+#  if -s is given then
+#    if it does not exist then specify tries to make it
+#    if it exists it will be used
+#  if there is a rpm/*.spec then that is used
+#  if there is a rpm/*.yaml then a spec is made and used
+
+if [[ $OPT_NEEDSPEC && ! $OPT_SPEC ]]; then
+    # set nullglob on so that the shell glob expansions will return
+    # empty if files are not found
+    shopt -s nullglob
+    spec_files=("$OPT_PKGDIR"/*.spec)
+    numspec=${#spec_files[@]}
+    if [[ $numspec -gt 1 ]]; then
+        fatal "Multiple spec files found - please select one."
+    elif [[ $numspec -eq 1 ]]; then
+        OPT_SPEC="${spec_files[0]?}"
+    else
+        # No spec, try to find a yaml
+        yaml_files=("$OPT_PKGDIR"/*.yaml)
+        numyaml=${#yaml_files[@]}
+        if [[ $numyaml -eq 1 ]]; then
+            theyaml=("$OPT_PKGDIR"/*.yaml)
+            try_to_make_spec_from_yaml "${theyaml[0]}"
+            spec_files=("$OPT_PKGDIR"/*.spec)
+            OPT_SPEC="${spec_files[0]?}"
+        else
+            fatal "No spec or yaml file found in '$OPT_PKGDIR/'"
+        fi
+    fi
+
+    # unset nullglob so that any further globbing works normally
+    shopt -u nullglob
+fi
+
+# Now if there is a spec given, make sure it is up-to-date
+if [[ "$OPT_SPEC" ]]; then
+    # turn 'OPT_SPEC' into an absolute path
+    OPT_SPEC=$(readlink -f "$OPT_SPEC")
+    ensure_spec_newer_than_yaml
+    warn_if_crlf_is_used
+fi
+
+mkdir -p "$STATEDIR" || exit
+echo '*' > "$STATEDIR/.gitignore"
 
 if [[ $OPT_SNAPSHOT ]]; then
     switch_to_snapshot || fatal "Failed to init build target snapshot"
@@ -3186,63 +3245,6 @@ esac
 
 maybe_restore_shadow_build
 
-maybe_set_task_name_from_git_branch_name
-
-if [[ $OPT_OUTPUT_PREFIX ]]; then
-    OPT_OUTPUTDIR=$OPT_OUTPUT_PREFIX/${OPT_TASK:+$OPT_TASK-}$OPT_ORIGINAL_TARGET
-fi
-
-if [[ $OPT_SEARCH_OUTPUTDIR ]]; then
-    mkdir -p "$OPT_OUTPUTDIR"
-fi
-
-if [[ $OPT_FIX_VERSION_HINT && ! $(git_ tag --list "$OPT_FIX_VERSION_HINT") ]]; then
-    fatal "'$OPT_FIX_VERSION_HINT': no such Git tag"
-fi
-
-# spec rules are complex:
-#  a .spec is required for some but not all operations
-#  if -s is given then
-#    if it does not exist then specify tries to make it
-#    if it exists it will be used
-#  if there is a rpm/*.spec then that is used
-#  if there is a rpm/*.yaml then a spec is made and used
-
-if [[ $OPT_NEEDSPEC && ! $OPT_SPEC ]]; then
-    # set nullglob on so that the shell glob expansions will return
-    # empty if files are not found
-    shopt -s nullglob
-    spec_files=("$OPT_PKGDIR"/*.spec)
-    numspec=${#spec_files[@]}
-    if [[ $numspec -gt 1 ]]; then
-        fatal "Multiple spec files found - please select one."
-    elif [[ $numspec -eq 1 ]]; then
-        OPT_SPEC="${spec_files[0]?}"
-    else
-        # No spec, try to find a yaml
-        yaml_files=("$OPT_PKGDIR"/*.yaml)
-        numyaml=${#yaml_files[@]}
-        if [[ $numyaml -eq 1 ]]; then
-            theyaml=("$OPT_PKGDIR"/*.yaml)
-            try_to_make_spec_from_yaml "${theyaml[0]}"
-            spec_files=("$OPT_PKGDIR"/*.spec)
-            OPT_SPEC="${spec_files[0]?}"
-        else
-            fatal "No spec or yaml file found in '$OPT_PKGDIR/'"
-        fi
-    fi
-
-    # unset nullglob so that any further globbing works normally
-    shopt -u nullglob
-fi
-
-# Now if there is a spec given, make sure it is up-to-date
-if [[ "$OPT_SPEC" ]]; then
-    # turn 'OPT_SPEC' into an absolute path
-    OPT_SPEC=$(readlink -f "$OPT_SPEC")
-    ensure_spec_newer_than_yaml
-    warn_if_crlf_is_used
-fi
 
 remove_wrappers_dir
 
