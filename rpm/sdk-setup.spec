@@ -151,7 +151,7 @@ cp src/sdk-setup-enginelan %{buildroot}%{_bindir}/
 cp src/sdk-shutdown %{buildroot}%{_bindir}/
 cp src/dynexecfs %{buildroot}%{_bindir}/
 mkdir -p %{buildroot}%{_libexecdir}/%{name}
-cp src/home-srcN-autodetect %{buildroot}%{_libexecdir}/%{name}/
+cp src/workspace-autodetect %{buildroot}%{_libexecdir}/%{name}/
 cp src/sdk-setup-env %{buildroot}%{_libexecdir}/%{name}/
 # This should really be %%{_unitdir}/default.target but systemd owns that :/
 mkdir -p %{buildroot}/%{_sysconfdir}/systemd/system/
@@ -239,7 +239,7 @@ rm -Rf /home/.zypp-cache
 rm -Rf /home/.zypp-cache
 
 %preun -n sdk-vm
-%systemd_preun home-srcN.service
+%systemd_preun workspace.service
 %systemd_preun sdk-setup-env.service
 %systemd_preun etc-mersdk-share.service
 %systemd_preun etc-ssh-authorized_keys.mount
@@ -251,7 +251,7 @@ rm -Rf /home/.zypp-cache
 %systemd_preun sdk-webappstub.service
 
 %post -n sdk-vm
-%systemd_post home-srcN.service
+%systemd_post workspace.service
 %systemd_post sdk-setup-env.service
 %systemd_post etc-mersdk-share.service
 %systemd_post etc-ssh-authorized_keys.mount
@@ -295,7 +295,7 @@ fi
 %{_bindir}/sdk-setup-enginelan
 %{_bindir}/sdk-shutdown
 %{_bindir}/dynexecfs
-%{_libexecdir}/%{name}/home-srcN-autodetect
+%{_libexecdir}/%{name}/workspace-autodetect
 %{_libexecdir}/%{name}/sdk-setup-env
 /home/.zypp-cache
 %{_unitdir}/information.service
@@ -303,10 +303,10 @@ fi
 %{_unitdir}/host_home.service
 %{_unitdir}/host_install.service
 %{_unitdir}/host_targets.service
-%{_unitdir}/home-srcN.service
-%{_unitdir}/home-srcN-raw@.service
-%{_unitdir}/home-srcN-dynexec@.service
-%{_unitdir}/home-srcN-dynexec-docker@.service
+%{_unitdir}/workspace.service
+%{_unitdir}/workspace-raw@.service
+%{_unitdir}/workspace-dynexec@.service
+%{_unitdir}/workspace-dynexec-docker@.service
 %{_unitdir}/sdk-setup-env.service
 %{_unitdir}/etc-mersdk-share.service
 %{_unitdir}/etc-ssh-authorized_keys.mount

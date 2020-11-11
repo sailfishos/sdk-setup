@@ -1,0 +1,20 @@
+[Unit]
+Description=Workspace #%i shared using raw vboxsf
+PartOf=workspace.service
+# FIXME needs systemd v246
+#ConditionEnvironment=SAILFISH_SDK_SRC%i_MOUNT_POINT
+ConditionVirtualization=oracle
+ConditionPathExists=/etc/mersdk/share/workspace%i.no-dynexec
+After=etc-mersdk-share.service
+After=sdk-setup-env.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/
+EnvironmentFile=-/etc/mersdk.env.systemd
+EnvironmentFile=-/etc/login.defs.systemd
+ExecStartPre=/bin/mkdir -p ${SAILFISH_SDK_SRC%i_MOUNT_POINT}
+ExecStart=/bin/mount -t vboxsf -orw,exec,uid=${UID_MERSDK},gid=${GID_MERSDK},dev,ttl=200,fmode=${FMODE_HOME_MERSDK},dmode=${DMODE_HOME_MERSDK} src%i ${SAILFISH_SDK_SRC%i_MOUNT_POINT}
+TimeoutSec=90
+Slice=system.slice

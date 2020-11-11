@@ -1,9 +1,0 @@
-[Unit]
-Description=Shared source directories
-
-[Service]
-Type=oneshot
-ExecStart=/usr/libexec/sdk-setup/home-srcN-autodetect
-
-[Install]
-WantedBy=basic.target

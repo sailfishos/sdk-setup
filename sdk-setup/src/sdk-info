@@ -34,7 +34,7 @@ fi
 
 cat /etc/sdk-welcome-message
 
-/usr/libexec/sdk-setup/home-srcN-autodetect --dry-run
+/usr/libexec/sdk-setup/workspace-autodetect --dry-run \
+    |& sed 's/^/  /' # same indent as the welcome message
 
 /bin/echo -en '\033]R'
-

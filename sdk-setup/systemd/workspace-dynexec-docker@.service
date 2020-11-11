@@ -1,0 +1,22 @@
+[Unit]
+Description=Workspace #%i shared using dynexecfs over raw bind mount under Docker
+PartOf=workspace.service
+# FIXME needs systemd v246
+#ConditionEnvironment=SAILFISH_SDK_SRC%i_MOUNT_POINT
+ConditionVirtualization=docker
+# Only needed on Windows hosts and only there we have /dev/fuse available
+ConditionPathExists=/dev/fuse
+ConditionPathExists=!/etc/mersdk/share/workspace%i.no-dynexec
+After=sdk-setup-env.service
+
+[Service]
+Type=simple
+WorkingDirectory=/
+EnvironmentFile=-/etc/mersdk.env.systemd
+EnvironmentFile=-/etc/login.defs.systemd
+ExecStartPre=/bin/mkdir -p ${SAILFISH_SDK_SRC%i_MOUNT_POINT}
+ExecStartPre=/bin/mkdir -p ${SAILFISH_SDK_SRC%i_MOUNT_POINT}.raw
+ExecStartPre=/bin/mount --move ${SAILFISH_SDK_SRC%i_MOUNT_POINT} ${SAILFISH_SDK_SRC%i_MOUNT_POINT}.raw
+ExecStart=/usr/bin/dynexecfs -f -o uid=${UID_MERSDK},gid=${GID_MERSDK},allow_other,${DYNEXECFS_FLAGS},root=${SAILFISH_SDK_SRC%i_MOUNT_POINT}.raw ${SAILFISH_SDK_SRC%i_MOUNT_POINT}
+TimeoutSec=90
+Slice=system.slice
