@@ -236,12 +236,10 @@ rm -Rf /home/.zypp-cache
 rm -Rf /home/.zypp-cache
 
 %preun -n sdk-vm
-%systemd_preun home-mersdk-share-raw.service
-%systemd_preun home-mersdk-share-dynexec.service
-%systemd_preun home-mersdk-share-dynexec-docker.service
 %systemd_preun home-srcN.service
 %systemd_preun etc-mersdk-share.service
 %systemd_preun etc-ssh-authorized_keys.mount
+%systemd_preun host_home.service
 %systemd_preun host_install.service
 %systemd_preun host_targets.service
 %systemd_preun information.service
@@ -249,12 +247,10 @@ rm -Rf /home/.zypp-cache
 %systemd_preun sdk-webappstub.service
 
 %post -n sdk-vm
-%systemd_post home-mersdk-share-raw.service
-%systemd_post home-mersdk-share-dynexec.service
-%systemd_post home-mersdk-share-dynexec-docker.service
 %systemd_post home-srcN.service
 %systemd_post etc-mersdk-share.service
 %systemd_post etc-ssh-authorized_keys.mount
+%systemd_post host_home.service
 %systemd_post host_install.service
 %systemd_post host_targets.service
 %systemd_post information.service
@@ -298,11 +294,9 @@ fi
 /home/.zypp-cache
 %{_unitdir}/information.service
 %{_unitdir}/sdk-enginelan.service
+%{_unitdir}/host_home.service
 %{_unitdir}/host_install.service
 %{_unitdir}/host_targets.service
-%{_unitdir}/home-mersdk-share-raw.service
-%{_unitdir}/home-mersdk-share-dynexec.service
-%{_unitdir}/home-mersdk-share-dynexec-docker.service
 %{_unitdir}/home-srcN.service
 %{_unitdir}/home-srcN-raw@.service
 %{_unitdir}/home-srcN-dynexec@.service

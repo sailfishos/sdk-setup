@@ -1159,7 +1159,7 @@ get_device() {
         device_sshport=22
     fi
     if [[ "$device_sshkeypath" == '$HOME/'* ]]; then
-        local real_home=$(inside_build_engine && echo "$HOME/share" || echo "$HOME")
+        local real_home=$(inside_build_engine && echo "/host_home" || echo "$HOME")
         device_sshkeypath=$real_home/${device_sshkeypath#\$HOME/}
     elif [[ "$device_sshkeypath" ]]; then
         device_sshkeypath=$(get_shared_dir)/${device_sshkeypath}
@@ -1168,7 +1168,7 @@ get_device() {
 }
 
 # SSH requires that a private key file is only accessible to the user. Under
-# build engine, file permissions under ~/share are too open to comply with
+# build engine, file permissions under /host_home are too open to comply with
 # that.  Loading key from stdin is a way to work this around.
 with_specific_or_default_keys() {
     local user=$1 command=("${@:2}")
@@ -1189,7 +1189,7 @@ with_specific_or_default_keys() {
         if [[ $key ]]; then
             ssh-add -q - <"$key" || return
         elif inside_build_engine; then
-            local real_home="$HOME/share"
+            local real_home="/host_home"
             local default_key=
             # See in Qt Creator sources for defaultKeys() in
             # genericlinuxdeviceconfigurationwizardpages.cpp
