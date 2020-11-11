@@ -152,6 +152,7 @@ cp src/sdk-shutdown %{buildroot}%{_bindir}/
 cp src/dynexecfs %{buildroot}%{_bindir}/
 mkdir -p %{buildroot}%{_libexecdir}/%{name}
 cp src/home-srcN-autodetect %{buildroot}%{_libexecdir}/%{name}/
+cp src/sdk-setup-env %{buildroot}%{_libexecdir}/%{name}/
 # This should really be %%{_unitdir}/default.target but systemd owns that :/
 mkdir -p %{buildroot}/%{_sysconfdir}/systemd/system/
 ln -sf %{_unitdir}/multi-user.target  %{buildroot}/%{_sysconfdir}/systemd/system/default.target
@@ -160,6 +161,8 @@ mkdir -p %{buildroot}%{_sysconfdir}/zypp/systemCheck.d
 cp etc/sdk-vm.check %{buildroot}%{_sysconfdir}/zypp/systemCheck.d/
 mkdir -p %{buildroot}%{_sysconfdir}/modprobe.d
 cp etc/blacklist-vboxvideo.conf %{buildroot}%{_sysconfdir}/modprobe.d/
+mkdir -p %{buildroot}%{_sysconfdir}/profile.d
+cp etc/sdk-vm.sh %{buildroot}%{_sysconfdir}/profile.d/
 
 mkdir -p %{buildroot}/%{_sysconfdir}/mersdk
 
@@ -237,6 +240,7 @@ rm -Rf /home/.zypp-cache
 
 %preun -n sdk-vm
 %systemd_preun home-srcN.service
+%systemd_preun sdk-setup-env.service
 %systemd_preun etc-mersdk-share.service
 %systemd_preun etc-ssh-authorized_keys.mount
 %systemd_preun host_home.service
@@ -248,6 +252,7 @@ rm -Rf /home/.zypp-cache
 
 %post -n sdk-vm
 %systemd_post home-srcN.service
+%systemd_post sdk-setup-env.service
 %systemd_post etc-mersdk-share.service
 %systemd_post etc-ssh-authorized_keys.mount
 %systemd_post host_home.service
@@ -291,6 +296,7 @@ fi
 %{_bindir}/sdk-shutdown
 %{_bindir}/dynexecfs
 %{_libexecdir}/%{name}/home-srcN-autodetect
+%{_libexecdir}/%{name}/sdk-setup-env
 /home/.zypp-cache
 %{_unitdir}/information.service
 %{_unitdir}/sdk-enginelan.service
@@ -301,6 +307,7 @@ fi
 %{_unitdir}/home-srcN-raw@.service
 %{_unitdir}/home-srcN-dynexec@.service
 %{_unitdir}/home-srcN-dynexec-docker@.service
+%{_unitdir}/sdk-setup-env.service
 %{_unitdir}/etc-mersdk-share.service
 %{_unitdir}/etc-ssh-authorized_keys.mount
 %{_unitdir}/sdk-refresh.service
@@ -311,6 +318,7 @@ fi
 %config %{_sysconfdir}/ssh/ssh-env.conf
 %config %{_sysconfdir}/ssh/sshd_config_engine
 %config %{_sysconfdir}/mersdk.env.systemd
+%config %{_sysconfdir}/profile.d/sdk-vm.sh
 %dir /home/deploy
 %{_sysconfdir}/mer-sdk-vbox
 %attr(-,mersdk,mersdk) %{_sysconfdir}/mersdk/

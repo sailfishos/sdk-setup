@@ -1,0 +1,12 @@
+[Unit]
+Description=Populate environment variables from VM properties
+DefaultDependencies=no
+After=vboxservice.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/libexec/sdk-setup/sdk-setup-env
+
+[Install]
+WantedBy=basic.target
