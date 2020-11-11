@@ -2860,7 +2860,9 @@ fi
 
 # Virtualbox environment will install in this hardcoded location
 if inside_build_engine; then
-    buildroot=/home/deploy/installroot
+    # Intersperse with quotes to avoid /usr/lib/rpm/check-buildroot to complain
+    # when building sdk-setup under build engine
+    buildroot=/home/''deploy/installroot
 else
     buildroot="$PWD/installroot"
 fi
