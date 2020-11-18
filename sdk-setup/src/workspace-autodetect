@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# home-srcN-autodetect Autodetects alternative shared source directories
+# workspace-autodetect Autodetects shared workspace directories
 #
 # Copyright (C) 2020  Open Mobile Platform LLC.
 # Contact: http://jolla.com/
@@ -38,10 +38,9 @@ set -o pipefail
 usage()
 {
     cat <<END
-usage: home-srcN-autodetect [--dry-run] [--verbose]
+usage: workspace-autodetect [--dry-run] [--verbose]
 
-Starts systemd services for mounting alternative source directories shared
-from host.
+Starts systemd services for mounting workspace directories shared from host.
 END
 }
 
@@ -60,28 +59,20 @@ start()
 {
     local idx=$1
 
-    local service=
-    for template in $(systemctl list-unit-files|sed -n 's/^\(home-srcN-.*@.service\)\s.*/\1/p'); do
-        _ systemctl start "${template/@/@$idx}" || return
-    done
+    local templates=$(systemctl list-unit-files |sed -n 's/^\(workspace-.*@.service\)\s.*/\1/p')
+    _ systemctl start ${templates//@/@$idx}
 }
 
-list_names()
+detect()
 {
-    local virt=
-    virt=$(systemd-detect-virt) || return
-    case $virt in
-        oracle)
-            VBoxControl --nologo sharedfolder list |sed -n 's/.*- \(src[0-9]\)$/\1/p'
-            ;;
-        docker)
-            findmnt -o TARGET --list |sed -n 's,^/home/\(src[0-9]\)$,\1,p'
-            ;;
-        *)
-            echo "Unsupported under '$virt' virtualization" >&2
-            return 1
-            ;;
-    esac
+    for ((i=1; ; i++)); do
+        eval local mount_point=\${SAILFISH_SDK_SRC${i}_MOUNT_POINT:-}
+        if [[ $mount_point ]]; then
+            printf '%d %s\n' "$i" "$mount_point"
+        else
+            break
+        fi
+    done
 }
 
 parse_opts()
@@ -120,18 +111,22 @@ main()
         return 0
     fi
 
-    local names=
-    names=$(list_names) || return
+    local detected=
+    detected=$(detect) || return
+
+    if [[ ! $detected ]]; then
+        echo "No workspace detected" >&2
+        return 1
+    fi
 
     local rc=0
 
-    local name=
-    for name in $names; do
+    local idx= mount_point=
+    while read idx mount_point; do
         # This output is processed by sdk-info!
-        echo "Adding src workspace '$name'" >&2
-        local idx=${name#src}
+        echo "Adding workspace $mount_point" >&2
         start "$idx" || rc=1
-    done
+    done <<<"$detected"
 
     return $rc
 }

@@ -1,0 +1,14 @@
+[Unit]
+Description=Mount user home directory from host
+
+[Service]
+Type=oneshot
+WorkingDirectory=/
+EnvironmentFile=-/etc/mersdk.env.systemd
+EnvironmentFile=-/etc/login.defs.systemd
+ExecStartPre=/bin/mkdir -p /host_home
+ExecStart=/bin/mount -t vboxsf -o ro,uid=${UID_MERSDK},gid=${GID_MERSDK} home /host_home
+TimeoutSec=90
+
+[Install]
+WantedBy=basic.target

@@ -1,0 +1,11 @@
+[Unit]
+Description=Shared workspace(s)
+After=sdk-setup-env.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/libexec/sdk-setup/workspace-autodetect
+
+[Install]
+WantedBy=basic.target
