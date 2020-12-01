@@ -1175,6 +1175,15 @@ get_device() {
     if [[ "$FOUND_DEVICE" == 1 ]]; then return 0; else return 1; fi
 }
 
+ensure_device_prepared() {
+    inside_build_engine || return 0
+
+    # Need to print reply in order to let it block
+    dbus-send --type=method_call --print-reply=literal --reply-timeout=30000 --system \
+        --dest="$SAILFISH_SDK_SFDK_DBUS_SERVICE" /device org.sailfishos.sfdk.Device.prepare \
+        >/dev/null || true
+}
+
 # SSH requires that a private key file is only accessible to the user. Under
 # build engine, file permissions under /host_home are too open to comply with
 # that.  Loading key from stdin is a way to work this around.
@@ -2376,6 +2385,8 @@ run_deploy() {
     local method=()
     local ok_retcodes=(0)
 
+    ensure_device_prepared
+
     case $method_opt in
         --sdk )
             method=(sdk-deploy-rpm)
@@ -2477,6 +2488,8 @@ run_undeploy() {
             fatal "Internal error: Invalid undeploy method '$UNDEPLOY_METHOD_OPT'"
             ;;
     esac
+
+    ensure_device_prepared
 
     local candidates=
     if [[ $UNDEPLOY_METHOD_OPT == --rsync ]]; then
