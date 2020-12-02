@@ -111,7 +111,7 @@ description for more details:
     git checkout -b bugXXXXX
     mb2 -t target build
 
-    ls -1 ~/RPMS/bugXXXXX-my-target/
+    ls -1 ~/RPMS/bugXXXXX/my-target/
     mb2 -t target -d device deploy --manual --all \\
         && ssh device sudo zypper -p RPMS -v dup
 
@@ -496,9 +496,9 @@ GLOBAL OPTIONS
 
     -O, --output-prefix <dir>
         Much like '--output-dir' except that a subdirectory of the given <dir>
-        will be used, denoted by the build target name (see '--target') and
-        optionally prefixed with task name (see '--task') separated with
-        single dash ('-') character ('<dir>/[<task>-]<target>').
+        will be used, denoted by the build target name (see '--target'). When
+        the '--task' option is active, output directories will be further
+        grouped by task name ('<dir>/[<task>/]<target>').
 
     --search-output-dir[={verbose|quiet}]
         Consider the RPM packages found in the output directory when installing
@@ -3191,7 +3191,7 @@ maybe_restore_shadow_build
 maybe_set_task_name_from_git_branch_name
 
 if [[ $OPT_OUTPUT_PREFIX ]]; then
-    OPT_OUTPUTDIR=$OPT_OUTPUT_PREFIX/${OPT_TASK:+$OPT_TASK-}$OPT_ORIGINAL_TARGET
+    OPT_OUTPUTDIR=$OPT_OUTPUT_PREFIX/${OPT_TASK:+$OPT_TASK/}$OPT_ORIGINAL_TARGET
 fi
 
 if [[ $OPT_SEARCH_OUTPUTDIR ]]; then
