@@ -1,0 +1,12 @@
+[Unit]
+Description=Nothing to see here go away
+Requires=sdk-webappstub.socket
+
+[Service]
+Type=simple
+ExecStart=/bin/sh -c "printf 'HTTP/1.0 404 Not Found\nContent-Length: 76\n\nThe Sailfish SDK Control Centre is gone, use sfdk or the SailfishOS SDK IDE.\n\n'"
+StandardInput=socket
+Restart=always
+
+[Install]
+WantedBy=basic.target

@@ -163,6 +163,8 @@ mkdir -p %{buildroot}%{_sysconfdir}/modprobe.d
 cp etc/blacklist-vboxvideo.conf %{buildroot}%{_sysconfdir}/modprobe.d/
 mkdir -p %{buildroot}%{_sysconfdir}/profile.d
 cp etc/sdk-vm.sh %{buildroot}%{_sysconfdir}/profile.d/
+mkdir -p %{buildroot}%{_unitdir}/sockets.target.wants
+ln -sf ../sdk-webappstub.socket %{buildroot}%{_unitdir}/sockets.target.wants/sdk-webappstub.socket
 
 mkdir -p %{buildroot}/%{_sysconfdir}/mersdk
 
@@ -248,7 +250,6 @@ rm -Rf /home/.zypp-cache
 %systemd_preun host_targets.service
 %systemd_preun information.service
 %systemd_preun sdk-enginelan.service
-%systemd_preun sdk-webappstub.service
 
 %post -n sdk-vm
 %systemd_post workspace.service
@@ -264,7 +265,7 @@ rm -Rf /home/.zypp-cache
 %systemd_post sdk-refresh.timer
 %systemd_post sdk-setup-swap.service
 %systemd_post sshd.socket
-%systemd_post sdk-webappstub.service
+%systemd_post sdk-webappstub.socket
 # this could be mounted read-only so to avoid a
 # cpio: chmod failed - Read-only file system
 if [ $1 -eq 1 ] ; then
@@ -313,7 +314,9 @@ fi
 %{_unitdir}/sdk-refresh.service
 %{_unitdir}/sdk-refresh.timer
 %{_unitdir}/sdk-setup-swap.service
-%{_unitdir}/sdk-webappstub.service
+%{_unitdir}/sdk-webappstub.socket
+%{_unitdir}/sdk-webappstub@.service
+%{_unitdir}/sockets.target.wants/sdk-webappstub.socket
 %config %{_sysconfdir}/systemd/system/default.target
 %config %{_sysconfdir}/ssh/ssh-env.conf
 %config %{_sysconfdir}/ssh/sshd_config_engine
