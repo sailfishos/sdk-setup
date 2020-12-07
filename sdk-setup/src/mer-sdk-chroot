@@ -60,6 +60,7 @@ EOF
     return 0
 }
 
+MY_GNUPGHOME_DIR='.config/SailfishSDK/gnupg'
 MY_SSH_AUTH_SOCK=${SSH_AUTH_SOCK#/parentroot}
 [[ $MY_SSH_AUTH_SOCK ]] && MY_SSH_AUTH_SOCK="/parentroot$MY_SSH_AUTH_SOCK"
 
@@ -288,7 +289,14 @@ prepare_user() {
 	# Now the sdk uses a private namespace, there's no need to
 	# make it unbindable
 	mount --make-shared ${sdkroot}${HOMEDIR}
+        # Prevent accidental writes to host's GPG home (SDK uses its own GPG home)
+        if [[ -d ${sdkroot}${HOMEDIR}/.gnupg ]]; then
+            mount --bind -o ro "${sdkroot}${HOMEDIR}/.gnupg"{,}
+        fi
     fi
+
+    sudo -u $user mkdir -p --mode 700 "${sdkroot}${HOMEDIR}/${MY_GNUPGHOME_DIR}"
+
     echo "$user ALL=NOPASSWD: ALL" > ${sdkroot}/etc/sudoers.d/$user
     chmod 0440 ${sdkroot}/etc/sudoers.d/$user
 }
@@ -396,6 +404,7 @@ setarch i386 chroot ${sdkroot} /bin/su -s /bin/bash -l $user -- -c "$(cat <<END
 export SSH_AUTH_SOCK='${MY_SSH_AUTH_SOCK}'
 export SSH_AGENT_PID=${SSH_AGENT_PID:-}
 export MERSDK='$sdkroot'
+export GNUPGHOME='${HOMEDIR}/${MY_GNUPGHOME_DIR}'
 
 sudo oneshot
 
