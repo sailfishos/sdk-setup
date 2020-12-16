@@ -325,16 +325,20 @@ configure()
 }
 
 # Suppress command's output unless it exits with non-zero
-silent() {
+define_silent() {
     if [[ $OPT_VERBOSE ]]; then
-        "$@"
-        return
+        silent() {
+            "$@"
+            return
+        }
     else
-        local out=
-        out=$("$@" 2>&1)
-        local rc=$?
-        [[ $rc -eq 0 ]] || printf >&2 "%s\n" "$out"
-        return $rc
+        silent() {
+            local out=
+            out=$("$@" 2>&1)
+            local rc=$?
+            [[ $rc -eq 0 ]] || printf >&2 "%s\n" "$out"
+            return $rc
+        }
     fi
 }
 
@@ -1440,6 +1444,8 @@ parse_options()
     done
 
     set -- "${positional_args[@]}"
+
+    define_silent
 
     configure || return
 
