@@ -180,9 +180,9 @@ sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
 try:
     sock.connect(address)
 except:
-    print >> sys.stderr, "sdk-host-shell: Fatal: Connection error. Is the server running?"
+    print("sdk-host-shell: Fatal: Connection error. Is the server running?", file=sys.stderr)
     sys.exit(1)
-sock.sendall(sys.stdin.read())
+sock.sendall(sys.stdin.read().encode())
 sock_file = sock.makefile()
 while True:
     line = sock_file.readline()
@@ -191,7 +191,7 @@ while True:
     else:
         break
 END
-        python -c "$python" "$address"
+        python3 -c "$python" "$address"
     }
 
     ncat -U "$OPT_SOCKET" <<<"$message" | {
