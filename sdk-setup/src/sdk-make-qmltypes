@@ -930,13 +930,13 @@ job_do_prepare_makefiles()
 
     # TODO: slow - this executes `zypper ref` everytime. Better would be to fix
     # mb2 to install deps also for projects not using qtc_* macros
-    if ! silent mb2_ --specfile "$spec" installdeps; then
-        fatal "Failed to run mb2 installdeps"
+    if ! silent mb2_ --specfile "$spec" build-requires pull; then
+        fatal "Failed to run mb2 build-requires pull"
         return 1
     fi
 
     if [[ $(find -maxdepth 2 -name '*.pro') ]]; then
-        if ! silent mb2_ --specfile "$spec" --pedantic qmake -recursive; then
+        if ! silent mb2_ --specfile "$spec" qmake -recursive; then
             fatal "Failed to run mb2 qmake"
             return 1
         fi
@@ -959,7 +959,7 @@ $(sed '/^%prep\>/,$d' <"$spec")
 alias make=true
 $(sed -n '/^%build\>/,/^%install\>/p' <"$spec" |sed '1d; $d')
 EOF
-        if ! silent mb2_ -s "$tmpspec" prep; then
+        if ! silent mb2_ -s "$tmpspec" prepare; then
             fatal "Failed to run cmake"
             return 1
         fi
