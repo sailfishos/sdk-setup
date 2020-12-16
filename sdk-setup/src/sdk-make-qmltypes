@@ -555,8 +555,12 @@ set_up_emulator()
         ssh_emulator "sudo mount ${OPT_SF_NAME@Q} ${OPT_WORK_DIR@Q} -t vboxsf \
             -o uid=${OPT_EMULATOR_USER@Q},gid=${OPT_EMULATOR_USER@Q}" || return
 
-        ssh_emulator "$(declare -f silent); silent sudo pkcon --noninteractive install ${OPT_EMULATOR_DEPS[@]@Q}" \
-            || return
+        local package=
+        for package in "${OPT_EMULATOR_DEPS[@]}"; do
+            ssh_emulator "$(declare -f silent); rpm -q ${package@Q} &>/dev/null \
+                    || silent sudo pkcon --noninteractive install ${package@Q}" \
+                || return
+        done
 
         if ! ssh_emulator "sudo systemctl stop packagekit && ! ps -C packagekitd &>/dev/null"; then
             fatal "Failed to stop PackageKit daemon inside emulator"
