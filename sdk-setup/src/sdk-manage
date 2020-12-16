@@ -42,7 +42,7 @@ usage:
     $____                [--tooling-url <url>]] [--toolchain <name>]
     $SELF target snapshot [-r|--reset[={outdated|force}]] <original> <snapshot>
     $SELF target reserve <original> <snapshot-template> <lock-file> <pool-size>
-    $SELF target remove  <name>
+    $SELF target remove [--force] <name>
     $SELF target refresh {--all | <name>...}
     $SELF target update <name>
     $SELF target sync <name>
@@ -1988,22 +1988,46 @@ reserve_target() {
 }
 
 remove_target() {
-    local target=$1
+    local force=
+    local target=
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -f|--force)
+                force=1
+                ;;
+            *)
+                if [[ $target ]]; then
+                    echo >&2 "unexpected argument '$1'"
+                    usage
+                    return 1
+                fi
+                target=$1
+                ;;
+        esac
+        shift
+    done
     assert_name_valid "$target" || return
     local is_snapshot=$(target_is_snapshot "$target" && echo 1)
     if [[ -d $SBOX2DIR/$target ]]; then
         local mode=$(get_object_mode "target:$target")
-        if [[ $MODE != "$mode" ]]; then
+        if [[ $MODE != "$mode" && ! $force ]]; then
             echo >&2 "The target '$target' can only be removed in the '$mode' mode."
             return 1
         fi
 
         local snapshots=$(get_snapshots_of_target "$target")
         if [[ $snapshots ]]; then
-            snapshots=$(echo $snapshots |sed 's/ /, /')
-            echo >&2 "Cannot remove target '$target': The following snapshots exist: '$snapshots'." \
-                "Remove the snapshots first."
-            return 1
+            if [[ $force ]]; then
+                for snapshot in "${snapshots[@]}"
+                do
+                  remove_target --force "$snapshot"
+                done
+            else
+                snapshots=$(echo $snapshots |sed 's/ /, /')
+                echo >&2 "Cannot remove target '$target': The following snapshots "\
+                    "exist: '$snapshots'. Remove the snapshots first."
+                return 1
+            fi
         fi
 
         rm -r "$SBOX2DIR/$target"
