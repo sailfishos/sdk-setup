@@ -681,7 +681,10 @@ init_machine_id() {
         enter "$type:$object" rm -f /var/lib/dbus/machine-id || return
     fi
 
-    enter "$type:$object" systemd-machine-id-setup || return
+    if ! enter "$type:$object" systemd-machine-id-setup; then
+        echo >&2 "NOTICE: systemd-machine-id-setup failed, retrying"
+        enter "$type:$object" systemd-machine-id-setup || return
+    fi
     enter "$type:$object" dbus-uuidgen --ensure || return
 }
 
