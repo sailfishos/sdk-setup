@@ -148,6 +148,8 @@ mkdir -p %{buildroot}/%{_unitdir}
 cp --no-dereference systemd/* %{buildroot}/%{_unitdir}/
 cp src/sdk-info %{buildroot}%{_bindir}/
 cp src/sdk-setup-enginelan %{buildroot}%{_bindir}/
+mkdir -p %{buildroot}/%{_sysconfdir}/udev/rules.d
+ln -s /dev/null %{buildroot}/%{_sysconfdir}/udev/rules.d/80-net-setup-link.rules
 cp src/sdk-shutdown %{buildroot}%{_bindir}/
 cp src/dynexecfs %{buildroot}%{_bindir}/
 mkdir -p %{buildroot}%{_libexecdir}/%{name}
@@ -318,6 +320,7 @@ fi
 %{_unitdir}/sdk-webappstub@.service
 %{_unitdir}/sockets.target.wants/sdk-webappstub.socket
 %config %{_sysconfdir}/systemd/system/default.target
+%config %{_sysconfdir}/udev/rules.d/80-net-setup-link.rules
 %config %{_sysconfdir}/ssh/ssh-env.conf
 %config %{_sysconfdir}/ssh/sshd_config_engine
 %config %{_sysconfdir}/mersdk.env.systemd
