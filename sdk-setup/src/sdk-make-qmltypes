@@ -1458,7 +1458,8 @@ parse_options()
     OPT_EMULATOR=$(default_emulator) || return
     OPT_EMULATOR_USER=defaultuser
     OPT_EMULATOR_PORT=2223
-    OPT_EMULATOR_DEPS=(make qt5-qtdeclarative-devel-tools qtchooser zypper)
+    OPT_EMULATOR_DEPS=(make qt5-plugin-platform-minimal qt5-qtdeclarative-devel-tools qtchooser
+        zypper)
     OPT_SF_NAME=qmltypes
     OPT_SNAPSHOT=qmltypes
     OPT_KEEP_DIRECTIVE=sdk-make-qmltypes:keep
