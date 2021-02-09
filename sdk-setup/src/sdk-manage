@@ -1222,7 +1222,7 @@ target_is_snapshot() {
 
 check_target_visible() (
     local target=$1
-    set +u
+    set +o nounset
     . $SBOX2DIR/$target/sb2.config
     test -d "$SBOX_TARGET_ROOT"
 )
@@ -1235,7 +1235,7 @@ get_all_of_type_target() {
 
 get_tooling_used_by_target() (
     local target=$1
-    set +u
+    set +o nounset
     . $SBOX2DIR/$target/sb2.config
     if [[ $SBOX_TOOLS_ROOT == "$MER_TOOLINGS"/* ]]; then
         echo "${SBOX_TOOLS_ROOT#$MER_TOOLINGS/}"
