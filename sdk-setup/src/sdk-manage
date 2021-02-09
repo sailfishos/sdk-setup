@@ -1820,7 +1820,7 @@ snapshot_target() {
         echo >&2 "Taking snapshot '$snapshot' of '$original' target..."
         sudo_sync_trees "$MER_TARGETS/$original" "$MER_TARGETS/$snapshot" || return
         object_config_set "target:$snapshot" "$SNAPSHOT_OF_KEY" "$original" || return
-        ( cd "$MER_TARGETS/$snapshot" && sb2-init $sb2_init_args ) || return
+        ( cd "$MER_TARGETS/$snapshot" && eval sb2-init $sb2_init_args ) || return
         object_config_set "target:$snapshot" "$SNAPSHOT_TIME_KEY" "$(date -R)" || return
         # Ensure snapshots can be removed by user
         set_object_mode "target:$snapshot" "$MODE_USER" || return
