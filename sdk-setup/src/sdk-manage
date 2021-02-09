@@ -798,13 +798,14 @@ enter_tooling() {
 # specialization of get_all_of_type()
 get_all_of_type_tooling() {
     local tooling
-    while read tooling; do
+    local toolings=$(find "$MER_TOOLINGS" -mindepth 1 -maxdepth 1 -type d -printf '%f\n')
+    for tooling in $toolings; do
         if ! assert_name_valid "$tooling" 2>/dev/null; then
             echo >&2 "Ignoring tooling with invalid name '$tooling'"
             continue
         fi
         echo "$tooling"
-    done < <(ls --literal "$MER_TOOLINGS")
+    done
 }
 
 list_toolings() {
