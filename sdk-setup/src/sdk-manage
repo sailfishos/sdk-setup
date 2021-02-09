@@ -659,6 +659,13 @@ upgrade_object() {
 
     if [[ $type == target ]]; then
         rebuild_rpmdb "$type:$object" || return
+
+        if [[ ! ${SDK_MANAGE_NO_REINIT:-} ]]; then
+            if ! target_uses_host_gcc "$object" && which gcc >/dev/null; then
+                echo >&2 "Newly found host GCC - reinitializing target..."
+                reinit_target "$object" || return
+            fi
+        fi
     fi
 }
 
@@ -1227,6 +1234,13 @@ check_target_visible() (
     test -d "$SBOX_TARGET_ROOT"
 )
 
+target_uses_host_gcc() (
+    local target=$1
+    set +o nounset
+    . "$SBOX2DIR/$target/sb2.config" || return
+    [[ $SBOX_HOST_GCC_NAME ]]
+)
+
 # Specialization of get_all_of_type()
 get_all_of_type_target() {
     # sb2-config is verbose when no target exists
@@ -1733,6 +1747,14 @@ install_target() {
     echo >&2 "Target '$target' now setup"
     succeeded=1
 }
+
+reinit_target() (
+    local target=$1
+    set +o nounset
+    . "$SBOX2DIR/$target/sb2.config" || return
+    cd "$SBOX_TARGET_ROOT" || return
+    eval sb2-init $SBOX_INIT_ORIG_ARGS
+)
 
 snapshot_target() {
     local reset= positional_args=()
