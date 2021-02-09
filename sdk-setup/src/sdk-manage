@@ -659,6 +659,13 @@ upgrade_object() {
 
     if [[ $type == target ]]; then
         rebuild_rpmdb "$type:$object" || return
+
+        if [[ ! ${SDK_MANAGE_NO_REINIT:-} ]]; then
+            if ! target_uses_host_gcc "$object" && which gcc >/dev/null; then
+                echo >&2 "Newly found host GCC - reinitializing target..."
+                reinit_target "$object" || return
+            fi
+        fi
     fi
 }
 
@@ -798,13 +805,14 @@ enter_tooling() {
 # specialization of get_all_of_type()
 get_all_of_type_tooling() {
     local tooling
-    while read tooling; do
+    local toolings=$(find "$MER_TOOLINGS" -mindepth 1 -maxdepth 1 -type d -printf '%f\n')
+    for tooling in $toolings; do
         if ! assert_name_valid "$tooling" 2>/dev/null; then
             echo >&2 "Ignoring tooling with invalid name '$tooling'"
             continue
         fi
         echo "$tooling"
-    done < <(ls --literal "$MER_TOOLINGS")
+    done
 }
 
 list_toolings() {
@@ -1221,9 +1229,16 @@ target_is_snapshot() {
 
 check_target_visible() (
     local target=$1
-    set +u
+    set +o nounset
     . $SBOX2DIR/$target/sb2.config
     test -d "$SBOX_TARGET_ROOT"
+)
+
+target_uses_host_gcc() (
+    local target=$1
+    set +o nounset
+    . "$SBOX2DIR/$target/sb2.config" || return
+    [[ $SBOX_HOST_GCC_NAME ]]
 )
 
 # Specialization of get_all_of_type()
@@ -1234,7 +1249,7 @@ get_all_of_type_target() {
 
 get_tooling_used_by_target() (
     local target=$1
-    set +u
+    set +o nounset
     . $SBOX2DIR/$target/sb2.config
     if [[ $SBOX_TOOLS_ROOT == "$MER_TOOLINGS"/* ]]; then
         echo "${SBOX_TOOLS_ROOT#$MER_TOOLINGS/}"
@@ -1733,6 +1748,14 @@ install_target() {
     succeeded=1
 }
 
+reinit_target() (
+    local target=$1
+    set +o nounset
+    . "$SBOX2DIR/$target/sb2.config" || return
+    cd "$SBOX_TARGET_ROOT" || return
+    eval sb2-init $SBOX_INIT_ORIG_ARGS
+)
+
 snapshot_target() {
     local reset= positional_args=()
     while [[ $# -gt 0 ]]; do
@@ -1819,7 +1842,7 @@ snapshot_target() {
         echo >&2 "Taking snapshot '$snapshot' of '$original' target..."
         sudo_sync_trees "$MER_TARGETS/$original" "$MER_TARGETS/$snapshot" || return
         object_config_set "target:$snapshot" "$SNAPSHOT_OF_KEY" "$original" || return
-        ( cd "$MER_TARGETS/$snapshot" && sb2-init $sb2_init_args ) || return
+        ( cd "$MER_TARGETS/$snapshot" && eval sb2-init $sb2_init_args ) || return
         object_config_set "target:$snapshot" "$SNAPSHOT_TIME_KEY" "$(date -R)" || return
         # Ensure snapshots can be removed by user
         set_object_mode "target:$snapshot" "$MODE_USER" || return
