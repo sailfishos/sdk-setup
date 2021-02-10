@@ -1913,11 +1913,11 @@ target_snapshot_needs_reset() {
     # 2019-02-27 16:39:18|remove |droid-hal-mydevice-tools|0.0.6-201902271629|armv7hl|user@pc|
     # But could also look like this:
     # 2019-02-27 16:39:18|install|remove-my-pkg|0.0.6-201902271629|armv7hl|user@pc|
+    # And it can also contain comment lines - starting with '#'
     local most_recent_removal_time=$(set -o pipefail; \
         tac "$MER_TARGETS/$original/var/log/zypp/history" \
-        |cut -d "|" -f "1,2" \
-        |grep -m 1 "|remove" \
-        |cut -d "|" -f 1 \
+        |grep -v '^#' \
+        |awk -F'|' '$2 == "remove" { print $1; exit; }'
     ) || return
     most_recent_removal_time=$(date --date "$most_recent_removal_time" +%s) || return
     # Compare values in unix seconds
