@@ -42,7 +42,7 @@ usage:
     $____                [--tooling-url <url>]] [--toolchain <name>]
     $SELF target snapshot [-r|--reset[={outdated|force}]] <original> <snapshot>
     $SELF target reserve <original> <snapshot-template> <lock-file> <pool-size>
-    $SELF target remove [--force] <name>
+    $SELF target remove [--force] [--snapshots-of] <name>
     $SELF target refresh {--all | <name>...}
     $SELF target update <name>
     $SELF target sync <name>
@@ -2033,11 +2033,14 @@ reserve_target() {
 
 remove_target() {
     local force=
-    local target=
+    local target= snapshots_of=
     while [[ $# -gt 0 ]]; do
         case $1 in
             -f|--force)
                 force=1
+                ;;
+            --snapshots-of)
+                snapshots_of=1
                 ;;
             *)
                 if [[ $target ]]; then
@@ -2054,17 +2057,17 @@ remove_target() {
     local is_snapshot=$(target_is_snapshot "$target" && echo 1)
     if [[ -d $SBOX2DIR/$target ]]; then
         local mode=$(get_object_mode "target:$target")
-        if [[ $MODE != "$mode" && ! $force ]]; then
+        if [[ $MODE != "$mode" && !$snapshots_of && ! $force ]]; then
             echo >&2 "The target '$target' can only be removed in the '$mode' mode."
             return 1
         fi
 
         local snapshots=$(get_snapshots_of_target "$target")
         if [[ $snapshots ]]; then
-            if [[ $force ]]; then
+            if [[ $force || $snapshots_of ]]; then
                 for snapshot in $snapshots
                 do
-                  remove_target --force "$snapshot"
+                  remove_target ${force:+--force} "$snapshot"
                 done
             else
                 snapshots=$(echo $snapshots |sed 's/ /, /')
@@ -2073,6 +2076,8 @@ remove_target() {
                 return 1
             fi
         fi
+
+        [[ $snapshots_of ]] && return
 
         rm -r "$SBOX2DIR/$target"
         sudo rm -rf "$MER_TARGETS/$target"

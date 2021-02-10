@@ -68,8 +68,10 @@ Usage:
                               and/or targets. User name and password will be
                               queried interactively if omitted.
 
-    $(basename $0) [tooling|target] remove <name>
-                            : remove the given sb2 tooling or target
+    $(basename $0) [tooling|target] remove [--snapshots-of] <name>
+                            : remove the given sb2 tooling or target. With
+                              '--snaphosts-of' remove just snapshots of
+                              a target.
 
     $(basename $0) [tooling|target] list [--slow]
                             : list available sb2 toolings and/or targets.
@@ -172,6 +174,7 @@ OPT_PASSWORD=
 OPT_REGISTER=
 OPT_REMOVE=
 OPT_SLOW=
+OPT_SNAPSHOTS_OF=
 OPT_TOOLING_NAME=
 OPT_TYPE=
 OPT_UPDATE=
@@ -200,6 +203,9 @@ while [[ ${1:-} ]]; do
             [[ $# -ge 2 && $2 ]] || fail "missing argument for $1"
             OPT_PASSWORD=$2
             shift
+            ;;
+        --snapshots-of )
+            OPT_SNAPSHOTS_OF=1
             ;;
         --tooling )
             [[ $# -ge 2 && $2 ]] || fail "missing argument for $1"
@@ -328,6 +334,10 @@ if [[ $OPT_ALL && ! $OPT_REGISTER ]]; then
     fail "The '--all' option can only be used with the 'register' command"
 fi
 
+if [[ $OPT_SNAPSHOTS_OF && ! $OPT_REMOVE ]]; then
+    fail "The '--snapshots-of' option can only be used with the 'remove' command"
+fi
+
 if [[ $EUID -eq 0 ]]; then
     fail "$(basename $0) must not be run as root."
 fi
@@ -426,7 +436,14 @@ if [[ $OPT_REGISTER ]]; then
 fi
 
 if [[ $OPT_REMOVE ]]; then
-    echo "Going to remove the $OPT_TYPE [$OPT_NAME]"
+    if [[ $OPT_SNAPSHOTS_OF ]]; then
+        if [[ $OPT_TYPE != target ]]; then
+            fail "The '--snapshots-of' option can only be used with targets"
+        fi
+        echo "Going to remove snapshots of the [$OPT_NAME] target"
+    else
+        echo "Going to remove the $OPT_TYPE [$OPT_NAME]"
+    fi
 fi
 
 if [[ $OPT_PACKAGE_INSTALL ]]; then
@@ -497,7 +514,7 @@ if [[ $OPT_REGISTER ]]; then
 fi
 
 if [[ $OPT_REMOVE ]]; then
-    _ sdk-manage "$OPT_TYPE" remove "$OPT_NAME"
+    _ sdk-manage "$OPT_TYPE" remove ${OPT_SNAPSHOTS_OF:+--snapshots-of} "$OPT_NAME"
     exit
 fi
 
