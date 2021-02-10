@@ -2067,7 +2067,7 @@ remove_target() {
             if [[ $force || $snapshots_of ]]; then
                 for snapshot in $snapshots
                 do
-                  remove_target ${force:+--force} "$snapshot"
+                  remove_target ${force:+--force} "$snapshot" || return
                 done
             else
                 snapshots=$(echo $snapshots |sed 's/ /, /')
