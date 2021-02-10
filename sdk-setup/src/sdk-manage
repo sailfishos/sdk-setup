@@ -2062,7 +2062,7 @@ remove_target() {
         local snapshots=$(get_snapshots_of_target "$target")
         if [[ $snapshots ]]; then
             if [[ $force ]]; then
-                for snapshot in "${snapshots[@]}"
+                for snapshot in $snapshots
                 do
                   remove_target --force "$snapshot"
                 done
