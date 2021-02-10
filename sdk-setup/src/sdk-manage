@@ -323,13 +323,31 @@ manage_user_targets_repository() {
     $USER_TARGETS_REPOSITORY/manage.sh --repository "$USER_TARGETS_REPOSITORY" "$@"
 }
 
+is_reflink_possible() {
+    local src_dir=$1 dst_dir=$2
+
+    local src_tmpfile= dst_tmpfile=
+    is_reflink_possible_cleanup() {
+        trap 'echo cleaning up...' INT TERM HUP
+        [[ $src_tmpfile ]] && rm -f "$src_tmpfile"
+        [[ $dst_tmpfile ]] && rm -f "$dst_tmpfile"
+    }
+    trap 'is_reflink_possible_cleanup; trap - RETURN' RETURN
+    trap 'return 1' INT TERM HUP
+
+    src_tmpfile=$(mktemp --tmpdir="$src_dir") || return
+    dst_tmpfile=$(mktemp --tmpdir="$dst_dir") || return
+
+    cp --reflink=always "$src_tmpfile" "$dst_tmpfile" &>/dev/null
+}
+
 sudo_sync_trees() {
     local src=$1 dst=$2
     local dst_existed=$([[ ! -e "$dst" ]] && echo 1)
 
-    # TODO Currently our 'cp' does not support --reflink, so right now we will
-    # just act here as if the clonefile(2) call was not supported by the filesystem.
-    local can_reflink=
+    sudo install -d --owner="$(id -u)" --group="$(id -g)" "$dst" || return
+
+    local can_reflink=$(is_reflink_possible "$src" "$dst" && echo 1)
 
     if [[ $can_reflink ]]; then
         sudo cp -a --reflink=always --no-target-directory "$src" "$dst" || return
