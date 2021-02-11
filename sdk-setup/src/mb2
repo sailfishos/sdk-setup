@@ -357,7 +357,7 @@ COMMANDS
         prefixed with the opposite operator.
 
     deploy {--pkcon|--rsync|--sdk|--zypper|--manual} [--all] [--debug]
-           [--] [[+|-]<pattern>...]
+           [-n|--dry-run] [--] [[+|-]<pattern>...]
         Deploy build results to a device.
 
         By default, just the build results of the project under current working
@@ -366,6 +366,9 @@ COMMANDS
         require deployment of all packages found under the output directory, no
         matter of their origin. The '--all' option is not available when the
         '--rsync' method is used.
+
+        With the '--dry-run' option, the list of (sub)packages that would be
+        deployed may be previewed without applying the changes.
 
         Selection of (sub)packages for deployment can be influenced with glob
         <pattern>s, each of which may be preceded with '+' or '-' to opt for
@@ -2297,7 +2300,7 @@ run_deploy() {
     [[ $device_type ]] || fatal "No device specified"
     [[ -e $STATEDIR/spec ]] || fatal "No previous build found"
 
-    local method_opt= all_opt= patterns=('-*-debug@(info|source)')
+    local method_opt= all_opt= patterns=('-*-debug@(info|source)') dry_run_opt=
     while [[ $# -ne 0 ]]; do
         case $1 in
             --sdk | --pkcon | --zypper | --rsync | --manual )
@@ -2309,6 +2312,9 @@ run_deploy() {
                 ;;
             --debug )
                 patterns=()
+                ;;
+            -n | --dry-run )
+                dry_run_opt=1
                 ;;
             -- )
                 shift
@@ -2333,6 +2339,12 @@ run_deploy() {
         fi
 
         local name=$(get_spec_tag "%{name}")
+
+        if [[ $dry_run_opt ]]; then
+            echo "The RPM \"%buildroot\" directory would be copied to the device as \"/opt/sdk/$name\""
+            return
+        fi
+
         rsync_as $device_username -av ${buildroot}/. $device_ip:/opt/sdk/$name \
             || { echo "Deploy failed"; return 1; }
         return
@@ -2344,6 +2356,12 @@ run_deploy() {
 
     local rpms=$(find_rpms $all_opt "$OPT_OUTPUTDIR" "$STATEDIR/spec" "${patterns[@]}")
     [[ $rpms ]] || fatal "No package found or none matched the given criteria"
+
+    if [[ $dry_run_opt ]]; then
+        echo "The following packages would be deployed:"
+        sort <<<"$rpms"
+        return
+    fi
 
     local remote_username=$device_username
     local method=()
