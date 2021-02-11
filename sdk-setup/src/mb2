@@ -2326,56 +2326,59 @@ run_deploy() {
     [[ ! $all_opt || $method_opt != --rsync ]] || fatal "Cannot use '--all' with '--rsync'"
     [[ ${method_opt:-} ]] || fatal "Argument expected"
 
-    local retcode=0
+    # rsync method is special
+    if [[ $method_opt == --rsync ]]; then
+        if behind_qtcreator; then
+            run_make_install || return
+        fi
+
+        local name=$(get_spec_tag "%{name}")
+        rsync_as $device_username -av ${buildroot}/. $device_ip:/opt/sdk/$name \
+            || { echo "Deploy failed"; return 1; }
+        return
+    fi
+
+    if behind_qtcreator; then
+        run_package || return
+    fi
+
+    local rpms=$(find_rpms $all_opt "$OPT_OUTPUTDIR" "$STATEDIR/spec" "${patterns[@]}")
+    [[ $rpms ]] || fatal "No package found or none matched the given criteria"
+
+    local remote_username=$device_username
+    local method=()
+    local ok_retcodes=(0)
 
     case $method_opt in
-        --sdk | --pkcon )
-            local method;
-            if [[ $method_opt == --sdk ]]; then
-                method="sdk-deploy-rpm"
-            else
-                method="pkcon --plain --noninteractive install-local"
-            fi
-            ! behind_qtcreator || run_package || return
-            rpms=$(find_rpms $all_opt "$OPT_OUTPUTDIR" "$STATEDIR/spec" "${patterns[@]}")
-            [[ $rpms ]] || fatal "No package found or none matched the given criteria"
-            rsync_as $device_username -av ${rpms} $device_ip:/home/$device_username/RPMS/
-            [[ $? -ne 0 ]] && return 1
-            device_rpms=$(sed "s,^$OPT_OUTPUTDIR/,RPMS/," <<<"$rpms")
-            ssh_as $device_username $method ${device_rpms}
-            retcode=$?
-            ssh_as $device_username rm -f ${device_rpms}
+        --sdk )
+            method=(sdk-deploy-rpm)
+            ;;
+        --pkcon )
+            method=(pkcon --plain --noninteractive install-local)
             ;;
         --zypper )
-            ! behind_qtcreator || run_package || return
-            rpms=$(find_rpms $all_opt "$OPT_OUTPUTDIR" "$STATEDIR/spec" "${patterns[@]}")
-            [[ $rpms ]] || fatal "No package found or none matched the given criteria"
-            rsync_as root -av ${rpms} $device_ip:/root/RPMS/
-            [[ $? -ne 0 ]] && return 1
-            device_rpms=$(sed "s,^$OPT_OUTPUTDIR/,RPMS/," <<<"$rpms")
-            ssh_as root zypper --non-interactive --quiet in -f ${device_rpms}
-            retcode=$?
-            [[ $retcode -eq 106 ]] && retcode=0
-            ssh_as root rm -f ${device_rpms}
-            ;;
-        --rsync )
-            ! behind_qtcreator || run_make_install || return
-            name=$(get_spec_tag "%{name}")
-            rsync_as $device_username -av ${buildroot}/. $device_ip:/opt/sdk/$name
-            retcode=$?
+            remote_username=root
+            method=(zypper --non-interactive --quiet in -f)
+            ok_retcodes=(0 106)
             ;;
         --manual )
-            ! behind_qtcreator || run_package || return
-            rpms=$(find_rpms $all_opt "$OPT_OUTPUTDIR" "$STATEDIR/spec" "${patterns[@]}")
-            [[ $rpms ]] || fatal "No package found or none matched the given criteria"
-            rsync_as $device_username -av ${rpms} $device_ip:/home/$device_username/RPMS/
-            [[ $? -ne 0 ]] && return 1
-            retcode=0
             ;;
         *)
             fatal "Internal error: Invalid deployment method: '$1'"
             ;;
     esac
+
+    rsync_as "$remote_username" -av ${rpms} "$device_ip:RPMS/" || return
+
+    local retcode=0
+
+    if [[ $method_opt != --manual ]]; then
+        local device_rpms=$(sed "s,^$OPT_OUTPUTDIR/,RPMS/," <<<"$rpms")
+        ssh_as "$remote_username" "${method[@]}" ${device_rpms}
+        set_contains ok_retcodes "$?"
+        retcode=$?
+        ssh_as "$remote_username" rm -f ${device_rpms}
+    fi
 
     [[ $retcode -eq 0 ]] || { echo "Deploy failed"; return 1; }
 }
