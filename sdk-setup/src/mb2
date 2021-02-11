@@ -373,7 +373,9 @@ COMMANDS
         Selection of (sub)packages for deployment can be influenced with glob
         <pattern>s, each of which may be preceded with '+' or '-' to opt for
         either inclusion (default) or exclusion respectively as the desired
-        effect. Later specified patterns may override earlier ones.  Extended,
+        effect.  The effect of multiple patterns is cumulative, evaluated from
+        left to right. The very first pattern determines whether it starts by
+        removing from the full list or by adding to an empty list.  Extended,
         Bash-compatible patterns are allowed.  The '-*-debug@(info|source)'
         pattern is implied unless the '--debug' option is used.  Options must
         precede patterns if any.
@@ -439,7 +441,9 @@ COMMANDS
         If needed, the selection can be furthermore adjusted with glob
         <pattern>s, each of which may be preceded with '+' or '-' to opt for
         either inclusion (default) or exclusion respectively as the desired
-        effect.  Later specified patterns may override earlier ones.
+        effect.  The effect of multiple patterns is cumulative, evaluated from
+        left to right. The very first pattern determines whether it starts by
+        removing from the full list or by adding to an empty list.
         Extended, Bash-compatible patterns are allowed.  Options must precede
         patterns if any.
 
@@ -845,7 +849,9 @@ match_multi() {
         return 0
     fi
 
-    local inclusion_limited= included= excluded= pattern=
+    local default_is_exclude=$([[ ${patterns[0]} != -* ]] && echo 1)
+
+    local included= excluded= pattern=
     for pattern in "${patterns[@]}"; do
         local exclude=
         if [[ $pattern == +* ]]; then
@@ -866,7 +872,6 @@ match_multi() {
                 excluded=1
             fi
         else
-            inclusion_limited=1
             if [[ $name == $pattern ]]; then
                 included=1
                 excluded=
@@ -874,7 +879,7 @@ match_multi() {
         fi
     done
 
-    [[ (! $inclusion_limited || $included) && ! $excluded ]]
+    [[ (! $default_is_exclude || $included) && ! $excluded ]]
 }
 
 find_latest_rpms() {
@@ -2300,7 +2305,7 @@ run_deploy() {
     [[ $device_type ]] || fatal "No device specified"
     [[ -e $STATEDIR/spec ]] || fatal "No previous build found"
 
-    local method_opt= all_opt= patterns=('-*-debug@(info|source)') dry_run_opt=
+    local method_opt= all_opt= debug_opt= patterns=() dry_run_opt=
     while [[ $# -ne 0 ]]; do
         case $1 in
             --sdk | --pkcon | --zypper | --rsync | --manual )
@@ -2311,7 +2316,7 @@ run_deploy() {
                 all_opt=$1
                 ;;
             --debug )
-                patterns=()
+                debug_opt=1
                 ;;
             -n | --dry-run )
                 dry_run_opt=1
@@ -2328,6 +2333,10 @@ run_deploy() {
         esac
         shift
     done
+
+    if [[ ! $debug_opt ]]; then
+        patterns+=('-*-debug@(info|source)')
+    fi
 
     [[ ! $all_opt || $method_opt != --rsync ]] || fatal "Cannot use '--all' with '--rsync'"
     [[ ${method_opt:-} ]] || fatal "Argument expected"
@@ -5296,8 +5305,10 @@ run_tc match_multi "Implicit inclusion only" foobar doobar "foo*"
 run_tc match_multi "Explicit inclusion only" foobar doobar "+foo*"
 run_tc match_multi "Explicit exclusion only" foobar doobar "-doo*"
 run_tc match_multi "Override exclusion" foobar doobar "-*bar" "foo*"
+run_tc match_multi "Override exclusion - keep not excluded" bazbaz doobar "-*bar" "foo*"
 run_tc match_multi "Override inclusion" foobar doobar "*bar" "-doo*"
 run_tc match_multi "Override exclusion later" foobar doobar "-*bar" "zoo*" "foo*"
+run_tc match_multi "Override exclusion later - keep not excluded" bazbaz doobar "-*bar" "zoo*" "foo*"
 run_tc match_multi "Override inclusion later" foobar doobar "*bar" "zoo*" "-doo*"
 run_tc match_multi "Extglob" foobar doobar "foo@(bar|baz)"
 tear_down_ts match_multi
