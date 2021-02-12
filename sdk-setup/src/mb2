@@ -3916,17 +3916,19 @@ END
 set_up_ts ssh_arg_pass "Passing arguments using run|ssh subcommand"
 
 if [[ $DEFAULT_DEVICE ]]; then
+    # Avoid invoking the built-in printf. The device is likely running
+    # busybox' ash whose built-in printf does not implement %q.
     run_tc ssh_arg_pass "remote - just spaces" \
-        "$(printf '%q ' 'a b' 'c  d' e f)" \
-        --device "$DEFAULT_DEVICE" run printf '%q ' 'a b' 'c  d' e f
+        "$(/usr/bin/printf '%q ' 'a b' 'c  d' e f)" \
+        --device "$DEFAULT_DEVICE" run /usr/bin/printf '%q ' 'a b' 'c  d' e f
 
     run_tc ssh_arg_pass "remote - spaces and newlines" \
-        "$(printf '%q'$'\n' 'echo b' 'c  d' e f)" \
-        --device "$DEFAULT_DEVICE" run printf '%q'$'\n' 'echo b' 'c  d' e f
+        "$(/usr/bin/printf '%q'$'\n' 'echo b' 'c  d' e f)" \
+        --device "$DEFAULT_DEVICE" run /usr/bin/printf '%q'$'\n' 'echo b' 'c  d' e f
 
     run_tc ssh_arg_pass "remote - spaces and backslashes" \
-        "$(printf '%q\n' 'a\ b' 'c  d' e f)" \
-        --device "$DEFAULT_DEVICE" run printf '%q\n' 'a\ b' 'c  d' e f
+        "$(/usr/bin/printf '%q\n' 'a\ b' 'c  d' e f)" \
+        --device "$DEFAULT_DEVICE" run /usr/bin/printf '%q\n' 'a\ b' 'c  d' e f
 fi
 
 tear_down_ts ssh_arg_pass
