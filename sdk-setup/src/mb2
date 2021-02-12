@@ -4024,10 +4024,31 @@ fix_version_tc() {
     (
         git() (
             echo "stub invoked: git" >&2
-            if [[ $1 == stash && $2 == create ]]; then
+
+            options=()
+            while [[ $# -gt 0 ]]; do
+                case $1 in
+                    -c)
+                        options+=("$1" "$2")
+                        shift 2
+                        ;;
+                    -*)
+                        echo "stub git: unhandled option '$1' passed" >&2
+                        return 1
+                        ;;
+                    *)
+                        break
+                        ;;
+                esac
+            done
+
+            subcommand=("$@")
+            set -- "${options[@]}" "${subcommand[@]}"
+
+            if [[ ${subcommand[0]} == stash && ${subcommand[1]} == create ]]; then
                 date="@$(TZ=UTC date --date="2000-12-31 18:00:00 UTC" +%s) +0000"
                 GIT_AUTHOR_DATE=$date GIT_COMMITTER_DATE=$date \
-                    command git stash create |tee $last_stash_file
+                    command git "$@" |tee $last_stash_file
             else
                 command git "$@"
             fi
