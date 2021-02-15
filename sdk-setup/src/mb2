@@ -357,7 +357,7 @@ COMMANDS
         prefixed with the opposite operator.
 
     deploy {--pkcon|--rsync|--sdk|--zypper|--manual} [--all] [--debug]
-           [--] [[+|-]<pattern>...]
+           [-n|--dry-run] [--] [[+|-]<pattern>...]
         Deploy build results to a device.
 
         By default, just the build results of the project under current working
@@ -367,10 +367,15 @@ COMMANDS
         matter of their origin. The '--all' option is not available when the
         '--rsync' method is used.
 
+        With the '--dry-run' option, the list of (sub)packages that would be
+        deployed may be previewed without applying the changes.
+
         Selection of (sub)packages for deployment can be influenced with glob
         <pattern>s, each of which may be preceded with '+' or '-' to opt for
         either inclusion (default) or exclusion respectively as the desired
-        effect. Later specified patterns may override earlier ones.  Extended,
+        effect.  The effect of multiple patterns is cumulative, evaluated from
+        left to right. The very first pattern determines whether it starts by
+        removing from the full list or by adding to an empty list.  Extended,
         Bash-compatible patterns are allowed.  The '-*-debug@(info|source)'
         pattern is implied unless the '--debug' option is used.  Options must
         precede patterns if any.
@@ -436,7 +441,9 @@ COMMANDS
         If needed, the selection can be furthermore adjusted with glob
         <pattern>s, each of which may be preceded with '+' or '-' to opt for
         either inclusion (default) or exclusion respectively as the desired
-        effect.  Later specified patterns may override earlier ones.
+        effect.  The effect of multiple patterns is cumulative, evaluated from
+        left to right. The very first pattern determines whether it starts by
+        removing from the full list or by adding to an empty list.
         Extended, Bash-compatible patterns are allowed.  Options must precede
         patterns if any.
 
@@ -842,7 +849,9 @@ match_multi() {
         return 0
     fi
 
-    local inclusion_limited= included= excluded= pattern=
+    local default_is_exclude=$([[ ${patterns[0]} != -* ]] && echo 1)
+
+    local included= excluded= pattern=
     for pattern in "${patterns[@]}"; do
         local exclude=
         if [[ $pattern == +* ]]; then
@@ -863,7 +872,6 @@ match_multi() {
                 excluded=1
             fi
         else
-            inclusion_limited=1
             if [[ $name == $pattern ]]; then
                 included=1
                 excluded=
@@ -871,7 +879,7 @@ match_multi() {
         fi
     done
 
-    [[ (! $inclusion_limited || $included) && ! $excluded ]]
+    [[ (! $default_is_exclude || $included) && ! $excluded ]]
 }
 
 find_latest_rpms() {
@@ -2297,7 +2305,7 @@ run_deploy() {
     [[ $device_type ]] || fatal "No device specified"
     [[ -e $STATEDIR/spec ]] || fatal "No previous build found"
 
-    local method_opt= all_opt= patterns=('-*-debug@(info|source)')
+    local method_opt= all_opt= debug_opt= patterns=() dry_run_opt=
     while [[ $# -ne 0 ]]; do
         case $1 in
             --sdk | --pkcon | --zypper | --rsync | --manual )
@@ -2308,7 +2316,10 @@ run_deploy() {
                 all_opt=$1
                 ;;
             --debug )
-                patterns=()
+                debug_opt=1
+                ;;
+            -n | --dry-run )
+                dry_run_opt=1
                 ;;
             -- )
                 shift
@@ -2323,59 +2334,78 @@ run_deploy() {
         shift
     done
 
+    if [[ ! $debug_opt ]]; then
+        patterns+=('-*-debug@(info|source)')
+    fi
+
     [[ ! $all_opt || $method_opt != --rsync ]] || fatal "Cannot use '--all' with '--rsync'"
     [[ ${method_opt:-} ]] || fatal "Argument expected"
 
-    local retcode=0
+    # rsync method is special
+    if [[ $method_opt == --rsync ]]; then
+        if behind_qtcreator; then
+            run_make_install || return
+        fi
+
+        local name=$(get_spec_tag "%{name}")
+
+        if [[ $dry_run_opt ]]; then
+            echo "The RPM \"%buildroot\" directory would be copied to the device as \"/opt/sdk/$name\""
+            return
+        fi
+
+        rsync_as $device_username -av ${buildroot}/. $device_ip:/opt/sdk/$name \
+            || { echo "Deploy failed"; return 1; }
+        return
+    fi
+
+    if behind_qtcreator; then
+        run_package || return
+    fi
+
+    local rpms=$(find_rpms $all_opt "$OPT_OUTPUTDIR" "$STATEDIR/spec" "${patterns[@]}")
+    [[ $rpms ]] || fatal "No package found or none matched the given criteria"
+
+    if [[ $dry_run_opt ]]; then
+        echo "The following packages would be deployed:"
+        sort <<<"$rpms"
+        return
+    fi
+
+    local remote_username=$device_username
+    local method=()
+    local ok_retcodes=(0)
 
     case $method_opt in
-        --sdk | --pkcon )
-            local method;
-            if [[ $method_opt == --sdk ]]; then
-                method="sdk-deploy-rpm"
-            else
-                method="pkcon --plain --noninteractive install-local"
-            fi
-            ! behind_qtcreator || run_package || return
-            rpms=$(find_rpms $all_opt "$OPT_OUTPUTDIR" "$STATEDIR/spec" "${patterns[@]}")
-            [[ $rpms ]] || fatal "No package found or none matched the given criteria"
-            rsync_as $device_username -av ${rpms} $device_ip:/home/$device_username/RPMS/
-            [[ $? -ne 0 ]] && return 1
-            device_rpms=$(sed "s,^$OPT_OUTPUTDIR/,RPMS/," <<<"$rpms")
-            ssh_as $device_username $method ${device_rpms}
-            retcode=$?
-            ssh_as $device_username rm -f ${device_rpms}
+        --sdk )
+            method=(sdk-deploy-rpm)
+            ;;
+        --pkcon )
+            method=(pkcon --plain --noninteractive install-local)
             ;;
         --zypper )
-            ! behind_qtcreator || run_package || return
-            rpms=$(find_rpms $all_opt "$OPT_OUTPUTDIR" "$STATEDIR/spec" "${patterns[@]}")
-            [[ $rpms ]] || fatal "No package found or none matched the given criteria"
-            rsync_as root -av ${rpms} $device_ip:/root/RPMS/
-            [[ $? -ne 0 ]] && return 1
-            device_rpms=$(sed "s,^$OPT_OUTPUTDIR/,RPMS/," <<<"$rpms")
-            ssh_as root zypper --non-interactive --quiet in -f ${device_rpms}
-            retcode=$?
-            [[ $retcode -eq 106 ]] && retcode=0
-            ssh_as root rm -f ${device_rpms}
-            ;;
-        --rsync )
-            ! behind_qtcreator || run_make_install || return
-            name=$(get_spec_tag "%{name}")
-            rsync_as $device_username -av ${buildroot}/. $device_ip:/opt/sdk/$name
-            retcode=$?
+            remote_username=root
+            method=(zypper --non-interactive --quiet in -f)
+            ok_retcodes=(0 106)
             ;;
         --manual )
-            ! behind_qtcreator || run_package || return
-            rpms=$(find_rpms $all_opt "$OPT_OUTPUTDIR" "$STATEDIR/spec" "${patterns[@]}")
-            [[ $rpms ]] || fatal "No package found or none matched the given criteria"
-            rsync_as $device_username -av ${rpms} $device_ip:/home/$device_username/RPMS/
-            [[ $? -ne 0 ]] && return 1
-            retcode=0
             ;;
         *)
             fatal "Internal error: Invalid deployment method: '$1'"
             ;;
     esac
+
+    rsync_as "$remote_username" -av ${rpms} "$device_ip:RPMS/" || return
+
+    local retcode=0
+
+    if [[ $method_opt != --manual ]]; then
+        local device_rpms=$(sed "s,^$OPT_OUTPUTDIR/,RPMS/," <<<"$rpms")
+        ssh_as "$remote_username" "${method[@]}" ${device_rpms}
+        set_contains ok_retcodes "$?"
+        retcode=$?
+        ssh_as "$remote_username" rm -f ${device_rpms}
+    fi
 
     [[ $retcode -eq 0 ]] || { echo "Deploy failed"; return 1; }
 }
@@ -3886,17 +3916,19 @@ END
 set_up_ts ssh_arg_pass "Passing arguments using run|ssh subcommand"
 
 if [[ $DEFAULT_DEVICE ]]; then
+    # Avoid invoking the built-in printf. The device is likely running
+    # busybox' ash whose built-in printf does not implement %q.
     run_tc ssh_arg_pass "remote - just spaces" \
-        "$(printf '%q ' 'a b' 'c  d' e f)" \
-        --device "$DEFAULT_DEVICE" run printf '%q ' 'a b' 'c  d' e f
+        "$(/usr/bin/printf '%q ' 'a b' 'c  d' e f)" \
+        --device "$DEFAULT_DEVICE" run /usr/bin/printf '%q ' 'a b' 'c  d' e f
 
     run_tc ssh_arg_pass "remote - spaces and newlines" \
-        "$(printf '%q'$'\n' 'echo b' 'c  d' e f)" \
-        --device "$DEFAULT_DEVICE" run printf '%q'$'\n' 'echo b' 'c  d' e f
+        "$(/usr/bin/printf '%q'$'\n' 'echo b' 'c  d' e f)" \
+        --device "$DEFAULT_DEVICE" run /usr/bin/printf '%q'$'\n' 'echo b' 'c  d' e f
 
     run_tc ssh_arg_pass "remote - spaces and backslashes" \
-        "$(printf '%q\n' 'a\ b' 'c  d' e f)" \
-        --device "$DEFAULT_DEVICE" run printf '%q\n' 'a\ b' 'c  d' e f
+        "$(/usr/bin/printf '%q\n' 'a\ b' 'c  d' e f)" \
+        --device "$DEFAULT_DEVICE" run /usr/bin/printf '%q\n' 'a\ b' 'c  d' e f
 fi
 
 tear_down_ts ssh_arg_pass
@@ -3992,10 +4024,31 @@ fix_version_tc() {
     (
         git() (
             echo "stub invoked: git" >&2
-            if [[ $1 == stash && $2 == create ]]; then
+
+            options=()
+            while [[ $# -gt 0 ]]; do
+                case $1 in
+                    -c)
+                        options+=("$1" "$2")
+                        shift 2
+                        ;;
+                    -*)
+                        echo "stub git: unhandled option '$1' passed" >&2
+                        return 1
+                        ;;
+                    *)
+                        break
+                        ;;
+                esac
+            done
+
+            subcommand=("$@")
+            set -- "${options[@]}" "${subcommand[@]}"
+
+            if [[ ${subcommand[0]} == stash && ${subcommand[1]} == create ]]; then
                 date="@$(TZ=UTC date --date="2000-12-31 18:00:00 UTC" +%s) +0000"
                 GIT_AUTHOR_DATE=$date GIT_COMMITTER_DATE=$date \
-                    command git stash create |tee $last_stash_file
+                    command git "$@" |tee $last_stash_file
             else
                 command git "$@"
             fi
@@ -5275,8 +5328,10 @@ run_tc match_multi "Implicit inclusion only" foobar doobar "foo*"
 run_tc match_multi "Explicit inclusion only" foobar doobar "+foo*"
 run_tc match_multi "Explicit exclusion only" foobar doobar "-doo*"
 run_tc match_multi "Override exclusion" foobar doobar "-*bar" "foo*"
+run_tc match_multi "Override exclusion - keep not excluded" bazbaz doobar "-*bar" "foo*"
 run_tc match_multi "Override inclusion" foobar doobar "*bar" "-doo*"
 run_tc match_multi "Override exclusion later" foobar doobar "-*bar" "zoo*" "foo*"
+run_tc match_multi "Override exclusion later - keep not excluded" bazbaz doobar "-*bar" "zoo*" "foo*"
 run_tc match_multi "Override inclusion later" foobar doobar "*bar" "zoo*" "-doo*"
 run_tc match_multi "Extglob" foobar doobar "foo@(bar|baz)"
 tear_down_ts match_multi
