@@ -145,7 +145,7 @@ cp etc/sdk-chroot.check %{buildroot}%{_sysconfdir}/zypp/systemCheck.d/
 
 # sdk-vm
 mkdir -p %{buildroot}/%{_unitdir}
-cp --no-dereference systemd/* %{buildroot}/%{_unitdir}/
+cp -r --no-dereference systemd/* %{buildroot}/%{_unitdir}/
 cp src/sdk-info %{buildroot}%{_bindir}/
 cp src/sdk-setup-enginelan %{buildroot}%{_bindir}/
 mkdir -p %{buildroot}/%{_sysconfdir}/udev/rules.d
@@ -167,6 +167,8 @@ mkdir -p %{buildroot}%{_sysconfdir}/profile.d
 cp etc/sdk-vm.sh %{buildroot}%{_sysconfdir}/profile.d/
 mkdir -p %{buildroot}%{_unitdir}/sockets.target.wants
 ln -sf ../sdk-webappstub.socket %{buildroot}%{_unitdir}/sockets.target.wants/sdk-webappstub.socket
+mkdir -p %{buildroot}/%{_sysconfdir}/dbus-1/system.d
+cp etc/dbus-1/system.d/sdk.conf %{buildroot}/%{_sysconfdir}/dbus-1/system.d/
 
 mkdir -p %{buildroot}/%{_sysconfdir}/mersdk
 
@@ -319,12 +321,14 @@ fi
 %{_unitdir}/sdk-webappstub.socket
 %{_unitdir}/sdk-webappstub@.service
 %{_unitdir}/sockets.target.wants/sdk-webappstub.socket
+%{_unitdir}/dbus.socket.d/sdk.conf
 %config %{_sysconfdir}/systemd/system/default.target
 %config %{_sysconfdir}/udev/rules.d/80-net-setup-link.rules
 %config %{_sysconfdir}/ssh/ssh-env.conf
 %config %{_sysconfdir}/ssh/sshd_config_engine
 %config %{_sysconfdir}/mersdk.env.systemd
 %config %{_sysconfdir}/profile.d/sdk-vm.sh
+%config %{_sysconfdir}/dbus-1/system.d/sdk.conf
 %dir /home/deploy
 %{_sysconfdir}/mer-sdk-vbox
 %attr(-,mersdk,mersdk) %{_sysconfdir}/mersdk/
