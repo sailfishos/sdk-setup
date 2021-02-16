@@ -397,6 +397,8 @@ export SSH_AUTH_SOCK='${MY_SSH_AUTH_SOCK}'
 export SSH_AGENT_PID=${SSH_AGENT_PID:-}
 export MERSDK='$sdkroot'
 
+sudo oneshot
+
 exec $(printf "%q " "${cmd[@]}")
 END
 )"
