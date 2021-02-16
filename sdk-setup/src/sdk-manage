@@ -685,6 +685,8 @@ upgrade_object() {
             fi
         fi
     fi
+
+    enter "$type:%object" oneshot || return
 }
 
 init_machine_id() {
