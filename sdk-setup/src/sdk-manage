@@ -1423,7 +1423,7 @@ synchronise_target() {
         maybe_times=
     fi
 
-    echo >&2 "Synchronising target to host"
+    echo >&2 "Synchronising target to host..."
     # The filter=". -" means to read filters from stdin (the <<EOF)
     rsync -r $maybe_times --no-devices --no-specials \
           --delete --ignore-errors \
