@@ -928,38 +928,13 @@ job_do_prepare_makefiles()
     local spec=
     spec=$(find_spec_for_name "${self[name]}") || return
 
-    # TODO: slow - this executes `zypper ref` everytime. Better would be to fix
-    # mb2 to install deps also for projects not using qtc_* macros
-    if ! silent mb2_ --specfile "$spec" build-requires pull; then
-        fatal "Failed to run mb2 build-requires pull"
-        return 1
-    fi
-
     if [[ $(find -maxdepth 2 -name '*.pro') ]]; then
         if ! silent mb2_ --specfile "$spec" qmake -recursive; then
-            fatal "Failed to run mb2 qmake"
+            fatal "Failed to run qmake"
             return 1
         fi
     elif [[ $(find -maxdepth 2 -name CMakeLists.txt) ]]; then
-        local tmpspec=
-        job_do_prepare_makefiles_cleanup()
-        (
-            trap 'echo cleaning up...' INT TERM HUP
-            if [[ -e $tmpspec ]]; then
-                rm -f "$tmpspec"
-            fi
-        )
-        trap 'job_do_prepare_makefiles_cleanup; trap - RETURN' RETURN
-        trap 'return 1' INT TERM HUP
-
-        tmpspec=$(mktemp "${spec%.spec}.XXX.spec") || return
-        cat <<EOF >"$tmpspec"
-$(sed '/^%prep\>/,$d' <"$spec")
-%prep
-alias make=true
-$(sed -n '/^%build\>/,/^%install\>/p' <"$spec" |sed '1d; $d')
-EOF
-        if ! silent mb2_ -s "$tmpspec" prepare; then
+        if ! silent mb2_ --specfile "$spec" cmake; then
             fatal "Failed to run cmake"
             return 1
         fi
