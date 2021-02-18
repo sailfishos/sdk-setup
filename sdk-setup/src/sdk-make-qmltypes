@@ -2,8 +2,8 @@
 #
 # sdk-make-qmltypes allows to update .qmltypes directly from the SDK
 #
-# Copyright (C) 2018 Jolla Ltd.
-# Contact: Martin Kampas <martin.kampas@jolla.com>
+# Copyright (C) 2018-2021 Jolla Ltd.
+# Contact: http://jolla.com/
 # All rights reserved.
 #
 # You may use this file under the terms of BSD license as follows:
@@ -70,8 +70,8 @@ usage()
     less <<END
 $(synopsis)
 
-Due to the way it works, running qmlplugindump in build environment is not
-always possible. In general it is necessary to deploy binaries to a target and
+Due to the way it works, running qmlplugindump under build environment is not
+always possible. Usually, it is necessary to deploy binaries to a target and
 invoke qmlplugindump there in order to update qmltypes files.
 
 This tool makes this task less cumbersome, using Sailfish OS Emulator as the
@@ -103,16 +103,11 @@ MODES OF OPERATION
 
 Two modes of operation are supported.
 
-Both modes need a Scratchbox2 target suitable for use with the emulator. Pass
-the '--target' option unless you have an apropriate default target configured
-with 'sb2-config'.
-
 1. In-place execution on a single package
 
-   It will build the package under the current working directory with \`mb2\`
-   and operate on the packages found in the "RPMS" directory, directly updating
-   '.qmltypes' files inside the working directory and/or its subdirectories
-   (see also '--no-build' and '--rpms-dir').
+   It will operate on the build results of the package under the current
+   working directory, directly updating '.qmltypes' files inside the
+   working directory and/or its subdirectories.
 
    If you are adding a new .qmltypes file, start by creating and empty file and
    adding it to Git index. Only files known to Git are recognized by this tool.
@@ -160,12 +155,16 @@ sdk-make-qmltypes will revert such changes for your convenience.
 
 
 MAIN OPTIONS
-    --app-sdk PATH
-        Path to the Application SDK installation. Defaults to "~/SailfishOS"
+    --target NAME
+        Required. The build target to use. It must be compatible with the
+        emulator selected with the '--device' option.
 
-    --target SB2_TARGET
-        The Scratchbox2 target from Platform SDK to use. Defaults to the
-        default target.
+    --device NAME
+        Required. The emulator device to use. It must be compatible with the
+        build target selected with the '--target' option.
+
+    --batch
+        Operate in the batch mode. See MODES OF OPERATION above.
 
     --status
         Print the detailed status and exit. Only valid in batch mode.
@@ -186,22 +185,19 @@ OTHER OPTIONS
         INCOMPLETE RESULTS above.
 
     --no-build
-        Valid for in-place execution mode. Do not build the package with
-        \`mb2\`, use existing build artefacts.
+        Valid for in-place execution mode. Do not (re)build the package, use
+        existing build artefacts.
 
     --no-restore-emulator
         Keep the emulator running to spead up subsequent executions. Normally
         emulator state would be restored when exiting successfuly.
 
-    --rpms-dir PATH
-        Where to look for RPM binaries. Cannot be used in batch mode.
-        Defaults to "./RPMS"
-
-    --spec PATH
-        Valid for in-place execution mode. RPM .spec file to use with \`mb2\`.
-
     -v, --verbose
         Be verbose
+
+    -Xmb2 OPTION
+        Pass additional options to mb2. If the options needs an argument, it
+        must be passed separately, e.g., '-Xmb2 --specfile -Xmb2 my.spec'.
 
 
 CONFIGURATION FILE
@@ -277,6 +273,9 @@ OVERVIEW OF BATCH OPERATION
 
 LIMITATIONS
     Only qmake- and CMake-based projects are supported.
+
+    Batch operation is only supported under Docker-based build engine running
+    on a Linux host.
 END
 }
 
@@ -287,42 +286,42 @@ debug()
 
 info()
 {
-    echo "$SELF: $*" >&2
+    echo "$*" >&2
 }
 
 warning()
 {
-    echo "$SELF: Warning: $*" >&2
+    echo "Warning: $*" >&2
 }
 
 fatal()
 {
-    echo "$SELF: Fatal: $*" >&2
+    echo "Fatal: $*" >&2
 }
 
 configure()
 {
-    if [[ -f /etc/mer-sdk-vbox ]]; then
-        fatal "This tool can be used in Platform SDK only."
+    if ! inside_build_engine; then
+        fatal "This tool can be used inside SDK build engine only."
         return 1
     fi
 
-    if ! which sdk-host-shell &>/dev/null; then
-        export PATH=/usr/libexec/sdk-setup:$PATH
-        if ! which sdk-host-shell &>/dev/null; then
-            fatal "sdk-host-shell executable not found"
-            return 1
-        fi
+    if ! behind_sfdk; then
+        fatal "This tool can be only used from session opened with sfdk."
+        return 1
     fi
 
     if [[ $OPT_BATCH ]]; then
         if ! python3 -c 'import giturlparse' &>/dev/null; then
-            fatal "It is necessary to manually install python 3 module 'giturlparse' inside the SDK." \
-                "Please run 'pip3 install --user git-url-parse' to do so."
+            fatal "It is necessary to manually install python 3 module 'giturlparse' under " \
+                "the build engine. Please run 'pip3 install --user git-url-parse' to do so."
             return 1
         fi
     fi
 }
+
+inside_build_engine() [[ -f /etc/mer-sdk-vbox ]]
+behind_sfdk() { inside_build_engine && [[ $SAILFISH_SDK_FRONTEND == sfdk ]]; }
 
 # Suppress command's output unless it exits with non-zero
 define_silent() {
@@ -340,6 +339,11 @@ define_silent() {
             return $rc
         }
     fi
+}
+
+git()
+{
+    command git -c user.name="SDK" -c user.email="sdk@localhost.localdomain" "$@"
 }
 
 with_tmp_file()
@@ -365,14 +369,6 @@ with_tmp_file()
         return $?
     fi
 } 3<&0 <&-
-
-parse_devices_xml()
-{
-    local sshkeypath=
-    sshkeypath=$(xmllint --xpath "//device[@name='$OPT_EMULATOR']/sshkeypath/text()" \
-        "$OPT_DEVICES_XML") || return
-    OPT_SSH_KEY=$OPT_VMSHARE/$sshkeypath/$OPT_EMULATOR_USER
-}
 
 trim_comments()
 {
@@ -421,91 +417,94 @@ read_config()
     |trim_comments
 }
 
-ssh_emulator()
+emulator_run()
 {
-    ssh -i "$OPT_SSH_KEY" -o StrictHostKeyChecking=no -o UserKnownHostsFile="$KNOWN_HOSTS_FILE" \
-        -p "$OPT_EMULATOR_PORT" "$OPT_EMULATOR_USER@localhost" "$@"
+    mb2 --device "$OPT_DEVICE" run "$@"
 }
 
-mb2_()
+emulator_run_c()
 {
-    mb2 ${OPT_TARGET:+-t "$OPT_TARGET"} "$@"
+    emulator_run bash -c "$*"
 }
 
-vboxmanage_()
+sfdk_dbus_send()
 {
-    sdk-host-shell "vboxmanage ${*@Q}"
-}
+    local reply=
+    reply=$(dbus-send --type=method_call --print-reply --reply-timeout=30000 --system \
+        --dest="$SAILFISH_SDK_SFDK_DBUS_SERVICE" "$@") || true
 
-is_vm_off()
-{
-    local info= state=
-    info=$(vboxmanage_ showvminfo --machinereadable "$OPT_EMULATOR") || return
-    ! grep -q '^SessionName=' <<<"$info"
-}
-
-default_emulator()
-{
-    local name=
-    name=$(vboxmanage_ list -l vms |sed -n 's/^Name:\s*\(Sailfish OS Emulator.*\)/\1/p')
-    if [[ $? -ne 0 || ! $name ]]; then
-        fatal "Failed to determine default emulator name"
+    # dbus-send behaves so when error is received - it also prints it
+    if [[ ! $reply ]]; then
         return 1
     fi
-    printf '%s\n' "$name"
-}
 
-start_emulator()
-{
-    local ok=
-    local vm_started=
-    start_emulator_cleanup()
-    (
-        [[ $ok ]] && return
-        trap 'echo cleaning up...' INT TERM HUP
-        if [[ $vm_started ]]; then
-            stop_emulator
-        fi
-    )
-    trap 'start_emulator_cleanup; trap - RETURN' RETURN
-    trap 'return 1' INT TERM HUP
-
-    vboxmanage_ startvm --type headless "$OPT_EMULATOR" || return
-    vm_started=1
-
-    local limit=10
-    for ((; limit>0; --limit)); do
-        sleep 1
-        if ssh_emulator "true" &>/dev/null; then
-            ok=1
-            return
-        fi
-    done
-
-    # Be verbose on the very last try
-    if ! ssh_emulator "true"; then
-        fatal "Could not connect to the emulator"
-        return 1
+    # void return type
+    if [[ $reply == 'method return '* && $(wc -l <<<"$reply") -eq 1 ]]; then
+        return 0
     fi
-}
 
-stop_emulator()
-{
-    vboxmanage_ controlvm "$OPT_EMULATOR" acpipowerbutton
-    local limit=
-    for ((limit=10; limit>0; --limit)); do
-        sleep 1
-        is_vm_off "$OPT_EMULATOR" && return
-    done
+    if [[ $reply == 'method return '*'boolean true' ]]; then
+        echo true
+        return 0
+    fi
 
-    vboxmanage_ controlvm "$OPT_EMULATOR" poweroff
-    for ((limit=10; limit>0; --limit)); do
-        sleep 1
-        is_vm_off "$OPT_EMULATOR" && return
-    done
+    if [[ $reply == 'method return '*'boolean false' ]]; then
+        echo false
+        return 0
+    fi
 
-    warning "Failed to stop emulator"
+    # Flat array of strings
+    if [[ $reply == 'method return '*']' ]]; then
+        sed -n 's/^\s*string\s\+"\(.*\)"$/\1/p' <<<"$reply"
+        return 0
+    fi
+
+    fatal "Unexpected D-Bus reply"
     return 1
+}
+
+emulator_is_running()
+{
+    sfdk_dbus_send /device org.sailfishos.sfdk.Emulator.isRunning
+}
+
+emulator_start()
+{
+    sfdk_dbus_send /device org.sailfishos.sfdk.Emulator.start
+}
+
+emulator_stop()
+{
+    sfdk_dbus_send /device org.sailfishos.sfdk.Emulator.stop
+}
+
+emulator_snapshot_list()
+{
+    sfdk_dbus_send /device org.sailfishos.sfdk.Emulator.snapshots
+}
+
+emulator_snapshot_take()
+{
+    local name=$1
+    sfdk_dbus_send /device org.sailfishos.sfdk.Emulator.takeSnapshot "string:$name"
+}
+
+emulator_snapshot_restore()
+{
+    local name=$1
+    sfdk_dbus_send /device org.sailfishos.sfdk.Emulator.restoreSnapshot "string:$name"
+}
+
+emulator_snapshot_remove()
+{
+    local name=$1
+    sfdk_dbus_send /device org.sailfishos.sfdk.Emulator.removeSnapshot "string:$name"
+}
+
+emulator_shared_media_path_set()
+{
+    local path=$1
+    sfdk_dbus_send /device org.sailfishos.sfdk.Emulator.setSharedMediaPath "string:$path"
 }
 
 set_up_emulator()
@@ -518,14 +517,14 @@ set_up_emulator()
         [[ $ok ]] && return
         trap 'echo cleaning up...' INT TERM HUP
         if [[ $tree_created ]]; then
-            ssh_emulator "sudo rmdir --parents ${OPT_WORK_DIR@Q}" 2>/dev/null
+            emulator_run sudo rmdir --parents "$OPT_WORK_DIR" 2>/dev/null
         fi
         if [[ $emulator_started ]]; then
-            stop_emulator
+            emulator_stop
         fi
         if [[ $snapshot_taken ]]; then
-            vboxmanage_ snapshot "$OPT_EMULATOR" restore "$OPT_SNAPSHOT" \
-                && vboxmanage_ snapshot "$OPT_EMULATOR" delete "$OPT_SNAPSHOT"
+            emulator_snapshot_restore "$OPT_SNAPSHOT" \
+                && emulator_snapshot_remove "$OPT_SNAPSHOT"
         fi
     )
     trap 'setup_emulator_cleanup; trap - RETURN' RETURN
@@ -534,50 +533,58 @@ set_up_emulator()
     # Cleaned up in main
     KNOWN_HOSTS_FILE=$(mktemp "${OPT_WORK_DIR}/.known_hosts.XXXXXX") || return
 
-    if ! vboxmanage_ snapshot "$OPT_EMULATOR" showvminfo "$OPT_SNAPSHOT" &>/dev/null; then
-        if ! is_vm_off "$OPT_EMULATOR"; then
+    local snapshots=
+    snapshots=$(emulator_snapshot_list) || return
+
+    local emulator_is_running=
+
+    if ! grep -F --line-regexp -e "$OPT_SNAPSHOT" <<<"$snapshots" >/dev/null; then
+        emulator_is_running=$(emulator_is_running) || return
+        if [[ $emulator_is_running == true ]]; then
             fatal "Shut down the emulator first"
             return 1
         fi
 
-        vboxmanage_ snapshot "$OPT_EMULATOR" take "$OPT_SNAPSHOT" || return
+        # Ensure it is locked down
+        emulator_stop || return
+
+        emulator_snapshot_take "$OPT_SNAPSHOT" || return
         snapshot_taken=1
 
-        start_emulator || return
+        emulator_shared_media_path_set "$OPT_WORK_DIR" || return
+
+        emulator_start || return
         emulator_started=1
 
-        vboxmanage_ sharedfolder add "$OPT_EMULATOR" --name "$OPT_SF_NAME" --hostpath "$OPT_WORK_DIR" --transient \
-            || return
-
-        ssh_emulator "sudo mkdir -p ${OPT_WORK_DIR@Q}" || return
+        emulator_run sudo mkdir -p "$OPT_WORK_DIR" || return
         tree_created=1
 
-        ssh_emulator "sudo mount ${OPT_SF_NAME@Q} ${OPT_WORK_DIR@Q} -t vboxsf \
-            -o uid=${OPT_EMULATOR_USER@Q},gid=${OPT_EMULATOR_USER@Q}" || return
+        emulator_run sudo mount --bind "$OPT_SHARED_MEDIA_PATH" "$OPT_WORK_DIR" || return
+
+        # This is known to be unreachable with SSU domain 'sales'
+        emulator_run sudo ssu dr adaptation0
 
         local package=
         for package in "${OPT_EMULATOR_DEPS[@]}"; do
-            ssh_emulator "$(declare -f silent); rpm -q ${package@Q} &>/dev/null \
+            emulator_run_c "$(declare -f silent); rpm -q ${package@Q} &>/dev/null \
                     || silent sudo pkcon --noninteractive install ${package@Q}" \
                 || return
         done
 
-        if ! ssh_emulator "sudo systemctl stop packagekit && ! ps -C packagekitd &>/dev/null"; then
+        if ! emulator_run_c "sudo systemctl stop packagekit && ! ps -C packagekitd &>/dev/null"; then
             fatal "Failed to stop PackageKit daemon inside emulator"
             return 1
         fi
     fi
 
-    if is_vm_off "$OPT_EMULATOR"; then
-        start_emulator || return
+    emulator_is_running=$(emulator_is_running) || return
+    if [[ $emulator_is_running == false ]]; then
+        emulator_start || return
         emulator_started=1
     fi
 
-    # Catch "Warning: Permanently added ... to the list of known hosts." on first connection
-    ssh_emulator "true" &>/dev/null
-
     local stamp=
-    if ! stamp=$(ssh_emulator "mktemp ${OPT_WORK_DIR@Q}/.test.XXXXXX") || [[ ! -e "$stamp" ]]; then
+    if ! stamp=$(emulator_run mktemp "$OPT_WORK_DIR/.test.XXXXXX") || [[ ! -e "$stamp" ]]; then
         fatal "Failed to set up the emulator. Try to repeat after using '--restore-emulator'."
         return 1
     fi
@@ -588,14 +595,14 @@ set_up_emulator()
 
 restore_emulator()
 {
-    if vboxmanage_ snapshot "$OPT_EMULATOR" showvminfo "$OPT_SNAPSHOT" &>/dev/null; then
+    if emulator_snapshot_list |grep -F --line-regexp -e "$OPT_SNAPSHOT" >/dev/null; then
         info "Restoring original state of emulator..."
 
-        if ! is_vm_off "$OPT_EMULATOR"; then
-            stop_emulator || return
-        fi
-        vboxmanage_ snapshot "$OPT_EMULATOR" restore "$OPT_SNAPSHOT" \
-            && vboxmanage_ snapshot "$OPT_EMULATOR" delete "$OPT_SNAPSHOT" || return
+        # Ensure it is locked down
+        emulator_stop || return
+
+        emulator_snapshot_restore "$OPT_SNAPSHOT" \
+            && emulator_snapshot_remove "$OPT_SNAPSHOT" || return
     else
         info "Nothing to restore"
         return 1
@@ -723,7 +730,7 @@ make_qmltypes()
     export PATH=$wrappers_dir:$PATH
 
     local subdir=
-    while read subdir; do
+    for subdir in $subdirs; do
         local prjtype=${subdir%%:*}
         subdir=${subdir#*:}
         (
@@ -737,7 +744,19 @@ make_qmltypes()
                     ;;
             esac
         ) || return
-    done <<<"$subdirs"
+    done
+}
+
+match_packages_with_qmltypes()
+{
+    local package= files=
+    for package in "$@"; do
+        files=$(rpm -qlp "$package") || return
+        if printf '%s\n' "$files" |grep -q '\.qmltypes$'; then
+            package=$(rpm -qp "$package" --queryformat '%{NAME}-%{VERSION}') || return
+            printf '%s\n' "$package"
+        fi
+    done
 }
 
 init_wrappers()
@@ -929,12 +948,12 @@ job_do_prepare_makefiles()
     spec=$(find_spec_for_name "${self[name]}") || return
 
     if [[ $(find -maxdepth 2 -name '*.pro') ]]; then
-        if ! silent mb2_ --specfile "$spec" qmake -recursive; then
+        if ! silent mb2 "${OPT_MB2_OPTIONS[@]}" --specfile "$spec" qmake -recursive; then
             fatal "Failed to run qmake"
             return 1
         fi
     elif [[ $(find -maxdepth 2 -name CMakeLists.txt) ]]; then
-        if ! silent mb2_ --specfile "$spec" cmake; then
+        if ! silent mb2 "${OPT_MB2_OPTIONS[@]}" --specfile "$spec" cmake; then
             fatal "Failed to run cmake"
             return 1
         fi
@@ -948,18 +967,21 @@ job_do_install()
 {
     [[ $1 = self ]] || local -n self=$1
 
-    if ssh_emulator "$(declare -f silent); silent sudo zypper --no-gpg-checks --non-interactive in $(job_expand_binaries self)"; then
+    if emulator_run_c "$(declare -f silent); \
+            silent sudo zypper --no-gpg-checks --non-interactive in $(job_expand_binaries self)"; then
         return
     fi
 
     info "Installation inside emulator failed. Trying if refreshing repositories fixes it."
 
-    if ! ssh_emulator "$(declare -f silent); silent sudo zypper --no-gpg-checks --non-interactive refresh"; then
+    if ! emulator_run_c "$(declare -f silent); \
+            silent sudo zypper --no-gpg-checks --non-interactive refresh"; then
         fatal "Failed to refresh repositories inside emulator"
         return 1
     fi
 
-    if ! ssh_emulator "$(declare -f silent); silent sudo zypper --no-gpg-checks --non-interactive in $(job_expand_binaries self)"; then
+    if ! emulator_run_c "$(declare -f silent); \
+            silent sudo zypper --no-gpg-checks --non-interactive in $(job_expand_binaries self)"; then
         fatal "Failed to install '$(job_expand_binaries self)' inside emulator"
         return 1
     fi
@@ -978,7 +1000,8 @@ job_do_make_qmltypes()
 
     subdirs=$(find_build_dirs_for_qmltypes_subdirs "$subdirs") || return
 
-    if ! ssh_emulator "$(declare -f make_qmltypes); make_qmltypes ${WRAPPERS_DIR@Q} ${PWD@Q} ${subdirs@Q}"; then
+    if ! emulator_run_c "$(declare -f make_qmltypes); \
+            make_qmltypes ${WRAPPERS_DIR@Q} ${PWD@Q} ${subdirs@Q}"; then
         fatal "Failed to run qmlplugindump inside emulator"
         return 1
     fi
@@ -1087,7 +1110,6 @@ main_batch()
     trap 'main_batch_cleanup; trap - RETURN' RETURN
     trap 'return 1' INT TERM HUP
 
-    parse_devices_xml || return
     set_up_emulator || return
     emulator_set_up=1
 
@@ -1274,7 +1296,6 @@ main_single()
 
     init_wrappers || return
 
-    parse_devices_xml || return
     set_up_emulator || return
     emulator_set_up=1
 
@@ -1285,45 +1306,35 @@ main_single()
         return 1
     fi
 
-    if [[ ! $OPT_NO_BUILD ]]; then
-        mb2_ ${OPT_SPEC:+-s "$OPT_SPEC"} build || return
-    fi
-
     subdirs=$(find_build_dirs_for_qmltypes_subdirs "$subdirs") || return
 
-    local packages=
-    packages=$(find "$OPT_RPMS_DIR" -maxdepth 1 -name '*.rpm') || return
-    if [[ ! $packages ]]; then
-        fatal "No RPM packages found"
+    if ! emulator_run_c "rm -rf RPMS"; then
+        fatal "Failed to remove old RPM packages from emulator"
         return 1
     fi
 
-    local package= files= installables=()
-    while read package; do
-        files=$(rpm -qlp "$package") || return
-        if grep -q '\.qmltypes$' <<<"$files"; then
-            package=$(rpm -qp "$package" --queryformat '%{NAME}-%{VERSION}') || return
-            installables+=("$package")
-        fi
-    done <<<"$packages"
+    silent mb2 "${OPT_MB2_OPTIONS[@]}" deploy --manual || return
+
+    local installables=()
+    if ! installables=($(emulator_run_c "$(declare -f match_packages_with_qmltypes); \
+            match_packages_with_qmltypes RPMS/*.rpm")); then
+        fatal "Failed to gather RPM package with '*.qmltypes' file(s)"
+        return 1
+    fi
 
     if [[ ${#installables[@]} -eq 0 ]]; then
         fatal "Found no RPM package with '*.qmltypes' file(s)"
         return 1
     fi
 
-    if ! tar -C "$OPT_RPMS_DIR" -c . |ssh_emulator "rm -rf RPMS && mkdir RPMS && tar -C RPMS -x"; then
-        fatal "Failed to copy RPM packages to emulator"
-        return 1
-    fi
-
-    if ! ssh_emulator "$(declare -f silent); \
-            silent sudo zypper --no-gpg-checks --non-interactive -p RPMS in --force-resolution ${installables[@]@Q}"; then
+    if ! emulator_run_c "$(declare -f silent); silent sudo zypper --no-gpg-checks --non-interactive \
+            -p RPMS in --force-resolution ${installables[@]@Q}"; then
         fatal "Failed to install RPM packages inside emulator"
         return 1
     fi
 
-    if ! ssh_emulator "$(declare -f make_qmltypes); make_qmltypes ${WRAPPERS_DIR@Q} ${PWD@Q} ${subdirs@Q}"; then
+    if ! emulator_run_c "$(declare -f make_qmltypes); \
+            make_qmltypes ${WRAPPERS_DIR@Q} ${PWD@Q} ${subdirs@Q}"; then
         fatal "Failed to run qmlplugindump inside emulator"
         return 1
     fi
@@ -1338,17 +1349,15 @@ main_single()
 parse_options()
 {
     OPT_WORK_DIR=$PWD
-    OPT_APP_SDK_DIR=$HOME/SailfishOS
     OPT_BATCH=
     OPT_CSV=
+    OPT_DEVICE=
     OPT_H=
     OPT_HELP=
+    OPT_MB2_OPTIONS=()
     OPT_NO_KEEP=
-    OPT_NO_BUILD=
     OPT_NO_RESTORE_EMULATOR=
     OPT_RESTORE_EMULATOR=
-    OPT_RPMS_DIR=$OPT_WORK_DIR/RPMS
-    OPT_SPEC=
     OPT_STATUS=
     OPT_TARGET=
     OPT_VERBOSE=
@@ -1364,23 +1373,20 @@ parse_options()
                 OPT_HELP=1
                 break
                 ;;
-            --app-sdk)
-                [[ $# -ge 2 ]] || { fatal "Argument expected: '$1'"; return 1; }
-                [[ -d $2 ]] || { fatal "No such directory: '$2'"; return 1; }
-                OPT_APP_SDK_DIR=$(readlink -f "$2")
-                shift
-                ;;
             --batch)
                 OPT_BATCH=1
                 ;;
             --csv)
                 OPT_CSV=1
                 ;;
+            --device)
+                [[ $# -ge 2 ]] || { fatal "Argument expected: '$1'"; return 1; }
+                OPT_DEVICE=$2
+                OPT_MB2_OPTIONS+=(--device "$2")
+                shift
+                ;;
             --no-keep)
                 OPT_NO_KEEP=1
-                ;;
-            --no-build)
-                OPT_NO_BUILD=1
                 ;;
             --no-restore-emulator)
                 OPT_NO_RESTORE_EMULATOR=1
@@ -1388,28 +1394,22 @@ parse_options()
             --restore-emulator)
                 OPT_RESTORE_EMULATOR=1
                 ;;
-            --spec)
-                [[ $# -ge 2 ]] || { fatal "Argument expected: '$1'"; return 1; }
-                [[ -f $2 ]] || { fatal "No such file: '$2'"; return 1; }
-                OPT_SPEC=$2
-                shift
-                ;;
             --status)
                 OPT_STATUS=1
-                ;;
-            --rpms-dir)
-                [[ $# -ge 2 ]] || { fatal "Argument expected: '$1'"; return 1; }
-                [[ -d $2 ]] || { fatal "No such directory: '$2'"; return 1; }
-                OPT_RPMS_DIR=$2
-                shift
                 ;;
             --target)
                 [[ $# -ge 2 ]] || { fatal "Argument expected: '$1'"; return 1; }
                 OPT_TARGET=$2
+                OPT_MB2_OPTIONS+=(--target "$2")
                 shift
                 ;;
             -v|--verbose)
                 OPT_VERBOSE=1
+                ;;
+            -Xmb2)
+                [[ $# -ge 2 ]] || { fatal "Argument expected: '$1'"; return 1; }
+                OPT_MB2_OPTIONS+=("$1" "$2")
+                shift
                 ;;
             -*)
                 fatal "Unrecognized option: '$1'"
@@ -1428,14 +1428,9 @@ parse_options()
 
     configure || return
 
-    OPT_VMSHARE=$OPT_APP_SDK_DIR/vmshare
-    OPT_DEVICES_XML=$OPT_VMSHARE/devices.xml
-    OPT_EMULATOR=$(default_emulator) || return
-    OPT_EMULATOR_USER=defaultuser
-    OPT_EMULATOR_PORT=2223
     OPT_EMULATOR_DEPS=(make qt5-plugin-platform-minimal qt5-qtdeclarative-devel-tools qtchooser
         zypper)
-    OPT_SF_NAME=qmltypes
+    OPT_SHARED_MEDIA_PATH=/media/sdcard/sdk
     OPT_SNAPSHOT=qmltypes
     OPT_KEEP_DIRECTIVE=sdk-make-qmltypes:keep
 
@@ -1443,8 +1438,18 @@ parse_options()
         return
     fi
 
+    if [[ ! $OPT_DEVICE ]]; then
+        fatal "No device selected"
+        return 1
+    fi
+
     if [[ $OPT_RESTORE_EMULATOR ]]; then
         return
+    fi
+
+    if [[ ! $OPT_TARGET ]]; then
+        fatal "No build target selected"
+        return 1
     fi
 
     if [[ ! $OPT_BATCH ]]; then
@@ -1460,7 +1465,6 @@ parse_options()
             fatal "'--csv' can only be used in batch mode"
             return 1
         fi
-        # TODO check if exactly one $OPT_WORK_DIR/rpm/*.spec exists or --spec is given
     else
         if [[ $# -ne 2 ]]; then
             fatal "Invalid number of positional arguments"
@@ -1487,16 +1491,6 @@ parse_options()
             return 1
         fi
         OPT_PROJECTS_DIR=$(readlink -f "$OPT_PROJECTS_DIR") || return
-
-        if [[ $OPT_NO_BUILD ]]; then
-            fatal "'--no-build' can not be used in batch mode"
-            return 1
-        fi
-
-        if [[ $OPT_SPEC ]]; then
-            fatal "'--spec' can not be used in batch mode"
-            return 1
-        fi
 
         if [[ $OPT_WORK_DIR/ = ${OPT_PROJECTS_DIR}/* ]]; then
             fatal "Working directory cannot be a subdirectory of PROJECTS_DIR"
