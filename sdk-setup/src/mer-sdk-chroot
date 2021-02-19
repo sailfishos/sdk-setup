@@ -391,8 +391,6 @@ else
 	echo "Entering chroot as $user"
 fi
 
-shs_pid=$(su "$user" -c "$sdkroot/usr/libexec/sdk-setup/sdk-host-shell --server $sdkroot >&2 & echo \$!")
-
 setarch i386 chroot ${sdkroot} /bin/su -s /bin/bash -l $user -- -c "$(cat <<END
 [[ -d "$cwd" ]] && cd "$cwd"
 export SSH_AUTH_SOCK='${MY_SSH_AUTH_SOCK}'
@@ -404,13 +402,3 @@ sudo oneshot
 exec $(printf "%q " "${cmd[@]}")
 END
 )"
-
-rc=$?
-
-# SDK may be running really long time. Avoid killing something else if
-# sdk-host-shell crashes.
-if [[ $shs_pid && $(ps -p "$shs_pid" -o comm h) == sdk-host-shell ]]; then
-	kill "$shs_pid"
-fi
-
-exit $rc

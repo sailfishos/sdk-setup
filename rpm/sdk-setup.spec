@@ -144,7 +144,6 @@ mkdir -p %{buildroot}/srv/mer/toolings
 mkdir -p %{buildroot}%{_sysconfdir}/zypp/systemCheck.d
 cp etc/sdk-chroot.check %{buildroot}%{_sysconfdir}/zypp/systemCheck.d/
 mkdir -p %{buildroot}%{_libexecdir}/%{name}
-cp src/sdk-host-shell %{buildroot}%{_libexecdir}/%{name}/
 
 # sdk-vm
 mkdir -p %{buildroot}/%{_unitdir}
@@ -292,7 +291,6 @@ fi
 /mer-bash-setup
 %{_bindir}/sdk-version
 /home/.zypp-cache
-%{_libexecdir}/%{name}/sdk-host-shell
 %{_sysconfdir}/mer-sdk-chroot
 %dir /srv/mer/targets
 %dir /srv/mer/toolings
