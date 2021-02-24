@@ -13,13 +13,13 @@ SELF=$(basename "$0")
 ____=${SELF//?/ }
 
 usage() {
-    cat >&2 <<EOF
+    cat <<EOF
 Try '$SELF --help' for more information.
 EOF
 }
 
 help() {
-    cat >&2 <<EOF
+    less --quit-if-one-screen <<EOF
 usage:
     $SELF tooling list [-l|--long]
     $SELF tooling upgradable <name>
@@ -450,7 +450,7 @@ get_all_or_selected_of_type() {
     fi
 
     # Fail here if --all was not used and no objects were given
-    [[ ${#objects[*]} -ne 0 || $get_all ]] || { usage; return 1; }
+    [[ ${#objects[*]} -ne 0 || $get_all ]] || { usage >&2; return 1; }
 
     echo -n "${objects[@]}"
 }
@@ -563,7 +563,7 @@ register_object() {
 
     local objects=
     if [[ $type == sdk ]]; then
-        [[ $# -eq 0 ]] || { usage; return 1; }
+        [[ $# -eq 0 ]] || { usage >&2; return 1; }
         objects=('')
     else
         objects=($(get_all_or_selected_of_type "$type" "$@")) || return
@@ -601,7 +601,7 @@ register_all() {
                 ;;
             *)
                 echo >&2 "unrecognized option '$1'"
-                usage
+                usage >&2
                 return 1
                 ;;
         esac
@@ -844,7 +844,7 @@ list_toolings() {
                 ;;
             *)
                 echo >&2 "unrecognized option '$1'"
-                usage
+                usage >&2
                 return 1
                 ;;
         esac
@@ -999,7 +999,7 @@ remove_tooling() {
 
 manage_toolings() {
     if ! [[ ${1:-} ]]; then
-        usage
+        usage >&2
         return 1
     fi
 
@@ -1042,7 +1042,7 @@ manage_toolings() {
             ;;
         * )
             echo >&2 "unrecognized option '$1'"
-            usage
+            usage >&2
             return 1
             ;;
     esac
@@ -1053,7 +1053,7 @@ manage_toolings() {
 
 manage_toolchains() {
     if ! [[ {$1:-} ]]; then
-        usage
+        usage >&2
         return 1
     fi
 
@@ -1077,7 +1077,7 @@ manage_toolchains() {
             ;;
         * )
             echo >&2 "unrecognized option '$1'"
-            usage
+            usage >&2
             return 1
             ;;
     esac
@@ -1128,7 +1128,7 @@ list_object_packages() {
                 ;;
             -*)
                 echo >&2 "unrecognized option '$1'"
-                usage
+                usage >&2
                 return 1
                 ;;
             *)
@@ -1204,7 +1204,7 @@ maybe_synchronise_object() {
 
 manage_develpkgs() {
     if ! [[ {$1:-} ]]; then
-        usage
+        usage >&2
         return 1
     fi
 
@@ -1220,7 +1220,7 @@ manage_develpkgs() {
 	    ;;
 	* )
             echo >&2 "unrecognized option '$1'"
-            usage
+            usage >&2
             return 1
 	    ;;
     esac
@@ -1311,7 +1311,7 @@ list_targets() {
                 snapshots_of=${2:-}
                 if [[ ! $snapshots_of ]]; then
                     echo >&2 "$1: Argument expected"
-                    usage
+                    usage >&2
                     return 1
                 fi
                 shift
@@ -1320,14 +1320,14 @@ list_targets() {
                 tooling=${2:-}
                 if [[ ! $tooling ]]; then
                     echo >&2 "$1: Argument expected"
-                    usage
+                    usage >&2
                     return 1
                 fi
                 shift
                 ;;
             *)
                 echo >&2 "unrecognized option '$1'"
-                usage
+                usage >&2
                 return 1
                 ;;
         esac
@@ -1336,13 +1336,13 @@ list_targets() {
 
     if [[ $snapshots_of && $tooling ]]; then
         echo >&2 "Cannot combine '--snapshots-of' with '--tooling'"
-        usage
+        usage >&2
         return 1
     fi
 
     if [[ $check_snapshots && ! $long ]]; then
         echo >&2 "Cannot use '--check-snapshots' without '--long'"
-        usage
+        usage >&2
         return 1
     fi
 
@@ -1534,7 +1534,7 @@ install_target() {
                 tooling=${2:-}
                 if [[ ! $tooling ]]; then
                     echo >&2 "$1: Argument expected"
-                    usage
+                    usage >&2
                     return 1
                 fi
                 shift
@@ -1543,7 +1543,7 @@ install_target() {
                 tooling_url=${2:-}
                 if [[ ! $tooling_url ]]; then
                     echo >&2 "$1: Argument expected"
-                    usage
+                    usage >&2
                     return 1
                 fi
                 shift
@@ -1552,20 +1552,20 @@ install_target() {
                 toolchain=${2:-}
                 if [[ ! $toolchain ]]; then
                     echo >&2 "$1: Argument expected"
-                    usage
+                    usage >&2
                     return 1
                 fi
                 shift
                 ;;
             -*)
                 echo >&2 "unrecognized option '$1'"
-                usage
+                usage >&2
                 return 1
                 ;;
             *)
                 if [[ ${#positional_args[*]} -eq 2 ]]; then
                     echo >&2 "unexpected positional argument '$1'"
-                    usage
+                    usage >&2
                     return 1
                 fi
                 positional_args=(${positional_args[@]:+"${positional_args[@]}"} "$1")
@@ -1576,7 +1576,7 @@ install_target() {
 
     if [[ $tooling_url && ! $tooling ]]; then
         echo >&2 "'--tooling' required when '--tooling-url' is used"
-        usage
+        usage >&2
         return 1
     fi
 
@@ -1586,7 +1586,7 @@ install_target() {
 
     if [[ ${#positional_args[*]} -ne 2 ]]; then
         echo >&2 "<name> and <URL> expected"
-        usage
+        usage >&2
         return 1
     fi
 
@@ -1787,19 +1787,19 @@ snapshot_target() {
                 reset=${1#*=}
                 if [[ $reset != outdated && $reset != force ]]; then
                     echo >&2 "unexpected argument to --reset: '$reset'"
-                    usage
+                    usage >&2
                     return 1
                 fi
                 ;;
             -*)
                 echo >&2 "unrecognized option '$1'"
-                usage
+                usage >&2
                 return 1
                 ;;
             *)
                 if [[ ${#positional_args[*]} -eq 2 ]]; then
                     echo >&2 "unexpected positional argument '$1'"
-                    usage
+                    usage >&2
                     return 1
                 fi
                 positional_args+=("$1")
@@ -1934,13 +1934,13 @@ reserve_target() {
         case $1 in
             -*)
                 echo >&2 "unrecognized option '$1'"
-                usage
+                usage >&2
                 return 1
                 ;;
             *)
                 if [[ ${#positional_args[*]} -eq 4 ]]; then
                     echo >&2 "unexpected positional argument '$1'"
-                    usage
+                    usage >&2
                     return 1
                 fi
                 positional_args+=("$1")
@@ -1951,7 +1951,7 @@ reserve_target() {
 
     if [[ ${#positional_args[*]} -ne 4 ]]; then
         echo >&2 "Too few arguments given"
-        usage
+        usage >&2
         return 1
     fi
 
@@ -2105,7 +2105,7 @@ remove_target() {
 
 manage_targets() {
     if ! [[ ${1:-} ]]; then
-        usage
+        usage >&2
         return 1
     fi
 
@@ -2176,7 +2176,7 @@ manage_targets() {
             ;;
 	* )
             echo >&2 "unrecognized option '$1'"
-            usage
+            usage >&2
             return 1
 	    ;;
     esac
@@ -2219,7 +2219,7 @@ sdk_vbox_status() {
 
 manage_sdk() {
     if ! [[ ${1:-} ]]; then
-        usage
+        usage >&2
         return 1
     fi
 
@@ -2244,7 +2244,7 @@ manage_sdk() {
 	    ;;
 	* )
             echo >&2 "unrecognized option '$1'"
-            usage
+            usage >&2
             return 1
 	    ;;
     esac
@@ -2259,12 +2259,12 @@ get_register_credentials() {
     while [[ ${1:-} ]]; do
         case $1 in
 	    --user )
-                [[ -n ${2:-} ]] || { usage; return 1; }
+                [[ -n ${2:-} ]] || { usage >&2; return 1; }
                 username=$2
                 shift 2
 		;;
 	    --password )
-                [[ -n ${2:-} ]] || { usage; return 1; }
+                [[ -n ${2:-} ]] || { usage >&2; return 1; }
                 password=$2
                 shift 2
 		;;
@@ -2277,7 +2277,7 @@ get_register_credentials() {
 
     if [[ ! $username || ! $password ]] && ! tty --quiet; then
         echo >&2 "Missing --user and/or --password option"
-        usage
+        usage >&2
         return 1
     fi
 
@@ -2352,7 +2352,7 @@ if [[ ${FLOCKER:-} != $0 ]]; then
 fi
 
 if ! [[ ${1:-} ]]; then
-    usage
+    usage >&2
     exit 1
 fi
 
@@ -2365,12 +2365,12 @@ while (( $# > 0)); do
                     ;;
                 '')
                     echo >&2 "argument expected: '$1'"
-                    usage
+                    usage >&2
                     exit 1
                     ;;
                 *)
                     echo >&2 "not a valid mode: '$2'"
-                    usage
+                    usage >&2
                     exit 1
                     ;;
             esac
@@ -2417,7 +2417,7 @@ case $1 in
         ;;
     * )
         echo >&2 "unrecognized option '$1'"
-        usage
+        usage >&2
         exit 1
 	;;
 esac
