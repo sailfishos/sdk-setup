@@ -81,6 +81,7 @@ Requires:   tar
 Requires:   p7zip-full
 Requires:   gnu-cpio
 Requires:   compiledb
+Requires:   /usr/bin/python3
 Conflicts:  sdk-harbour-rpmvalidator < 1.49
 
 %description -n sdk-utils
@@ -142,6 +143,7 @@ mkdir -p %{buildroot}/srv/mer/targets
 mkdir -p %{buildroot}/srv/mer/toolings
 mkdir -p %{buildroot}%{_sysconfdir}/zypp/systemCheck.d
 cp etc/sdk-chroot.check %{buildroot}%{_sysconfdir}/zypp/systemCheck.d/
+mkdir -p %{buildroot}%{_libexecdir}/%{name}
 
 # sdk-vm
 mkdir -p %{buildroot}/%{_unitdir}
@@ -209,6 +211,7 @@ cp src/rpmvalidation %{buildroot}%{_bindir}/
 ln -sf rpmvalidation %{buildroot}%{_bindir}/rpmvalidation.sh
 cp src/git-lltb %{buildroot}%{_bindir}/
 cp src/sdk-init %{buildroot}%{_bindir}/
+cp src/sdk-make-qmltypes %{buildroot}%{_bindir}/
 mkdir -p %{buildroot}%{_libexecdir}/%{name}
 cp src/oomadvice %{buildroot}%{_libexecdir}/%{name}/
 cp src/sdk-setup-swap %{buildroot}%{_libexecdir}/%{name}/
@@ -363,6 +366,7 @@ fi
 %{_bindir}/rpmvalidation
 %{_bindir}/git-lltb
 %{_bindir}/sdk-init
+%{_bindir}/sdk-make-qmltypes
 %{_libexecdir}/%{name}/oomadvice
 %{_libexecdir}/%{name}/sdk-setup-swap
 %{_libexecdir}/%{name}/ssh-askpass
