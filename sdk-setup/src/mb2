@@ -200,6 +200,35 @@ section in the spec file.  If a file with '.changes.run' extension is
 found instead, this file will be executed and its output treated as
 the actual changelog.
 
+
+SIGNING PACKAGES
+
+The 'build' and 'package' commands allow to optionally sign the resulting
+packages. Use the '--sign' option to these commands to enable this step.
+
+The cryptographic key to use for signing can be selected with the global
+option '--package-signing-user'. If this is a passphrase-protected key, the
+passphrase may be supplied with one of the '--package-signing-passphrase' or
+'--package-signing-passphrase-file' options. Set up yourself a shell alias to
+apply these by default:
+
+    $ touch PASSFILE
+    $ chmod 600 PASSFILE
+    $ cat >PASSFILE
+    YourPassphrase
+    ^D
+    $ alias mb2="mb2 --package-signing-user NAME \\
+        --package-signing-passphrase-file PASSFILE"
+
+The GPG version on host and under the SDK are not likely to match - for that
+reason the SDK uses its own GPG home directory and therefore your secret key
+must be imported under the SDK before it can be used. This can be achieved
+with command like this (executed on host):
+
+    $ gpg --export-secret-keys ID |sdk gpg2 --import
+
+(Replace 'sdk' with the command you use to enter the SDK)
+
 COMMANDS
     build-requires [--[no-]refresh] {pull|reset}
         When 'pull' is used, install or update the build-time dependencies as
@@ -225,7 +254,7 @@ COMMANDS
 
         -R    reverse apply patches (patch -R)
 
-    build [-p|--prepare] [--no-check] [-d|--enable-debug] [-j <n>]
+    build [-p|--prepare] [--no-check] [-d|--enable-debug] [-j <n>] [-s|--sign] 
           [<project-dir-or-file>] [[--] <rpmbuild-extra-arg>...]
         Run rpmbuild. Execute all sections of the .spec file except for %prep
         unless told otherwise.
@@ -239,6 +268,7 @@ COMMANDS
         --no-check        Skip the %check section
         --enable-debug    Enable debug build
         -j <n>            Run up to <n> jobs simultaneously
+        --sign            Sign packages
 
     qmake [<project-dir-or-file>] [[--] <qmake-extra-arg>...]
         Run rpmbuild. Execute just the %build section of the .spec file,
@@ -283,10 +313,10 @@ COMMANDS
     make-install
         Run rpmbuild. Execute just the %install section of the .spec file.
 
-    package [--no-check]
+    package [--no-check] [-s|--sign]
         Run rpmbuild. Execute just the %install section of the .spec file, then
-        build binary packages. Unless '--no-check' is passed, execute also the
-        %check section if present.
+        build binary packages and optionally sign those. Unless '--no-check'
+        is passed, execute also the %check section if present.
 
     build-shell [<command> [<arg>...]]
         Execute an arbitrary <command> in the build environment.  If no
@@ -601,6 +631,22 @@ GLOBAL OPTIONS
     --check-suites [+|-]<suite>...
         Override the default test suites the 'check' command executes. See
         the '--suites' option to the 'check' command for more details.
+
+    --package-signing-user <name>
+        Select the GPG key to sign packages with. Accepts the same values
+        as the '--local-user' option of the gpg command does. See GPG
+        documentation for more details.
+
+        Depending on your SDK variant, different semantics may apply.
+
+    --package-signing-passphrase <string>
+        In case a passphrase-protected signing key is selected for signing
+        packages, use <string> as the passphrase.
+        
+    --package-signing-passphrase-file <file>
+        In case a passphrase-protected signing key is selected for signing
+        packages, read the passphrase from the <file>. Only the first line will
+        be read.
 
 
 KNOWN ISSUES
@@ -1809,6 +1855,106 @@ run_build_requires__process_args() {
     fi
 }
 
+sign_rpms() {
+    [[ -e $STATEDIR/spec ]] || fatal "No previous build found"
+    local rpms=$(find_rpms $all_opt "$OPT_OUTPUTDIR" "$STATEDIR/spec")
+    [[ $rpms ]] || fatal "No package found"
+
+    local sdksign=/usr/libexec/sdk-setup/sdk-rpmsign
+
+    if [[ -x $sdksign ]]; then
+        $sdksign ${rpms}
+    else
+        sign_rpms_native ${rpms}
+    fi
+
+    local rc=$?
+    [[ $rc -eq 0 ]] || { notice "Failed to sign packages"; return $rc; }
+}
+
+sign_rpms_native() {
+    local rpms=("$@")
+
+    local tmpdir=
+    sign_rpms_native_cleanup() (
+        trap 'echo cleaning up...' INT TERM HUP
+        if [[ $tmpdir ]]; then
+            rm -rf "$tmpdir"
+        fi
+    )
+    trap 'sign_rpms_native_cleanup; trap - RETURN' RETURN
+    trap 'return 1' INT TERM HUP
+
+    local extra_args=()
+
+    if [[ $OPT_PACKAGE_SIGN_USER ]]; then
+
+        if inside_build_engine; then
+            local shared_key=${OPT_SHARED_DIR}/gnupg/${OPT_PACKAGE_SIGN_USER}.key
+            if [[ ! -f $shared_key ]]; then
+                notice "Cannot sign packages: Internal error: No GPG key shared for the user '$OPT_PACKAGE_SIGN_USER'."
+                return 1
+            fi
+
+            local shared_key_id=$(gpg2 --with-colons --list-packets "$shared_key" \
+                    |sed -n 's/:user ID packet: "\(.*\)"/\1/p')
+            [[ $shared_key_id ]] || return
+
+            local key_fingerprints=$(gpg2 --with-colons --list-secret-keys --fingerprint "$shared_key_id" \
+                    |awk -F: '$1 == "fpr" { print $10 }')
+            local key_fingerprint=
+            for key_fingerprint in $key_fingerprints; do
+                if ! gpg2 --batch --delete-secret-and-public-key "$key_fingerprint"; then
+                    notice "Cannot sign packages: Internal error: Failed to delete old GPG key copy '$key_fingerprint'."
+                    return 1
+                fi
+            done
+
+            if ! gpg2 --quiet --import "${shared_key}"; then 
+                notice "Cannot sign packages: Internal error: Failed to import GPG key from file '$shared_key'."
+                return 1
+            fi
+        fi
+
+        if ! gpg2 --list-secret-keys "$OPT_PACKAGE_SIGN_USER" &>/dev/null; then
+            notice "Cannot sign packages: No GPG key found for the user '$OPT_PACKAGE_SIGN_USER'."
+            return 1
+        fi
+
+        extra_args+=(--define "_gpg_name $OPT_PACKAGE_SIGN_USER")
+
+        local passphrase=
+
+        if [[ $OPT_PACKAGE_SIGN_PASSPHRASE_FILE ]]; then
+            passphrase=$(<"$OPT_PACKAGE_SIGN_PASSPHRASE_FILE")
+        else
+            passphrase=$OPT_PACKAGE_SIGN_PASSPHRASE
+        fi
+
+        if ! gpg2 --batch --status-fd 1 --sign --local-user "$OPT_PACKAGE_SIGN_USER" \
+                --output - --passphrase-fd 3 3<<<"$passphrase" </dev/null &>/dev/null; then
+            if [[ ! $passphrase ]]; then
+                notice "Cannot sign packages: The selected GPG key is passphrase protected" \
+                    "and no passphrase was specified."
+            else
+                notice "Cannot sign packages: The given passphrase is not a correct passphrase" \
+                    "for the '$OPT_PACKAGE_SIGN_USER' key."
+            fi
+            return 1
+        fi
+
+        if [[ $passphrase ]]; then
+            tmpdir=$(mktemp -d) || return
+            chmod 0700 "$tmpdir" || return
+            local passphrase_file=$tmpdir/passphrase
+            cat >"$passphrase_file" <<<"$passphrase" || return
+            extra_args+=(--define "_gpg_sign_cmd_extra_args --batch --passphrase-file '$passphrase_file'")
+        fi
+    fi
+
+    rpmsign --addsign "${rpms[@]}" "${extra_args[@]}" </dev/null
+}
+
 run_build_requires() {
     if [[ $BUILD_REQUIRES_MODE == reset ]]; then
         if ! sdk-manage target snapshot --reset=force "$OPT_ORIGINAL_TARGET" "$OPT_TARGET"; then
@@ -1880,6 +2026,7 @@ run_build__process_args() {
     BUILD_NOPREP_ARGS=(--noprep)
     BUILD_NOCHECK_ARGS=()
     BUILD_EXTRA_ARGS=()
+    BUILD_SIGN=
     while [[ "$1" ]]; do
         case "$1" in
             -d|--enable-debug) shift
@@ -1900,6 +2047,9 @@ run_build__process_args() {
                 fi
                 shift
                 BUILD_NOPREP_ARGS=()
+                ;;
+            -s|--sign) shift
+                BUILD_SIGN=1
                 ;;
             --no-check) shift
                 BUILD_NOCHECK_ARGS=(--nocheck)
@@ -1970,8 +2120,10 @@ run_build() {
             "${BUILD_NOPREP_ARGS[@]}" "${BUILD_NOCHECK_ARGS[@]}" \
             -bb \
             "$TMP_SPEC" \
-            "${BUILD_EXTRA_ARGS[@]}"
+            "${BUILD_EXTRA_ARGS[@]}" \
+            || return
     )
+    [[ ! $BUILD_SIGN ]] || sign_rpms
 }
 
 run_prepare() {
@@ -2259,11 +2411,15 @@ run_make_install() {
 
 run_package__process_args() {
     PACKAGE_NOCHECK_ARGS=()
+    PACKAGE_SIGN=
 
     while [[ $# -ne 0 ]]; do
         case $1 in
             --no-check)
                 PACKAGE_NOCHECK_ARGS=(--nocheck)
+                ;;
+            -s|--sign) shift
+                PACKAGE_SIGN=1
                 ;;
             *)
                 fatal "Unexpected argument: $1"
@@ -2298,8 +2454,10 @@ run_package() {
             --define "_buildhost $(get_hostname)" \
             --buildroot="$buildroot" \
             -bb --noprep --nobuildstage "${PACKAGE_NOCHECK_ARGS[@]}" --noclean \
-            "$TMP_SPEC"
+            "$TMP_SPEC" \
+            || return
     )
+    [[ ! $PACKAGE_SIGN ]] || sign_rpms
 }
 
 run_build_shell() {
@@ -2353,10 +2511,6 @@ run_deploy() {
 
     # rsync method is special
     if [[ $method_opt == --rsync ]]; then
-        if behind_qtcreator; then
-            run_make_install || return
-        fi
-
         local name=$(get_spec_tag "%{name}")
 
         if [[ $dry_run_opt ]]; then
@@ -2367,10 +2521,6 @@ run_deploy() {
         rsync_as $device_username -av ${buildroot}/. $device_ip:/opt/sdk/$name \
             || { echo "Deploy failed"; return 1; }
         return
-    fi
-
-    if behind_qtcreator; then
-        run_package || return
     fi
 
     local rpms=$(find_rpms $all_opt "$OPT_OUTPUTDIR" "$STATEDIR/spec" "${patterns[@]}")
@@ -2869,6 +3019,9 @@ OPT_INC_BUILD_NUMBER=0
 OPT_PULL_BUILD_REQUIRES=1
 OPT_WRAP=()
 OPT_CHECK_LEVELS=
+OPT_PACKAGE_SIGN_USER=
+OPT_PACKAGE_SIGN_PASSPHRASE=
+OPT_PACKAGE_SIGN_PASSPHRASE_FILE=
 OPT_CHECK_SUITES=
 
 STATEDIR=$PWD/.mb2
@@ -3100,6 +3253,15 @@ while [[ "$1" ]]; do
         "-m" | "--submodule" )
             notice "The '$1' option is deprecated and does nothing currently"
             shift 2
+            ;;
+        "--package-signing-user") shift
+            OPT_PACKAGE_SIGN_USER="$1"; shift
+            ;;
+        "--package-signing-passphrase") shift
+            OPT_PACKAGE_SIGN_PASSPHRASE="$1"; shift
+            ;;
+        "--package-signing-passphrase-file") shift
+            OPT_PACKAGE_SIGN_PASSPHRASE_FILE="$1"; shift
             ;;
         "--check-levels" )
             [[ $2 ]] || fatal "The '$1' option requires an argument"
