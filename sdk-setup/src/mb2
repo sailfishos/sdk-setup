@@ -229,6 +229,7 @@ with command like this (executed on host):
 
 (Replace 'sdk' with the command you use to enter the SDK)
 
+
 COMMANDS
     build-requires [--[no-]refresh] {pull|reset}
         When 'pull' is used, install or update the build-time dependencies as
