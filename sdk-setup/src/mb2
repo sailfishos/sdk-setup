@@ -1856,21 +1856,76 @@ run_build_requires__process_args() {
     fi
 }
 
+sign_rpms__prepare() {
+    if ! [[ -x $SDK_RPMSIGN ]]; then 
+        sign_rpms_native__prepare
+    fi
+}
+
 sign_rpms() {
     [[ -e $STATEDIR/spec ]] || fatal "No previous build found"
     local rpms=$(find_rpms $all_opt "$OPT_OUTPUTDIR" "$STATEDIR/spec")
     [[ $rpms ]] || fatal "No package found"
 
-    local sdksign=/usr/libexec/sdk-setup/sdk-rpmsign
-
-    if [[ -x $sdksign ]]; then
-        $sdksign ${rpms}
+    if [[ -x $SDK_RPMSIGN ]]; then
+        $SDK_RPMSIGN ${rpms}
     else
         sign_rpms_native ${rpms}
     fi
 
-    local rc=$?
-    [[ $rc -eq 0 ]] || { notice "Failed to sign packages"; return $rc; }
+    [[ $? -eq 0 ]] || { fatal "Failed to sign packages"; }
+}
+
+sign_rpms_native__prepare() {
+    if [[ ! $OPT_PACKAGE_SIGN_USER ]]; then
+        fatal "Cannot sign packages: No signing user specified."
+    fi
+
+    if inside_build_engine; then
+        local shared_key=${OPT_SHARED_DIR}/gnupg/${OPT_PACKAGE_SIGN_USER}.key
+        if [[ ! -f $shared_key ]]; then
+            fatal "Cannot sign packages: Internal error: No GPG key shared for the user '$OPT_PACKAGE_SIGN_USER'."
+        fi
+
+        local shared_key_id=$(gpg2 --with-colons --list-packets "$shared_key" \
+                |sed -n 's/:user ID packet: "\(.*\)"/\1/p')
+        [[ $shared_key_id ]] || return
+
+        local key_fingerprints=$(gpg2 --with-colons --list-secret-keys --fingerprint "$shared_key_id" \
+                |awk -F: '$1 == "fpr" { print $10 }')
+        local key_fingerprint=
+        for key_fingerprint in $key_fingerprints; do
+            if ! gpg2 --batch --delete-secret-and-public-key "$key_fingerprint"; then
+                fatal "Cannot sign packages: Internal error: Failed to delete old GPG key copy '$key_fingerprint'."
+            fi
+        done
+
+        if ! gpg2 --quiet --import "${shared_key}"; then 
+            fatal "Cannot sign packages: Internal error: Failed to import GPG key from file '$shared_key'."
+        fi
+    fi
+
+    if ! gpg2 --list-secret-keys "$OPT_PACKAGE_SIGN_USER" &>/dev/null; then
+        fatal "Cannot sign packages: No GPG key found for the user '$OPT_PACKAGE_SIGN_USER'."
+    fi
+
+    local passphrase=
+    if [[ $OPT_PACKAGE_SIGN_PASSPHRASE_FILE ]]; then
+        passphrase=$(<"$OPT_PACKAGE_SIGN_PASSPHRASE_FILE")
+    else
+        passphrase=$OPT_PACKAGE_SIGN_PASSPHRASE
+    fi
+
+    if ! gpg2 --batch --status-fd 1 --sign --local-user "$OPT_PACKAGE_SIGN_USER" \
+            --output - --passphrase-fd 3 3<<<"$passphrase" </dev/null &>/dev/null; then
+        if [[ ! $passphrase ]]; then
+            fatal "Cannot sign packages: The selected GPG key is passphrase protected" \
+                "and no passphrase was specified."
+        else
+            fatal "Cannot sign packages: The given passphrase is not a correct passphrase" \
+                "for the '$OPT_PACKAGE_SIGN_USER' key."
+        fi
+    fi
 }
 
 sign_rpms_native() {
@@ -1886,71 +1941,21 @@ sign_rpms_native() {
     trap 'sign_rpms_native_cleanup; trap - RETURN' RETURN
     trap 'return 1' INT TERM HUP
 
-    local extra_args=()
+    local extra_args=(--define "_gpg_name $OPT_PACKAGE_SIGN_USER")
 
-    if [[ $OPT_PACKAGE_SIGN_USER ]]; then
+    local passphrase=
+    if [[ $OPT_PACKAGE_SIGN_PASSPHRASE_FILE ]]; then
+        passphrase=$(<"$OPT_PACKAGE_SIGN_PASSPHRASE_FILE")
+    else
+        passphrase=$OPT_PACKAGE_SIGN_PASSPHRASE
+    fi
 
-        if inside_build_engine; then
-            local shared_key=${OPT_SHARED_DIR}/gnupg/${OPT_PACKAGE_SIGN_USER}.key
-            if [[ ! -f $shared_key ]]; then
-                notice "Cannot sign packages: Internal error: No GPG key shared for the user '$OPT_PACKAGE_SIGN_USER'."
-                return 1
-            fi
-
-            local shared_key_id=$(gpg2 --with-colons --list-packets "$shared_key" \
-                    |sed -n 's/:user ID packet: "\(.*\)"/\1/p')
-            [[ $shared_key_id ]] || return
-
-            local key_fingerprints=$(gpg2 --with-colons --list-secret-keys --fingerprint "$shared_key_id" \
-                    |awk -F: '$1 == "fpr" { print $10 }')
-            local key_fingerprint=
-            for key_fingerprint in $key_fingerprints; do
-                if ! gpg2 --batch --delete-secret-and-public-key "$key_fingerprint"; then
-                    notice "Cannot sign packages: Internal error: Failed to delete old GPG key copy '$key_fingerprint'."
-                    return 1
-                fi
-            done
-
-            if ! gpg2 --quiet --import "${shared_key}"; then 
-                notice "Cannot sign packages: Internal error: Failed to import GPG key from file '$shared_key'."
-                return 1
-            fi
-        fi
-
-        if ! gpg2 --list-secret-keys "$OPT_PACKAGE_SIGN_USER" &>/dev/null; then
-            notice "Cannot sign packages: No GPG key found for the user '$OPT_PACKAGE_SIGN_USER'."
-            return 1
-        fi
-
-        extra_args+=(--define "_gpg_name $OPT_PACKAGE_SIGN_USER")
-
-        local passphrase=
-
-        if [[ $OPT_PACKAGE_SIGN_PASSPHRASE_FILE ]]; then
-            passphrase=$(<"$OPT_PACKAGE_SIGN_PASSPHRASE_FILE")
-        else
-            passphrase=$OPT_PACKAGE_SIGN_PASSPHRASE
-        fi
-
-        if ! gpg2 --batch --status-fd 1 --sign --local-user "$OPT_PACKAGE_SIGN_USER" \
-                --output - --passphrase-fd 3 3<<<"$passphrase" </dev/null &>/dev/null; then
-            if [[ ! $passphrase ]]; then
-                notice "Cannot sign packages: The selected GPG key is passphrase protected" \
-                    "and no passphrase was specified."
-            else
-                notice "Cannot sign packages: The given passphrase is not a correct passphrase" \
-                    "for the '$OPT_PACKAGE_SIGN_USER' key."
-            fi
-            return 1
-        fi
-
-        if [[ $passphrase ]]; then
-            tmpdir=$(mktemp -d) || return
-            chmod 0700 "$tmpdir" || return
-            local passphrase_file=$tmpdir/passphrase
-            cat >"$passphrase_file" <<<"$passphrase" || return
-            extra_args+=(--define "_gpg_sign_cmd_extra_args --batch --passphrase-file '$passphrase_file'")
-        fi
+    if [[ $passphrase ]]; then
+        tmpdir=$(mktemp -d) || return
+        chmod 0700 "$tmpdir" || return
+        local passphrase_file=$tmpdir/passphrase
+        cat >"$passphrase_file" <<<"$passphrase" || return
+        extra_args+=(--define "_gpg_sign_cmd_extra_args --batch --passphrase-file '$passphrase_file'")
     fi
 
     rpmsign --addsign "${rpms[@]}" "${extra_args[@]}" </dev/null
@@ -2070,6 +2075,8 @@ run_build__process_args() {
     BUILD_EXTRA_ARGS=("$@")
     handle_pro_file_or_dir_option
     [[ $BUILD_JOBS ]] || BUILD_JOBS=$(getconf _NPROCESSORS_ONLN)
+
+    [[ ! $BUILD_SIGN ]] || sign_rpms__prepare
 }
 
 run_build() {
@@ -2428,6 +2435,8 @@ run_package__process_args() {
         esac
         shift
     done
+    
+    [[ ! $PACKAGE_SIGN ]] || sign_rpms__prepare
 }
 
 run_package() {
@@ -3030,6 +3039,7 @@ TMP_SPEC=$STATEDIR/spec
 COMPILEDB_INPUT=$STATEDIR/compiledb-input.txt
 SNAPSHOT_POOL_SUFFIX=mb2.XXX
 SNAPSHOT_POOL_SIZE=5
+SDK_RPMSIGN=/usr/libexec/sdk-setup/sdk-rpmsign
 
 CHECK_LEVEL_SOURCE=source
 CHECK_LEVEL_PACKAGE=package
