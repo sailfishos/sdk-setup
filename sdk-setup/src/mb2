@@ -2511,10 +2511,6 @@ run_deploy() {
 
     # rsync method is special
     if [[ $method_opt == --rsync ]]; then
-        if behind_qtcreator; then
-            run_make_install || return
-        fi
-
         local name=$(get_spec_tag "%{name}")
 
         if [[ $dry_run_opt ]]; then
@@ -2525,10 +2521,6 @@ run_deploy() {
         rsync_as $device_username -av ${buildroot}/. $device_ip:/opt/sdk/$name \
             || { echo "Deploy failed"; return 1; }
         return
-    fi
-
-    if behind_qtcreator; then
-        run_package || return
     fi
 
     local rpms=$(find_rpms $all_opt "$OPT_OUTPUTDIR" "$STATEDIR/spec" "${patterns[@]}")
