@@ -1752,6 +1752,8 @@ install_target() {
 
     assert_target_exists "$target" || return
 
+    rebuild_rpmdb "target:$target" || return
+
     if [[ $INSIDE_VBOX ]]; then
         synchronise_target "$target"
         [[ $? -ne 0 ]] && echo >&2 "Rsync did not exactly run as intended, expect problems."
