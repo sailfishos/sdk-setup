@@ -438,10 +438,6 @@ COMMANDS
             Only transfers the RPM package(s) to the device for manual
             installation. Uses '~/RPMS' as the target directory on the device.
 
-        When used via Qt Creator, this command implies also the "make-install"
-        and "package" commands unless the '--all' option or '--rsync' method is
-        used.
-
     undeploy {--sdk|--pkcon|--rpm|--rsync|--zypper} [--all] [-n|--dry-run]
              [--] [[+|-]<pattern>...]
         Undeploy build results previously deployed to a device.
