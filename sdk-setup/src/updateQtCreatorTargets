@@ -132,6 +132,8 @@ def update(args, root):
 
     # Older targets do not have CMake preinstalled
     try:
+        et.SubElement(new, "output", name="CMakeCapabilities"
+                      ).text = sb2_command(args.name, "cmake", "-E", "capabilities")
         et.SubElement(new, "output", name="CMakeVersion"
                       ).text = sb2_command(args.name, "cmake", "--version")
     except subprocess.CalledProcessError:
