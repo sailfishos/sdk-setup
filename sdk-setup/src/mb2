@@ -3055,8 +3055,8 @@ AUTOTOOLS=(autoreconf autoconf autoheader aclocal automake autopoint libtoolize)
 # The working directory inside build engine is noexec and symlink creation under VirtualBox
 # shared folder shared from Windows requires special permissions
 if inside_build_engine; then
-    WRAPPERSDIR=$HOME/.mb2/wrappers${PWD#"$HOME"}
-    USERWRAPPERSDIR=$HOME/.mb2/user-wrappers${PWD#"$HOME"}
+    WRAPPERSDIR=$HOME/.mb2/wrappers${PWD#"$SAILFISH_SDK_SRC1_MOUNT_POINT"}
+    USERWRAPPERSDIR=$HOME/.mb2/user-wrappers${PWD#"$SAILFISH_SDK_SRC1_MOUNT_POINT"}
 else
     WRAPPERSDIR=$STATEDIR/wrappers
     USERWRAPPERSDIR=$STATEDIR/user-wrappers
