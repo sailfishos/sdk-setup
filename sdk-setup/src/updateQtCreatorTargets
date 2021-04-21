@@ -10,8 +10,8 @@ def assert_valid_sb2_name(name):
     if not os.path.isdir(os.path.expanduser("~/.scratchbox2/%s" % name)):
         raise Exception("%s is not a valid scratchbox2 target name" % name)
 
-def sb2_command(sb2, *args):
-    data = subprocess.check_output(["sb2", "-t", sb2] + list(args), stderr=subprocess.STDOUT, text=True)
+def sb2_command(sb2, *args, stderr=None):
+    data = subprocess.check_output(["sb2", "-t", sb2] + list(args), stderr=stderr, text=True)
     if data:
         return data.strip()
     raise Exception("'%s' returned no data" % " ".join(args))
@@ -121,7 +121,8 @@ def update(args, root):
 
     et.SubElement(new, "output", name="GccDumpIncludes"
                   ).text = process_gcc_dump_includes(
-                          sb2_command(args.name, "gcc", "-x", "c++", "-E", "-v", "/dev/null"))
+                          sb2_command(args.name, "gcc", "-x", "c++", "-E", "-v", "/dev/null",
+                              stderr=subprocess.STDOUT))
 
     et.SubElement(new, "output", name="GccDumpInstallDir"
                   ).text = process_gcc_dump_install_dir(
