@@ -125,8 +125,18 @@ with_tmp_file()
 
 list_types()
 {
-    echo "$DEF_TEMPLATE_NAME ... Qt Quick Application"
-    echo "    Builders: ${DEF_BUILDERS[*]} (Default: $DEF_BUILDER)"
+    local template_displayname=
+    local wizard_file=
+    local builders=()
+    for template in "${DEF_TEMPLATES[@]}"; do
+        wizard_file="$OPT_SDK_ROOT/$DEF_TEMPLATES_PATH/sailfishos-$template/wizard.json"
+        template_displayname=$(grep -Po '"trDisplayName": "\K.*(?=")' "$wizard_file" |head -n 1)
+        echo "$template ... $template_displayname"
+        builders=()
+        grep -q template.pro "$wizard_file" && builders+=(qmake)
+        grep -q CMakeLists.txt "$wizard_file" && builders+=(cmake)
+        echo "    Builders: ${builders[@]} (Default: $DEF_BUILDER)"
+    done
 }
 
 install_template()
@@ -208,7 +218,12 @@ parse_wizard_json()
 
 instantiate()
 {
-    local template=$OPT_SDK_ROOT/$DEF_TEMPLATE_PATH
+    local template=$OPT_SDK_ROOT/$DEF_TEMPLATES_PATH/sailfishos-$OPT_TYPE
+
+    if [[ ! -f $template/wizard.json ]]; then
+        bad_usage "Unrecognized project type: $OPT_TYPE"
+        return 1
+    fi
 
     local separator=';'
 
@@ -223,8 +238,8 @@ instantiate()
 
 set_defaults()
 {
-    DEF_TEMPLATE_NAME=qtquick
-    DEF_TEMPLATE_PATH=share/qtcreator/templates/wizards/sailfishos-qtquick2app
+    DEF_TEMPLATES_PATH=share/qtcreator/templates/wizards/
+    DEF_TEMPLATES=(qtquick2app qtquick2app-qmlonly)
     DEF_BUILDERS=(qmake cmake)
     DEF_BUILDER=qmake
 
