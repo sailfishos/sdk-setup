@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (C) 2013 - 2020 Jolla Ltd.
+# Copyright (C) 2013 - 2021 Jolla Ltd.
 # Copyright (C) 2019 - 2020 Open Mobile Platform LLC.
 # Contact: http://jolla.com/
 # All rights reserved.
@@ -539,8 +539,16 @@ GLOBAL OPTIONS
         build time dependencies. The optional value controls zypper verbosity.
         The default is 'verbose'.
 
+        By default the already installed packages from output directory are
+        upgraded using 'zypper dup' before installing build time dependencies.
+        This can be disabled with '--no-zypper-dup'
+
     --no-search-output-dir
         Override '--search-output-dir' option
+
+    --no-zypper-dup
+        Disable upgrading installed packages before installing build time
+        dependencies. Only effective with '--search-output-dir'
 
     -s, --specfile <file>
         Specify the .spec file
@@ -1032,7 +1040,7 @@ maybe_verify_target_dependencies() {
             filter_repo "$exclude_source_name" "$OPT_OUTPUTDIR" "$filtered_outputdir"
             local args=(--"$OPT_SEARCH_OUTPUTDIR_VERBOSITY" --non-interactive \
                 --plus-repo "$filtered_outputdir" --no-gpg-checks)
-            sb2 -t "$OPT_TARGET" -m sdk-install -R zypper "${args[@]}" dup --from '~plus-repo-1'
+            [[ $OPT_NO_ZYPPER_DUP ]] || sb2 -t "$OPT_TARGET" -m sdk-install -R zypper "${args[@]}" dup --from '~plus-repo-1'
             sb2 -t "$OPT_TARGET" -m sdk-install -R zypper "${args[@]}" in "${deps[@]}"
         else
             sb2 -t "$OPT_TARGET" -m sdk-install -R zypper --non-interactive in "${deps[@]}"
@@ -3009,6 +3017,7 @@ OPT_OUTPUTDIR=$(readlink -f ./RPMS)
 OPT_CLEAN_OUTPUTDIR=1
 OPT_SEARCH_OUTPUTDIR=
 OPT_SEARCH_OUTPUTDIR_VERBOSITY=verbose
+OPT_NO_ZYPPER_DUP=
 OPT_OUTPUT_PREFIX=
 OPT_PKGDIR="./rpm"
 OPT_PRO_FILE_OR_DIR=
@@ -3187,6 +3196,9 @@ while [[ "$1" ]]; do
             ;;
         "--no-search-output-dir") shift
             OPT_SEARCH_OUTPUTDIR=
+            ;;
+        "--no-zypper-dup") shift
+            OPT_NO_ZYPPER_DUP=1
             ;;
         "-s" | "--specfile" ) shift
             OPT_SPEC="$1"; shift
