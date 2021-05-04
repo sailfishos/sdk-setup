@@ -1022,31 +1022,38 @@ maybe_verify_target_dependencies() {
 
     local deps=()
     readarray -t deps < <(sb2 -t "$OPT_TARGET" rpmspec --query --buildrequires "$OPT_SPEC" |sed 's/\s*$//')
+
+    if inside_build_engine; then
+        local oldpkgs=$(sb2 -t "$OPT_TARGET" -m sdk-install rpm -qa)
+    fi
+
+    local args=(--non-interactive)
+
+    if [[ $OPT_SEARCH_OUTPUTDIR ]]; then
+        local filtered_outputdir=$STATEDIR/filtered-output-dir
+        local exclude_source_name=$(get_spec_tag "%{name}")
+        filter_repo "$exclude_source_name" "$OPT_OUTPUTDIR" "$filtered_outputdir"
+        args+=(--"$OPT_SEARCH_OUTPUTDIR_VERBOSITY" \
+            --plus-repo "$filtered_outputdir" --no-gpg-checks)
+    fi
+
     if [[ $deps ]]; then
-        if inside_build_engine; then
-            local oldpkgs=$(sb2 -t "$OPT_TARGET" -m sdk-install rpm -qa)
-        fi
-        if [[ $OPT_SEARCH_OUTPUTDIR ]]; then
-            local filtered_outputdir=$STATEDIR/filtered-output-dir
-            local exclude_source_name=$(get_spec_tag "%{name}")
-            filter_repo "$exclude_source_name" "$OPT_OUTPUTDIR" "$filtered_outputdir"
-            local args=(--"$OPT_SEARCH_OUTPUTDIR_VERBOSITY" --non-interactive \
-                --plus-repo "$filtered_outputdir" --no-gpg-checks)
-            # Install first, then dup to ensure we really use packages from
-            # the output directory as the repos may contain newer packages and
-            # those would be pulled in preferably.  This happens not only when
-            # working with older sources but also when a package hardcodes
-            # version in its spec and the --fix-version option is not active.
-            sb2 -t "$OPT_TARGET" -m sdk-install -R zypper "${args[@]}" in "${deps[@]}"
-            sb2 -t "$OPT_TARGET" -m sdk-install -R zypper "${args[@]}" dup --from '~plus-repo-1'
-        else
-            sb2 -t "$OPT_TARGET" -m sdk-install -R zypper --non-interactive in "${deps[@]}"
-        fi
-        if inside_build_engine; then
-            local newpkgs=$(sb2 -t "$OPT_TARGET" -m sdk-install rpm -qa)
-            if [[ $newpkgs != $oldpkgs ]]; then
-                sdk-manage target sync "$OPT_TARGET"
-            fi
+        sb2 -t "$OPT_TARGET" -m sdk-install -R zypper "${args[@]}" in "${deps[@]}"
+    fi
+
+    if [[ $OPT_SEARCH_OUTPUTDIR ]]; then
+        # Install first, then dup to ensure we really use packages from
+        # the output directory as the repos may contain newer packages and
+        # those would be pulled in preferably.  This happens not only when
+        # working with older sources but also when a package hardcodes
+        # version in its spec and the --fix-version option is not active.
+        sb2 -t "$OPT_TARGET" -m sdk-install -R zypper "${args[@]}" dup --from '~plus-repo-1'
+    fi
+
+    if inside_build_engine; then
+        local newpkgs=$(sb2 -t "$OPT_TARGET" -m sdk-install rpm -qa)
+        if [[ $newpkgs != $oldpkgs ]]; then
+            sdk-manage target sync "$OPT_TARGET"
         fi
     fi
 }
