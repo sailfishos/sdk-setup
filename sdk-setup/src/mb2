@@ -645,6 +645,80 @@ GLOBAL OPTIONS
         packages, read the passphrase from the <file>. Only the first line will
         be read.
 
+    --hooks-dir <dir>
+        The directory where to look for hooks. See HOOKS below.
+
+
+HOOKS
+    $ME allows altering its behavior with hooks in form of executable files
+    located under a directory specified with the '--hooks-dir' option.
+
+    Hooks may receive their inputs through program arguments, environment
+    variables and standard input stream as described below.
+
+    The following hooks are recognized:
+
+    pre-pull-build-requires [<dependency>...]
+        This hook is invoked by commands that take care of updating build time
+        dependencies – prior to doing so.
+
+        The arguments and available environment variables are the same as with
+        the 'pull-build-requires' hook.
+
+    pull-build-requires [<dependency>...]
+        This hook is invoked by commands that take care of updating build time
+        dependencies. This hook fully overrides the default procedure of
+        updating build time dependencies.
+
+        Any <dependency> determined by querying the RPM spec file will be
+        passed as an argument to this hook.
+
+        The following environment variables provide additional information to
+        this hook:
+
+        SFDK_OUTPUT_DIR
+            The effective output directory, possibly influenced by the
+            'output-dir' or 'output-prefix' configuration options.
+
+        SFDK_OUTPUT_DIR_FILTERED
+            Only set when the 'search-output-dir' configuration option is
+            active. This points to a copy of the output directory with the RPM
+            binaries built from the current project excluded.
+
+        SFDK_TARGET
+            The active build target. With the 'snapshot' configuration option
+            used, this is the snapshot target name and the original build
+            target name is available as 'SFDK_TARGET_ORIGINAL'.
+
+        SFDK_TARGET_ORIGINAL
+            See 'SFDK_TARGET'.
+
+        SFDK_SPEC_FILE
+            The .spec file used for this build.
+
+    post-pull-build-requires [<dependency>...]
+        This hook is invoked by commands that take care of updating build time
+        dependencies – after doing so.
+
+        The arguments and available environment variables are the same as with
+        the 'pull-build-requires' hook.
+
+    post-package <package-file>...
+        This hook is invoked whenever binary packages have been produced.
+
+        Any <package-file> that has been produced is passed as an argument to
+        this hook.
+
+    pre-sign <package-file>...
+        This hook is invoked whenever binary packages have been produced but
+        prior to signing them.
+
+        Any <package-file> that has been produced is passed as an argument to
+        this hook.
+
+    prepare-device <name>
+        This hook is invoked prior to accessing a device.
+
 
 KNOWN ISSUES
 
@@ -788,6 +862,85 @@ git_() (
 
 oomadvice() {
     /usr/libexec/sdk-setup/oomadvice "$@"
+}
+
+make_gvariant_dict() {
+    local names=("$@")
+
+    local name= value= body=
+    for name in ${names:+"${names[@]}"}; do
+        eval value=\$$name
+        body+=${body:+, }'"'$name'"':'"'$value'"'
+    done
+
+    printf "{%s}\n" "$body"
+}
+
+make_gvariant_array() {
+    local items=("$@")
+
+    local item= body=
+    for item in ${items:+"${items[@]}"}; do
+        body+=${body:+, }'"'$item'"'
+    done
+
+    printf "[%s]\n" "$body"
+}
+
+has_hook() {
+    local hook=$1
+
+    [[ $OPT_HOOKS_DIR ]] || return
+
+    # Do not check for executable permission - it would not be always possible
+    # to get this right under build engine.
+    [[ -f $OPT_HOOKS_DIR/$hook ]] || return
+}
+
+run_hook() {
+    local hook=$1
+    local exports=($2)
+    local args=("${@:3}")
+
+    has_hook "$hook" || return 0
+
+    local SFDK_OUTPUT_DIR=$OPT_OUTPUTDIR
+    local SFDK_SOURCE_DIR=${OPT_SRC_DIR:-$PWD}
+    local SFDK_TARGET=$OPT_TARGET
+    local SFDK_TARGET_ORIGINAL=$OPT_ORIGINAL_TARGET
+    local SFDK_SPEC_FILE=$OPT_SPEC
+
+    exports+=(SFDK_OUTPUT_DIR)
+    exports+=(SFDK_SOURCE_DIR)
+    exports+=(SFDK_TARGET)
+    exports+=(SFDK_TARGET_ORIGINAL)
+    exports+=(SFDK_SPEC_FILE)
+
+    if ! inside_build_engine; then
+        (
+            export ${exports[*]}
+            "$OPT_HOOKS_DIR/$hook" ${args:+"${args[@]}"}
+        )
+        return
+    fi
+
+    local environment=$(make_gvariant_dict ${exports[*]})
+    local args_=$(make_gvariant_array ${args:+"${args[@]}"})
+
+    local reply=
+    reply=$(gdbus call --timeout=30000 --system \
+        --dest="$SAILFISH_SDK_SFDK_DBUS_SERVICE" --object-path / \
+        --method org.sailfishos.sfdk.Sdk.runHook \
+        "$OPT_HOOKS_DIR/$hook" "$args_" "$PWD" "$environment") \
+        || return
+
+    if [[ $reply == "()" ]]; then
+        return 0
+    elif [[ $reply =~ ^\(([0-9]+),\)$ ]]; then
+        return ${BASH_REMATCH[1]}
+    else
+        fatal "Internal error: Unexpected reply from a hook: \"$reply\""
+    fi
 }
 
 get_hostname_from_devices_xml() {
@@ -1029,26 +1182,42 @@ maybe_verify_target_dependencies() {
 
     local args=(--non-interactive)
 
+    local hook_exports=()
+
     if [[ $OPT_SEARCH_OUTPUTDIR ]]; then
         local filtered_outputdir=$STATEDIR/filtered-output-dir
         local exclude_source_name=$(get_spec_tag "%{name}")
         filter_repo "$exclude_source_name" "$OPT_OUTPUTDIR" "$filtered_outputdir"
         args+=(--"$OPT_SEARCH_OUTPUTDIR_VERBOSITY" \
             --plus-repo "$filtered_outputdir" --no-gpg-checks)
+
+        local SFDK_OUTPUT_DIR_FILTERED=$filtered_outputdir
+        hook_exports+=(SFDK_OUTPUT_DIR_FILTERED)
     fi
 
-    if [[ $deps ]]; then
-        sb2 -t "$OPT_TARGET" -m sdk-install -R zypper "${args[@]}" in "${deps[@]}"
+    run_hook pre-pull-build-requires "${hook_exports[*]}" "${deps[@]}" \
+        || fatal "The 'pre-pull-build-requires' hook failed"
+
+    if has_hook pull-build-requires; then
+        run_hook pull-build-requires "${hook_exports[*]}" "${deps[@]}" \
+            || fatal "The 'pull-build-requires' hook failed"
+    else
+        if [[ $deps ]]; then
+            sb2 -t "$OPT_TARGET" -m sdk-install -R zypper "${args[@]}" in "${deps[@]}"
+        fi
+
+        if [[ $OPT_SEARCH_OUTPUTDIR ]]; then
+            # Install first, then dup to ensure we really use packages from
+            # the output directory as the repos may contain newer packages and
+            # those would be pulled in preferably.  This happens not only when
+            # working with older sources but also when a package hardcodes
+            # version in its spec and the --fix-version option is not active.
+            sb2 -t "$OPT_TARGET" -m sdk-install -R zypper "${args[@]}" dup --from '~plus-repo-1'
+        fi
     fi
 
-    if [[ $OPT_SEARCH_OUTPUTDIR ]]; then
-        # Install first, then dup to ensure we really use packages from
-        # the output directory as the repos may contain newer packages and
-        # those would be pulled in preferably.  This happens not only when
-        # working with older sources but also when a package hardcodes
-        # version in its spec and the --fix-version option is not active.
-        sb2 -t "$OPT_TARGET" -m sdk-install -R zypper "${args[@]}" dup --from '~plus-repo-1'
-    fi
+    run_hook post-pull-build-requires "${hook_exports[*]}" "${deps[@]}" \
+        || fatal "The 'post-pull-build-requires' hook failed"
 
     if inside_build_engine; then
         local newpkgs=$(sb2 -t "$OPT_TARGET" -m sdk-install rpm -qa)
@@ -1231,7 +1400,14 @@ get_device() {
 }
 
 ensure_device_prepared() {
-    inside_build_engine || return 0
+    # Under build engine the hook is already run by sfdk handling the dbus
+    # call below.
+    if ! inside_build_engine; then
+        local hook_exports=()
+        run_hook prepare-device "${hook_exports[*]}" "$OPT_DEVICE" \
+            || fatal "The 'prepare-device' hook failed"
+        return
+    fi
 
     gdbus call --timeout=30000 --system \
         --dest="$SAILFISH_SDK_SFDK_DBUS_SERVICE" --object-path /device \
@@ -1839,6 +2015,9 @@ sign_rpms() {
     local rpms=$(find_rpms $all_opt "$OPT_OUTPUTDIR" "$STATEDIR/spec")
     [[ $rpms ]] || fatal "No package found"
 
+    local hook_exports=()
+    run_hook pre-sign "${hook_exports[*]}" ${rpms} || fatal "The 'pre-sign' hook failed"
+
     if [[ -x $SDK_RPMSIGN ]]; then
         $SDK_RPMSIGN ${rpms}
     else
@@ -2138,7 +2317,12 @@ run_build() {
             "${BUILD_EXTRA_ARGS[@]}" \
             || return
     )
-    [[ ! $BUILD_SIGN ]] || sign_rpms
+
+    [[ ! $BUILD_SIGN ]] || sign_rpms || return
+
+    local hook_exports=()
+    local rpms=$(find_rpms "$OPT_OUTPUTDIR" "$STATEDIR/spec")
+    run_hook post-package "${hook_exports[*]}" ${rpms} || fatal "The 'post-package' hook failed"
 }
 
 run_prepare() {
@@ -2474,7 +2658,12 @@ run_package() {
             "$TMP_SPEC" \
             || return
     )
+
     [[ ! $PACKAGE_SIGN ]] || sign_rpms
+
+    local hook_exports=()
+    local rpms=$(find_rpms "$OPT_OUTPUTDIR" "$STATEDIR/spec")
+    run_hook post-package "${hook_exports[*]}" ${rpms} || fatal "The 'post-package' hook failed"
 }
 
 run_build_shell() {
@@ -3047,6 +3236,7 @@ OPT_PACKAGE_SIGN_USER=
 OPT_PACKAGE_SIGN_PASSPHRASE=
 OPT_PACKAGE_SIGN_PASSPHRASE_FILE=
 OPT_CHECK_SUITES=
+OPT_HOOKS_DIR=
 
 STATEDIR=$PWD/.$WE
 TMP_SPEC=$STATEDIR/spec
@@ -3298,6 +3488,11 @@ while [[ "$1" ]]; do
         "--check-suites" )
             [[ $2 ]] || fatal "The '$1' option requires an argument"
             OPT_CHECK_SUITES=$2
+            shift 2
+            ;;
+        "--hooks-dir" )
+            [[ $2 ]] || fatal "The '$1' option requires an argument"
+            OPT_HOOKS_DIR=$2
             shift 2
             ;;
         # Note that OPT_NEEDSPEC and OPT_NEEDTARGET may be additionaly set later
