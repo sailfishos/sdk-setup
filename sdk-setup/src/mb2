@@ -3007,6 +3007,13 @@ maybe_symlink_read() {
 # this is same as basename $0
 ME=${0/#*\//}
 
+# this is what is closer to the user
+if inside_build_engine && [[ $1 != --self-test ]]; then
+    WE=sfdk
+else
+    WE=mb2
+fi
+
 DEF_TASK='git:^[[:alpha:]]{2,5}[[:digit:]]{3,}'
 
 # option variables
@@ -3042,11 +3049,13 @@ OPT_PACKAGE_SIGN_PASSPHRASE=
 OPT_PACKAGE_SIGN_PASSPHRASE_FILE=
 OPT_CHECK_SUITES=
 
-STATEDIR=$PWD/.mb2
+STATEDIR=$PWD/.$WE
 TMP_SPEC=$STATEDIR/spec
 COMPILEDB_INPUT=$STATEDIR/compiledb-input.txt
-SNAPSHOT_POOL_SUFFIX=mb2.XXX
+
+SNAPSHOT_POOL_SUFFIX=$WE.XXX
 SNAPSHOT_POOL_SIZE=5
+
 SDK_RPMSIGN=/usr/libexec/sdk-setup/sdk-rpmsign
 
 CHECK_LEVEL_SOURCE=source
