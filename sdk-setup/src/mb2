@@ -1822,41 +1822,6 @@ switch_to_snapshot() {
     notice "Using the '$OPT_TARGET' snapshot of the build target"
 }
 
-run_build_requires__process_args() {
-    BUILD_REQUIRES_MODE=
-    BUILD_REQUIRES_NOREFRESH=
-
-    if [[ $OPT_SNAPSHOT ]]; then
-        BUILD_REQUIRES_NOREFRESH=1
-    fi
-    while [[ "$1" ]]; do
-        case "$1" in
-            --refresh) shift
-                BUILD_REQUIRES_NOREFRESH= ;;
-            --no-refresh) shift
-                BUILD_REQUIRES_NOREFRESH=1 ;;
-            reset|--reset)
-                if [[ $1 == --reset ]]; then
-                    notice "The '--reset' option is deprecated. Use 'reset' (non-option) instead."
-                fi
-                shift
-                if [[ ! $OPT_SNAPSHOT ]]; then
-                    fatal "The 'reset' command is only effective with build target snapshots."
-                fi
-                BUILD_REQUIRES_MODE=reset ;;
-            pull) shift
-                BUILD_REQUIRES_MODE=pull ;;
-            *)
-                short_usage quit
-                ;;
-        esac
-    done
-    if [[ ! $BUILD_REQUIRES_MODE ]]; then
-        notice "Omitting 'pull' is deprecated. Pass 'pull' explicitly."
-        BUILD_REQUIRES_MODE=pull
-    fi
-}
-
 sign_rpms__prepare() {
     if ! [[ -x $SDK_RPMSIGN ]]; then 
         sign_rpms_native__prepare
@@ -1960,6 +1925,41 @@ sign_rpms_native() {
     fi
 
     rpmsign --addsign "${rpms[@]}" "${extra_args[@]}" </dev/null
+}
+
+run_build_requires__process_args() {
+    BUILD_REQUIRES_MODE=
+    BUILD_REQUIRES_NOREFRESH=
+
+    if [[ $OPT_SNAPSHOT ]]; then
+        BUILD_REQUIRES_NOREFRESH=1
+    fi
+    while [[ "$1" ]]; do
+        case "$1" in
+            --refresh) shift
+                BUILD_REQUIRES_NOREFRESH= ;;
+            --no-refresh) shift
+                BUILD_REQUIRES_NOREFRESH=1 ;;
+            reset|--reset)
+                if [[ $1 == --reset ]]; then
+                    notice "The '--reset' option is deprecated. Use 'reset' (non-option) instead."
+                fi
+                shift
+                if [[ ! $OPT_SNAPSHOT ]]; then
+                    fatal "The 'reset' command is only effective with build target snapshots."
+                fi
+                BUILD_REQUIRES_MODE=reset ;;
+            pull) shift
+                BUILD_REQUIRES_MODE=pull ;;
+            *)
+                short_usage quit
+                ;;
+        esac
+    done
+    if [[ ! $BUILD_REQUIRES_MODE ]]; then
+        notice "Omitting 'pull' is deprecated. Pass 'pull' explicitly."
+        BUILD_REQUIRES_MODE=pull
+    fi
 }
 
 run_build_requires() {
