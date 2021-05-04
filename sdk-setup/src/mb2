@@ -1233,11 +1233,10 @@ get_device() {
 ensure_device_prepared() {
     inside_build_engine || return 0
 
-    local reply=
-    reply=$(dbus-send --type=method_call --print-reply=literal --reply-timeout=30000 --system \
-        --dest="$SAILFISH_SDK_SFDK_DBUS_SERVICE" /device org.sailfishos.sfdk.Device.prepare) \
-        || true
-    [[ $reply == 'method return '* ]]
+    gdbus call --timeout=30000 --system \
+        --dest="$SAILFISH_SDK_SFDK_DBUS_SERVICE" --object-path /device \
+        --method org.sailfishos.sfdk.Device.prepare \
+        >/dev/null
 }
 
 # SSH requires that a private key file is only accessible to the user. Under
