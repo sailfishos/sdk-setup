@@ -5,6 +5,7 @@
 
 set -o nounset
 shopt -s extglob
+shopt -s globstar
 
 # Make sure normal users can use any dirs we make
 umask 022
@@ -1428,6 +1429,8 @@ synchronise_target() {
         maybe_times=
     fi
 
+    generate_qml_bundle "$MER_TARGETS/${target}${libdir}"
+
     echo >&2 "Synchronising target to host..."
     # The filter=". -" means to read filters from stdin (the <<EOF)
     rsync -r $maybe_times --no-devices --no-specials \
@@ -1524,6 +1527,30 @@ amend_target_rpm_macros() {
 # Created by sdk-manage
 %__cmake cmake
 END
+}
+
+#generates sailfishos-bundle.json for QtCreator
+generate_qml_bundle() {
+    local libdir=$1
+    local imports=$(sed -n -e 's,^\s*exports: \["\([^/]\+\)/[^ ]\+ \([0-9.]\+\)"\],"\1 \2",p' \
+            "$libdir"/qt5/qml/**/plugins.qmltypes \
+            |sort -u |sed '$! s/$/,/')
+
+    local bundlefile=$libdir/qt5/qml/sailfishos-bundle.json
+    cat - > "$bundlefile" <<EOF
+{
+    "name": "QtQuick2",
+    "searchPaths": [
+        "\$(QT_INSTALL_QML)"],
+    "installPaths": [
+        "\$(QT_INSTALL_QML)"],
+    "implicitImports": [
+        "__javascriptQt5__"],
+    "supportedImports": [
+        $(sed '2,$s/^/        /' <<<$imports)
+    ]
+}
+EOF
 }
 
 # Download and install a rootfs
