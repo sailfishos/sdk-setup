@@ -1523,10 +1523,10 @@ amend_target_rpm_macros() {
 
     # Older targets define __cmake with absolute path. mb2 needs it relative to
     # be able to wrap it.
-    enter_target "$target" tee /etc/rpm/macros.cmake.sdk >/dev/null <<END
+    enter_target "$target" tee /etc/rpm/macros.cmake.sdk >/dev/null <<EOF
 # Created by sdk-manage
 %__cmake cmake
-END
+EOF
 }
 
 #generates sailfishos-bundle.json for QtCreator
