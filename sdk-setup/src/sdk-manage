@@ -2095,7 +2095,7 @@ remove_target() {
     local is_snapshot=$(target_is_snapshot "$target" && echo 1)
     if [[ -d $SBOX2DIR/$target ]]; then
         local mode=$(get_object_mode "target:$target")
-        if [[ $MODE != "$mode" && !$snapshots_of && ! $force ]]; then
+        if [[ $MODE != "$mode" && ! $snapshots_of && ! $force ]]; then
             echo >&2 "The target '$target' can only be removed in the '$mode' mode."
             return 1
         fi
