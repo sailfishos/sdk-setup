@@ -5,6 +5,7 @@ import argparse
 import os
 import subprocess
 import re
+import tempfile
 
 def assert_valid_sb2_name(name):
     if not os.path.isdir(os.path.expanduser("~/.scratchbox2/%s" % name)):
@@ -152,8 +153,10 @@ def delete(args, root):
 
 def save(args,root):
     # Save XML
-    with open(args.target_xml, 'w') as f:
+    with tempfile.NamedTemporaryFile(mode='w', prefix=args.target_xml, delete=False) as f:
         f.write(et.tostring(root, encoding='unicode', pretty_print=True))
+        f.close()
+        os.rename(f.name, args.target_xml)
 
 
 parser = argparse.ArgumentParser(description='Updates QtCreator Target XML file with a new Mer Target')
