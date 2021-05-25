@@ -41,6 +41,7 @@ usage:
     $SELF target upgradable <name>
     $SELF target install <name> <url> [--tooling <name>
     $____                [--tooling-url <url>]] [--toolchain <name>]
+    $____                [--no-snapshot]
     $SELF target snapshot [-r|--reset[={outdated|force}]] <original> <snapshot>
     $SELF target reserve <original> <snapshot-template> <lock-file> <pool-size>
     $SELF target remove [--force] [--snapshots-of] <name>
@@ -1556,11 +1557,15 @@ EOF
 # Download and install a rootfs
 install_target() {
     local skip_toolchain_check= tooling= tooling_url= toolchain= positional_args=()
+    local no_snapshot=
     while [[ $# -gt 0 ]]; do
         case $1 in
             --jfdi)
 	        # Sometimes you want to install without checking the toolchain - jfdi
                 skip_toolchain_check=1
+                ;;
+            --no-snapshot)
+                no_snapshot=1
                 ;;
             --tooling)
                 tooling=${2:-}
@@ -1650,10 +1655,10 @@ install_target() {
             fi
         fi
         if [[ ! $succeeded ]]; then
-            rm -rf "$SBOX2DIR/$target"
-            sudo rm -rf "$MER_TARGETS/$target"
+            rm -rf "$SBOX2DIR/$target"{,."$DEFAULT_SNAPSHOT_SUFFIX"}
+            sudo rm -rf "$MER_TARGETS/$target"{,."$DEFAULT_SNAPSHOT_SUFFIX"}
             if [[ $INSIDE_VBOX ]]; then
-                rm -rf "$HOST_TARGETS/$target"
+                rm -rf "$HOST_TARGETS/$target"{,."$DEFAULT_SNAPSHOT_SUFFIX"}
             fi
             if [[ $tooling_installed ]]; then
                 remove_tooling "$tooling"
@@ -1796,6 +1801,11 @@ install_target() {
         fi
     else
         set_object_mode "target:$target" "$MODE"
+    fi
+
+    if [[ ! $no_snapshot ]]; then
+        echo >&2 "Creating default snapshot"
+        snapshot_target "$target"{,."$DEFAULT_SNAPSHOT_SUFFIX"} || return
     fi
 
     echo >&2 "Target '$target' now setup"
@@ -2352,6 +2362,8 @@ MODE=$MODE_USER
 
 SNAPSHOT_OF_KEY=snapshot-of
 SNAPSHOT_TIME_KEY=snapshot-time
+
+DEFAULT_SNAPSHOT_SUFFIX=default
 
 LOCK_KEY=lock
 LOCK_TIME_KEY=lock-time
