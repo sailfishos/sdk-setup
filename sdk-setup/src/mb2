@@ -181,8 +181,8 @@ testing on one or more of the four recognized test levels:
     4. Dynamic testing (validation) performed on a target device (system testing)
 
        The 'check' command does not include the deployment step. Package(s)
-       need to be deployed to the device selected with the 'device'
-       configuration option beforehand, possibly with the 'deploy' command in
+       need to be deployed to the device selected with the '--device'
+       global option beforehand, possibly with the 'deploy' command in
        case of packages associated with the build tree under CWD.
 
 The available test suites may be listed with the '--list-suites' option to the
@@ -678,15 +678,15 @@ HOOKS
 
         SFDK_OUTPUT_DIR
             The effective output directory, possibly influenced by the
-            'output-dir' or 'output-prefix' configuration options.
+            '--output-dir' or '--output-prefix' global options.
 
         SFDK_OUTPUT_DIR_FILTERED
-            Only set when the 'search-output-dir' configuration option is
-            active. This points to a copy of the output directory with the RPM
+            Only set when the '--search-output-dir' global option is used.
+            This points to a copy of the output directory with the RPM
             binaries built from the current project excluded.
 
         SFDK_TARGET
-            The active build target. With the 'snapshot' configuration option
+            The active build target. With the '--snapshot' global option
             used, this is the snapshot target name and the original build
             target name is available as 'SFDK_TARGET_ORIGINAL'.
 
