@@ -1313,6 +1313,7 @@ get_snapshots_of_target() {
     local target=$1
     local other=
     for other in $(get_all_of_type_target); do
+        local snapshot_of=
         snapshot_of=$(object_config_get "target:$other" "$SNAPSHOT_OF_KEY")
         if [[ $snapshot_of == "$target" ]]; then
             echo "$other"
