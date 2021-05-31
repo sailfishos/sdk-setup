@@ -419,7 +419,7 @@ read_config()
 
 emulator_run()
 {
-    mb2 --device "$OPT_DEVICE" run "$@"
+    mb2 "${OPT_MB2_OPTIONS[@]}" --device "$OPT_DEVICE" run "$@"
 }
 
 emulator_run_c()
@@ -1408,7 +1408,7 @@ parse_options()
                 ;;
             -Xmb2)
                 [[ $# -ge 2 ]] || { fatal "Argument expected: '$1'"; return 1; }
-                OPT_MB2_OPTIONS+=("$1" "$2")
+                OPT_MB2_OPTIONS+=("$2")
                 shift
                 ;;
             -*)
