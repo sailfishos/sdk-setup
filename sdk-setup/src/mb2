@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (C) 2013 - 2020 Jolla Ltd.
+# Copyright (C) 2013 - 2021 Jolla Ltd.
 # Copyright (C) 2019 - 2020 Open Mobile Platform LLC.
 # Contact: http://jolla.com/
 # All rights reserved.
@@ -415,9 +415,9 @@ COMMANDS
         mandatory option:
 
         --pkcon
-            Uses 'pkcon' to install RPM package(s). Requires the "Allow
-            untrusted software" option enabled in Settings, does not require
-            root access to the device.
+            Uses 'pkcon' to install RPM package(s). Does not require root
+            access to the device. Not all device operating system versions and
+            configurations permit use of this method.
 
         --rsync
             This method is special.  Uses 'rsync' to copy the installed files
