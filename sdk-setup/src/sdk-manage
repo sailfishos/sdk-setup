@@ -2046,6 +2046,9 @@ reserve_target() {
 
         pooled_targets+=("$target")
 
+        # Target currently in use
+        [[ $other_lock_file == $lock_file ]] || ! is_locked "$other_lock_file" || continue
+
         local lock_time=
         lock_time=$(object_config_get "target:$target" "$LOCK_TIME_KEY") || return
         lock_time=$(date --date "$lock_time" +%s) || return
