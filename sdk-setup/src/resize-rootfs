@@ -48,7 +48,16 @@ expandpart()
     sfdisk --force -N 1 /dev/sda <<<", +"
     newsize=$(partsize)
     resizepart /dev/sda 1 "$newsize"
-    resize2fs /dev/sda1
+
+    fstype=$(findmnt /dev/sda1 -o FSTYPE --noheadings)
+    case $fstype in
+        ext?)
+            resize2fs /dev/sda1
+            ;;
+        btrfs)
+            btrfs filesystem resize max /
+            ;;
+    esac
 }
 
 devsize=$(devsize)
