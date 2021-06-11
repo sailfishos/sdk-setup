@@ -52,10 +52,14 @@ SDK assistant tool
 
 Usage:
     $(basename $0) [tooling|target] create <name> <URL> [--tooling <tooling>]
+                   [--no-snapshot]
                             : create a new sb2 tooling or target <name>,
                               using the image at <URL>. In case of a new
                               target, an appropriate tooling will be selected
                               automatically unless overridden with '--tooling'.
+                              Automatic creation of the default build target
+                              snapshot may be suppressed with the
+                              '--no-snapshot' option.
 
     $(basename $0) [tooling|target] update <name>
                             : update the given sb2 tooling or target.
@@ -165,6 +169,7 @@ OPT_DRY_RUN=
 OPT_LIST=
 OPT_MAINTAIN=
 OPT_NAME=
+OPT_NO_SNAPSHOT=
 OPT_PACKAGE_LIST=
 OPT_PACKAGE_INSTALL=
 OPT_PACKAGE_NAME_PATTERNS=
@@ -203,6 +208,9 @@ while [[ ${1:-} ]]; do
             [[ $# -ge 2 && $2 ]] || fail "missing argument for $1"
             OPT_PASSWORD=$2
             shift
+            ;;
+        --no-snapshot )
+            OPT_NO_SNAPSHOT=1
             ;;
         --snapshots-of )
             OPT_SNAPSHOTS_OF=1
@@ -332,6 +340,10 @@ fi
 
 if [[ $OPT_ALL && ! $OPT_REGISTER ]]; then
     fail "The '--all' option can only be used with the 'register' command"
+fi
+
+if [[ $OPT_NO_SNAPSHOT && ! $OPT_CREATE ]]; then
+    fail "The '--no-snapshot' option can only be used with the 'create' command"
 fi
 
 if [[ $OPT_SNAPSHOTS_OF && ! $OPT_REMOVE ]]; then
@@ -484,9 +496,12 @@ fi
 
 if [[ $OPT_CREATE ]]; then
     if [[ $OPT_TOOLING_NAME ]]; then
-        _ sdk-manage "$OPT_TYPE" install "$OPT_NAME" "$OPT_URL" --tooling "$OPT_TOOLING_NAME"
+        _ sdk-manage "$OPT_TYPE" install "$OPT_NAME" "$OPT_URL" \
+            --tooling "$OPT_TOOLING_NAME" \
+            ${OPT_NO_SNAPSHOT:+--no-snapshot}
     else
-        _ sdk-manage "$OPT_TYPE" install "$OPT_NAME" "$OPT_URL"
+        _ sdk-manage "$OPT_TYPE" install "$OPT_NAME" "$OPT_URL" \
+            ${OPT_NO_SNAPSHOT:+--no-snapshot}
     fi
     exit
 fi

@@ -71,7 +71,7 @@ def get_xml(args):
     except :
         print("Error loading %s, used new blank xml" % args.target_xml)
         with open(args.target_xml, "w") as f:
-                f.write("""<targets version="3">
+                f.write("""<targets version="4">
 </targets>
 """)
         tree = et.parse(args.target_xml, parser)
@@ -80,18 +80,20 @@ def get_xml(args):
 
     if root.tag != "targets":
         raise Exception("xml must have <targets> as root element")
-    if int(root.get("version")) != 3:
-        raise Exception("Only version 3 of MerTarget XML is supported")
+    if int(root.get("version")) != 4:
+        raise Exception("Only version 4 of MerTarget XML is supported")
 
     return root
 
 
 def update(args, root):
-    # Make sure the name is valid
+    # Make sure the names are valid
     assert_valid_sb2_name(args.name)
+    if args.origin:
+        assert_valid_sb2_name(args.origin)
 
     # Create a brand new node so we don't leave any junk behind
-    new = et.Element("target", name=args.name)
+    new = et.Element("target", name=args.name, origin=args.origin)
 
     # See if there is a target using this name already
     existing =  root.find(".//target[@name='%s']" % args.name)
@@ -162,7 +164,9 @@ def save(args,root):
 parser = argparse.ArgumentParser(description='Updates QtCreator Target XML file with a new Mer Target')
 
 parser.add_argument('--name', required=True,
-                    help="Name of SDK Target to add/update (sb2 name)")
+                    help="Name of SDK Target (snapshot) to add/update (sb2 name)")
+parser.add_argument('--origin',
+                    help="Name of the corresponding original SDK Target in case of a snapshot (sb2 name)")
 parser.add_argument('--delete', action='store_true',
                     help="Delete named SDK Target from xml")
 parser.add_argument('--target-xml', required=True,

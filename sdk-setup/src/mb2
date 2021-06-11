@@ -124,32 +124,30 @@ Note that it can be usefull to also pass '--from ~plus-repo-1' to 'zypper dup'.
 
 CLEAN BUILDS
 
-It is possible to avoid polluting build targets with build time dependencies
-of a particular package by using the '--snapshot' option. With this option the
-build target is not used directly. Instead a snapshot is taken and the build
-is done using the snapshot of the build target. See '--snapshot' for details
-on how the snapshot is chosen.
+Build time requirements of one package may interfere with those of another
+one.  In order to avoid polluting build targets with dependencies of a
+particular package, mb2 uses build targets through writable snapshots. See
+the description of the '--snapshot' option for details on how a snapshot is
+chosen.
 
-The snapshot will be reset automatically whenever the original build target is
-updated, so if e.g. a locally built package is needed as a build-time
-dependency, instead of installing it manually you should rely on the above
-mentioned fact that with custom output directory the '--search-output-dir'
-option is implied, and combine the '--snapshot' option with the
-'--output-prefix' option.
+It is possible to return to the clean state where just the current build-time
+dependencies are pulled in with the 'build-requires reset' command. Compared to
+the 'build-requires pull' command, this starts with a freshly re-created
+snapshot.
+
+The 'build-requires reset' command is implied whenever the original build
+target is updated, so if a locally built package is needed as a build-time
+dependency, you should not install it manually under the snapshot. Instead,
+rely on the above mentioned fact that a shared output directory can be used to
+supply build-time dependencies, and get locally built dependencies installed
+automatically that way.
 
 For similar reasons, when mb2 fails to install build-time dependencies due to
 errors like "file not found on the server", .i.e., because the local
 repository cache got outdated, it is the original target that should be
 updated, not the snapshot.
 
-Consider enabling '--snapshot' by default as well:
-
-    alias mb2='mb2 --output-prefix ~/RPMS --task --snapshot'
-
-In order to ensure targets are not polluted by running mb2 without
-'--snapshot' unintentionally, mb2 requires to use '--no-snapshot' explicitly
-once at least one snapshot exists for a target.  Existing snapshots can be
-listed and removed using 'sdk-assistant'.
+Existing snapshots can be listed and removed using 'sdk-assistant'.
 
 
 QUALITY ASSURANCE
@@ -181,8 +179,8 @@ testing on one or more of the four recognized test levels:
     4. Dynamic testing (validation) performed on a target device (system testing)
 
        The 'check' command does not include the deployment step. Package(s)
-       need to be deployed to the device selected with the 'device'
-       configuration option beforehand, possibly with the 'deploy' command in
+       need to be deployed to the device selected with the '--device'
+       global option beforehand, possibly with the 'deploy' command in
        case of packages associated with the build tree under CWD.
 
 The available test suites may be listed with the '--list-suites' option to the
@@ -237,15 +235,17 @@ COMMANDS
         commands but refresh the package cache first, unless '--no-refresh' is
         active.
 
-        When the global '--snapshot' option is used, '--no-refresh' is
+        Unless the global '--no-snapshot' option is used, '--no-refresh' is
         implied.  This can be overriden with '--refresh' - do not use unless
         you know what you are doing. If refresh is needed, refresh (and
         update) the original target instead.
 
-        The 'reset' command can only be used together with the '--snapshot'
-        global option, with the effect of reseting the target snapshot
-        forcefully to the (possibly updated) state of the original target
-        first, pulling later.
+        The 'reset' command is an extended version that also ensures that
+        nothing else than the current build-time dependencies is pulled in on
+        top of the clean build environment. It does it by resetting the target
+        snapshot to the (possibly updated) state of the original target first,
+        pulling later. (Not available when the '--no-snapshot' global option
+        is used.)
 
     prepare
         Run rpmbuild. Execute just the %prep section of the .spec file.
@@ -546,16 +546,19 @@ GLOBAL OPTIONS
         Specify the .spec file
 
     -S, --snapshot[=<suffix>]
-        Avoid installing build-time dependencies to the sb2 target - use a
-        snapshot of that target instead.
+        Use a particular snapshot of the build target. The snapshot name is
+        determined by combining the original target name with the given
+        <suffix>, separated with dot.
 
-        The snapshot name will be determined by combining the original target
-        name with the given <suffix>. Any occurence of '%{task}' within the
-        <suffix> will be substituted with the name specified with the '--task'
-        option or with an empty string if the '--task' option is not used.
-        When no suffix was specified or when the substitution yields an empty
-        string, a temporary snapshot will be used (these have ".mb2." followed
-        by random character sequence in their names).
+        By default, i.e., when this option is not used, the snapshot with
+        suffix '$DEF_SNAPSHOT' is used.
+
+        When this option is used but no <suffix> argument is passed, '%pool'
+        is assumed for compatibility with older mb2 versions. (Deprecated)
+
+        When <suffix> is '%pool[,<N>]', a temporary snapshot will be used from
+        a pool of the optionally given size <N> (default: 5).  The actual
+        suffix will follow the pattern 'pool.XXX'.
 
         Snapshot state is preserved across mb2 invocations unless the original
         target was updated meanwhile or it is a temporary snapshot that was
@@ -563,8 +566,10 @@ GLOBAL OPTIONS
         will be reset. Snapshot can be reset forcefully using the
         'build-requires reset' command.
 
-    --no-snapshot
-        Force mb2 to directly use a target for which snapshots exist.
+    --no-snapshot[=force]
+        Use build targets directly. mb2 will refuse to directly use a target
+        for which snapshots exist unless 'force' is passed as the optional
+        argument.
 
     -f, --shared-folder <dir>
         The folder where QtCreator shares devices.xml and ssh keys. This option
@@ -678,16 +683,16 @@ HOOKS
 
         SFDK_OUTPUT_DIR
             The effective output directory, possibly influenced by the
-            'output-dir' or 'output-prefix' configuration options.
+            '--output-dir' or '--output-prefix' global options.
 
         SFDK_OUTPUT_DIR_FILTERED
-            Only set when the 'search-output-dir' configuration option is
-            active. This points to a copy of the output directory with the RPM
+            Only set when the '--search-output-dir' global option is used.
+            This points to a copy of the output directory with the RPM
             binaries built from the current project excluded.
 
         SFDK_TARGET
-            The active build target. With the 'snapshot' configuration option
-            used, this is the snapshot target name and the original build
+            The active build target. Unless the '--no-snapshot' global option
+            is used, this is the snapshot target name and the original build
             target name is available as 'SFDK_TARGET_ORIGINAL'.
 
         SFDK_TARGET_ORIGINAL
@@ -1986,19 +1991,26 @@ END
 }
 
 switch_to_snapshot() {
-    OPT_SNAPSHOT_SUFFIX=${OPT_SNAPSHOT_SUFFIX//%{task\}/$OPT_TASK}
+    if [[ $OPT_SNAPSHOT == *'%{task}'* ]]; then
+        notice "Use of '%{task}' to determine snapshot name is deprecated"
+        OPT_SNAPSHOT=${OPT_SNAPSHOT//%{task\}/$OPT_TASK}
+        : ${OPT_SNAPSHOT:=%pool}
+    fi
 
-    if [[ $OPT_SNAPSHOT_SUFFIX ]]; then
-        OPT_TARGET=$OPT_ORIGINAL_TARGET.$OPT_SNAPSHOT_SUFFIX
-        sdk-manage target snapshot --reset=outdated "$OPT_ORIGINAL_TARGET" "$OPT_TARGET" || return
-    else
+    if [[ $OPT_SNAPSHOT =~ ^%pool(,[0-9]+)?$ ]]; then
+        local pool_size=${BASH_REMATCH[1]#,}
+        : ${pool_size:=$DEF_SNAPSHOT_POOL_SIZE}
+
         local lock=$STATEDIR/snapshot.lock
         exec 10> "$lock" || return
         if ! flock --nonblock 10; then
             fatal "Failed to flock '$lock'"
         fi
         OPT_TARGET=$(sdk-manage target reserve "$OPT_ORIGINAL_TARGET" \
-            "$OPT_ORIGINAL_TARGET.$SNAPSHOT_POOL_SUFFIX" "$lock" "$SNAPSHOT_POOL_SIZE") || return
+            "$OPT_ORIGINAL_TARGET.pool.XXX" "$lock" "$pool_size") || return
+    else
+        OPT_TARGET=$OPT_ORIGINAL_TARGET.$OPT_SNAPSHOT
+        sdk-manage target snapshot --reset=outdated "$OPT_ORIGINAL_TARGET" "$OPT_TARGET" || return
     fi
 
     notice "Using the '$OPT_TARGET' snapshot of the build target"
@@ -3203,13 +3215,14 @@ else
 fi
 
 DEF_TASK='git:^[[:alpha:]]{2,5}[[:digit:]]{3,}'
+DEF_SNAPSHOT=default
+DEF_SNAPSHOT_POOL_SIZE=5
 
 # option variables
 OPT_SPEC=
 OPT_TARGET=
 OPT_ORIGINAL_TARGET=
-OPT_SNAPSHOT=
-OPT_SNAPSHOT_SUFFIX=
+OPT_SNAPSHOT=$DEF_SNAPSHOT
 OPT_NO_SNAPSHOT=
 OPT_DEVICE=
 OPT_OUTPUTDIR=$(readlink -f ./RPMS)
@@ -3241,9 +3254,6 @@ OPT_HOOKS_DIR=
 STATEDIR=$PWD/.$WE
 TMP_SPEC=$STATEDIR/spec
 COMPILEDB_INPUT=$STATEDIR/compiledb-input.txt
-
-SNAPSHOT_POOL_SUFFIX=$WE.XXX
-SNAPSHOT_POOL_SIZE=5
 
 SDK_RPMSIGN=/usr/libexec/sdk-setup/sdk-rpmsign
 
@@ -3402,18 +3412,27 @@ while [[ "$1" ]]; do
             OPT_SPEC="$1"; shift
             ;;
         "-S" | "--snapshot" ) shift
-            OPT_SNAPSHOT=1
-            OPT_SNAPSHOT_SUFFIX=
+            # TODO Accept snapshot name as a separate argument
+            # Omitting '--' in option name for greater clarity to sfdk users
+            notice "Use of the 'snapshot' option without argument is deprecated. Acting as if '%pool' was the argument."
+            OPT_SNAPSHOT=%pool
             ;;
         "-S"=* | "--snapshot"=* )
-            OPT_SNAPSHOT=1
-            OPT_SNAPSHOT_SUFFIX=${1#*=}
+            OPT_SNAPSHOT=${1#*=}
+            [[ $OPT_SNAPSHOT ]] || fatal "The '--snapshot' option requires an argument"
             shift
             ;;
         "--no-snapshot" ) shift
             OPT_SNAPSHOT=
-            OPT_SNAPSHOT_SUFFIX=
             OPT_NO_SNAPSHOT=1
+            ;;
+        "--no-snapshot"=* )
+            OPT_SNAPSHOT=
+            OPT_NO_SNAPSHOT=${1#*=}
+            if [[ $OPT_NO_SNAPSHOT != force ]]; then
+                fatal "Unexpected argument to '--no-snapshot': '$OPT_NO_SNAPSHOT'"
+            fi
+            shift
             ;;
         "-T" | "--task" ) shift
             OPT_TASK=$DEF_TASK
@@ -3558,9 +3577,9 @@ OPT_ORIGINAL_TARGET=$OPT_TARGET
 
 [[ -d ~/.scratchbox2/$OPT_TARGET ]] || fatal "'$OPT_TARGET' is not a known build target"
 
-if [[ $OPT_SNAPSHOT ]]; then
+if [[ ! $OPT_NO_SNAPSHOT && ! $MB2_SELF_TEST_RUN ]]; then
     switch_to_snapshot || fatal "Failed to init build target snapshot"
-elif [[ ! $OPT_NO_SNAPSHOT && ! $MB2_SELF_TEST_RUN ]]; then
+elif [[ $OPT_NO_SNAPSHOT != force && ! $MB2_SELF_TEST_RUN ]]; then
     if [[ $(sdk-manage target list --snapshots-of "$OPT_TARGET") ]]; then
         if [[ $OPT_NEEDTARGET ]]; then
             echo >&2 "The '$OPT_TARGET' target has snapshots - refusing to use it directly."
@@ -3571,6 +3590,7 @@ elif [[ ! $OPT_NO_SNAPSHOT && ! $MB2_SELF_TEST_RUN ]]; then
         fi
     fi
 fi
+printf '%s\n' "$OPT_TARGET" > "$STATEDIR/target"
 
 case "$1" in
     build | qmake | cmake | make | make-install | install | package | rpm | deploy | undeploy \

@@ -41,7 +41,9 @@ usage:
     $SELF target upgradable <name>
     $SELF target install <name> <url> [--tooling <name>
     $____                [--tooling-url <url>]] [--toolchain <name>]
-    $SELF target snapshot [-r|--reset[={outdated|force}]] <original> <snapshot>
+    $____                [--no-snapshot]
+    $SELF target snapshot [-r|--reset[={outdated|force}]] [--no-sync]
+    $____                 <original> <snapshot>
     $SELF target reserve <original> <snapshot-template> <lock-file> <pool-size>
     $SELF target remove [--force] [--snapshots-of] <name>
     $SELF target refresh {--all | <name>...}
@@ -107,7 +109,9 @@ Usage notes
         changed) after the snapshot was taken.  A snapshot can be reset
         unconditionally by passing 'force' instead.  Resetting a snapshot has
         the same effect as removing the snapshot and creating it again, except
-        that it preserves it's internal state and is more efficient.
+        that it preserves it's internal state and is more efficient. When the
+        '--no-sync' option is used during initial snapshot creation, the
+        snapshot will not be enabled for synchronization to host.
 
     $SELF target reserve
         Reserve a pooled snapshot of the target identified with <original>.
@@ -1198,14 +1202,27 @@ maybe_synchronise_object() {
 
     # FIXME Currently we also synchronize bits from toolings, so ideally we
     # should synchronize all targets when a tooling is changed
-    [[ $type == target ]] && ! target_is_snapshot "$object" || return 0
+    [[ $type == target ]] || return 0
+
+    local sync=
+    sync=$(object_config_get "target:$object" "$SYNC_TO_HOST_KEY") || return
+    [[ $sync && $sync -ne 0 ]] || return 0
 
     if [[ $timestamp ]]; then
         content_not_changed_since "$MER_TARGETS/$object/var/lib/rpm" "$timestamp" && return 0
     fi
 
+    local original=
+    original=$(object_config_get "target:$object" "$SNAPSHOT_OF_KEY") || return
+    if [[ $original && $object != "$original".* ]]; then
+        # mb2 works with snapshots named after the original targets by adding a suffix
+        notice "Internal error: Cannot synchronize arbitrary named targets"
+        return 1
+    fi
+
     synchronise_target "$object" || return
-    updateQtCreatorTargets --name "$object" --target-xml "$TARGETS_XML" || return
+    updateQtCreatorTargets --name "$object" --origin "$original" \
+        --target-xml "$TARGETS_XML" || return
 }
 
 manage_develpkgs() {
@@ -1296,6 +1313,7 @@ get_snapshots_of_target() {
     local target=$1
     local other=
     for other in $(get_all_of_type_target); do
+        local snapshot_of=
         snapshot_of=$(object_config_get "target:$other" "$SNAPSHOT_OF_KEY")
         if [[ $snapshot_of == "$target" ]]; then
             echo "$other"
@@ -1390,11 +1408,6 @@ synchronise_target() {
         return 1
     fi
 
-    if target_is_snapshot "$target"; then
-        echo >&2 "This operation is not meant to be used on target snapshots"
-        return 1
-    fi
-
     local libdir=/usr/lib
     if [[ -d $MER_TARGETS/$target/usr/lib64 ]]; then
         libdir=/usr/lib64
@@ -1432,6 +1445,7 @@ synchronise_target() {
     generate_qml_bundle "$MER_TARGETS/${target}${libdir}"
 
     echo >&2 "Synchronising target to host..."
+    mkdir -p "$HOST_TARGETS/$target" || return
     # The filter=". -" means to read filters from stdin (the <<EOF)
     rsync -r $maybe_times --no-devices --no-specials \
           --delete --ignore-errors \
@@ -1556,11 +1570,15 @@ EOF
 # Download and install a rootfs
 install_target() {
     local skip_toolchain_check= tooling= tooling_url= toolchain= positional_args=()
+    local no_snapshot=
     while [[ $# -gt 0 ]]; do
         case $1 in
             --jfdi)
 	        # Sometimes you want to install without checking the toolchain - jfdi
                 skip_toolchain_check=1
+                ;;
+            --no-snapshot)
+                no_snapshot=1
                 ;;
             --tooling)
                 tooling=${2:-}
@@ -1650,10 +1668,10 @@ install_target() {
             fi
         fi
         if [[ ! $succeeded ]]; then
-            rm -rf "$SBOX2DIR/$target"
-            sudo rm -rf "$MER_TARGETS/$target"
+            rm -rf "$SBOX2DIR/$target"{,."$DEFAULT_SNAPSHOT_SUFFIX"}
+            sudo rm -rf "$MER_TARGETS/$target"{,."$DEFAULT_SNAPSHOT_SUFFIX"}
             if [[ $INSIDE_VBOX ]]; then
-                rm -rf "$HOST_TARGETS/$target"
+                rm -rf "$HOST_TARGETS/$target"{,."$DEFAULT_SNAPSHOT_SUFFIX"}
             fi
             if [[ $tooling_installed ]]; then
                 remove_tooling "$tooling"
@@ -1679,11 +1697,6 @@ install_target() {
     # Unpack targets to a private area within the VM
     sudo rm -rf "$MER_TARGETS/$target" || return
     sudo mkdir -p "$MER_TARGETS/$target" || return
-
-    # only create HOST_TARGETS dirs if inside the VM
-    if [[ $INSIDE_VBOX ]]; then
-        mkdir -p "$HOST_TARGETS/$target" || return
-    fi
 
     echo >&2
     echo >&2 "Unpacking target ..."
@@ -1781,14 +1794,6 @@ install_target() {
 
     rebuild_rpmdb "target:$target" || return
 
-    if [[ $INSIDE_VBOX ]]; then
-        synchronise_target "$target"
-        [[ $? -ne 0 ]] && echo >&2 "Rsync did not exactly run as intended, expect problems."
-
-	echo >&2 "Notifying Qt Creator of new target"
-        updateQtCreatorTargets --name "$target" --target-xml "$TARGETS_XML" || return
-    fi
-
     if [[ $MODE == "$MODE_USER" ]]; then
         if [[ $INSIDE_VBOX ]]; then
             local size=$(sudo du --summarize --bytes "$MER_TARGETS/$target" |cut -f1)
@@ -1796,6 +1801,15 @@ install_target() {
         fi
     else
         set_object_mode "target:$target" "$MODE"
+    fi
+
+    if [[ $no_snapshot ]]; then
+        object_config_set "target:$target" "$SYNC_TO_HOST_KEY" 1 || return
+        maybe_synchronise_object "target:$target" || return
+    else
+        object_config_set "target:$target" "$SYNC_TO_HOST_KEY" 0 || return
+        echo >&2 "Creating default snapshot"
+        snapshot_target "$target"{,."$DEFAULT_SNAPSHOT_SUFFIX"} || return
     fi
 
     echo >&2 "Target '$target' now setup"
@@ -1811,7 +1825,7 @@ reinit_target() (
 )
 
 snapshot_target() {
-    local reset= positional_args=()
+    local reset= sync=1 positional_args=()
     while [[ $# -gt 0 ]]; do
         case $1 in
             -r|--reset)
@@ -1824,6 +1838,9 @@ snapshot_target() {
                     usage >&2
                     return 1
                 fi
+                ;;
+            --no-sync)
+                sync=
                 ;;
             -*)
                 echo >&2 "unrecognized option '$1'"
@@ -1898,8 +1915,10 @@ snapshot_target() {
         object_config_set "target:$snapshot" "$SNAPSHOT_OF_KEY" "$original" || return
         ( cd "$MER_TARGETS/$snapshot" && eval sb2-init $sb2_init_args ) || return
         object_config_set "target:$snapshot" "$SNAPSHOT_TIME_KEY" "$(date -R)" || return
+        object_config_set "target:$snapshot" "$SYNC_TO_HOST_KEY" "${sync:-0}" || return
         # Ensure snapshots can be removed by user
         set_object_mode "target:$snapshot" "$MODE_USER" || return
+        maybe_synchronise_object "target:$snapshot" || return
     else
         local snapshot_of=
         snapshot_of=$(object_config_get "target:$snapshot" "$SNAPSHOT_OF_KEY") || return
@@ -1921,6 +1940,7 @@ snapshot_target() {
                 config_backup=
             fi
             object_config_set "target:$snapshot" "$SNAPSHOT_TIME_KEY" "$(date -R)" || return
+            maybe_synchronise_object "target:$snapshot" || return
         fi
     fi
 
@@ -2026,6 +2046,9 @@ reserve_target() {
 
         pooled_targets+=("$target")
 
+        # Target currently in use
+        [[ $other_lock_file == $lock_file ]] || ! is_locked "$other_lock_file" || continue
+
         local lock_time=
         lock_time=$(object_config_get "target:$target" "$LOCK_TIME_KEY") || return
         lock_time=$(date --date "$lock_time" +%s) || return
@@ -2119,7 +2142,7 @@ remove_target() {
 
         rm -r "$SBOX2DIR/$target"
         sudo rm -rf "$MER_TARGETS/$target"
-        if [[ $INSIDE_VBOX && ! $is_snapshot ]]; then
+        if [[ $INSIDE_VBOX && -e $HOST_TARGETS/$target ]]; then
             rm -rf "$HOST_TARGETS/$target"
             echo >&2 "Notifying Qt Creator of removed target"
         fi
@@ -2127,11 +2150,11 @@ remove_target() {
         echo >&2 "Note: target '$target' was not seen by sb2"
     fi
 
-    if [[ $INSIDE_VBOX && ! $is_snapshot ]]; then
+    if [[ $INSIDE_VBOX ]]; then
         # Notify Qt Creator always when we're in the VM to keep the
         # target information in sync
         updateQtCreatorTargets --delete --name "$target" --target-xml "$TARGETS_XML" || return
-        if [[ $MODE == "$MODE_USER" ]]; then
+        if [[ $MODE == "$MODE_USER" && ! $is_snapshot ]]; then
             manage_user_targets_repository rm target "$target"
         fi
     fi
@@ -2175,12 +2198,7 @@ manage_targets() {
 	        echo >&2 "This operation is only valid for SDK in VirtualBox"
                 return 1
 	    fi
-            if target_is_snapshot "$target"; then
-                echo >&2 "This operation is not meant to be used on target snapshots"
-                return 1
-            fi
-            synchronise_target "$@" || return
-            updateQtCreatorTargets --name "$target" --target-xml "$TARGETS_XML"
+            maybe_synchronise_object "target:$target"
 	    ;;
 	?(--)import ) shift
             assert_name_valid "${1:-}" || return
@@ -2350,8 +2368,11 @@ MODE_USER=user
 MODE_INSTALLER=installer
 MODE=$MODE_USER
 
+SYNC_TO_HOST_KEY=sync-to-host
 SNAPSHOT_OF_KEY=snapshot-of
 SNAPSHOT_TIME_KEY=snapshot-time
+
+DEFAULT_SNAPSHOT_SUFFIX=default
 
 LOCK_KEY=lock
 LOCK_TIME_KEY=lock-time
