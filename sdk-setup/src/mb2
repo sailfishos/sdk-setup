@@ -2768,7 +2768,7 @@ run_deploy() {
             ;;
         --zypper )
             remote_username=root
-            method=(zypper --non-interactive --quiet in -f)
+            method=(zypper --non-interactive --quiet in --force --allow-unsigned-rpm)
             ok_retcodes=(0 106)
             ;;
         --manual )
