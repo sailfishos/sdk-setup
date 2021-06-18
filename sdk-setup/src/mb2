@@ -2739,6 +2739,10 @@ run_deploy() {
             return
         fi
 
+        if [[ ! -d $buildroot || ! $(ls -A "$buildroot") ]]; then
+            fatal "Nothing to deploy. Maybe you forgot to use the \"make-install\" command."
+        fi
+
         rsync_as $device_username -av ${buildroot}/. $device_ip:/opt/sdk/$name \
             || { echo "Deploy failed"; return 1; }
         return
