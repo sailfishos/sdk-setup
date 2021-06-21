@@ -1471,9 +1471,14 @@ rsync_as() {
 }
 
 ssh_as() {
+    local maybe_t_opt=
+    if [[ $1 == -t ]]; then
+        maybe_t_opt=-t
+        shift
+    fi
     local user="$1";shift
     with_specific_or_default_keys "$user" \
-        ssh -F /etc/ssh/ssh_config.sdk -l $user $device_ip -p $device_sshport "$(quote "$@")"
+        ssh $maybe_t_opt -F /etc/ssh/ssh_config.sdk -l $user $device_ip -p $device_sshport "$(quote "$@")"
 }
 
 get_spec_setup_subdir() {
@@ -2793,10 +2798,10 @@ run_deploy() {
 
     if [[ $method_opt != --manual ]]; then
         local device_rpms=$(sed "s,^$OPT_OUTPUTDIR/,RPMS/," <<<"$rpms")
-        ssh_as "$remote_username" "${method[@]}" ${device_rpms}
+        ssh_as -t "$remote_username" "${method[@]}" ${device_rpms}
         set_contains ok_retcodes "$?"
         retcode=$?
-        ssh_as "$remote_username" rm -f ${device_rpms}
+        ssh_as -t "$remote_username" rm -f ${device_rpms}
     fi
 
     [[ $retcode -eq 0 ]] || { echo "Deploy failed"; return 1; }
@@ -2933,7 +2938,7 @@ run_undeploy() {
     candidates=$(cut -d' ' -f1 <<<"$candidates")
 
     if [[ $UNDEPLOY_METHOD_OPT != --rsync ]]; then
-        if ! ssh_as "$user" rpm --test -e $candidates; then
+        if ! ssh_as -t "$user" rpm --test -e $candidates; then
             return 1
         fi
     fi
@@ -2944,23 +2949,23 @@ run_undeploy() {
 
     case $UNDEPLOY_METHOD_OPT in
         --sdk )
-            ssh_as "$user" sdk-deploy-rpm --undeploy $candidates
+            ssh_as -t "$user" sdk-deploy-rpm --undeploy $candidates
             ;;
         --pkcon )
-            ssh_as "$user" pkcon --plain --noninteractive remove $candidates
+            ssh_as -t "$user" pkcon --plain --noninteractive remove $candidates
             ;;
         --rpm )
-            ssh_as "$user" rpm -e $candidates
+            ssh_as -t "$user" rpm -e $candidates
             ;;
         --rsync )
             local unsafe_to_rm_f=$(grep --invert-match '^/opt/sdk/[^.][^/]*$' <<<"$candidates")
             if [[ $unsafe_to_rm_f ]]; then
                 fatal "Internal error: Refusing to remove '$unsafe_to_rm_f'"
             fi
-            ssh_as "$user" rm -rf $candidates
+            ssh_as -t "$user" rm -rf $candidates
             ;;
         --zypper )
-            ssh_as "$user" zypper --non-interactive rm $candidates
+            ssh_as -t "$user" zypper --non-interactive rm $candidates
             ;;
     esac
 }
