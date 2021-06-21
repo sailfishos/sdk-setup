@@ -2817,13 +2817,13 @@ run_deploy() {
         --zypper )
             remote_username=root
             method=(zypper --non-interactive --quiet in --force --allow-unsigned-rpm
-                ${dry_run_opt:+--dry-run --download-only} $device_rpms)
+                --details ${dry_run_opt:+--dry-run --download-only} $device_rpms)
             ok_retcodes=(0 106)
             ;;
         --zypper-dup )
             remote_username=root
             method=(zypper --non-interactive --quiet --no-gpg-checks --plus-repo RPMS
-                dup --from ~plus-repo-1 ${dry_run_opt:+--dry-run --download-only})
+                dup --from ~plus-repo-1 --details ${dry_run_opt:+--dry-run --download-only})
             ok_retcodes=(0 106)
             ;;
         --manual )
