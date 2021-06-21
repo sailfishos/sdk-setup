@@ -415,7 +415,9 @@ COMMANDS
         '--rsync' method is used.
 
         With the '--dry-run' option, the list of (sub)packages that would be
-        deployed may be previewed without applying the changes.
+        deployed may be previewed without applying the changes.  Depending on
+        the selected deployment method, the packages may still get transferred
+        to the device.
 
         Selection of (sub)packages for deployment can be influenced with glob
         <pattern>s, each of which may be preceded with '+' or '-' to opt for
@@ -2794,7 +2796,9 @@ run_deploy() {
         echo "The following packages would be considered for deployment:"
         sort <<<"$rpms" |sed 's/^/  /'
         echo
-        return
+        if [[ $method_opt != --zypper* ]]; then
+            return
+        fi
     fi
 
     local remote_username=$device_username
@@ -2813,13 +2817,13 @@ run_deploy() {
         --zypper )
             remote_username=root
             method=(zypper --non-interactive --quiet in --force --allow-unsigned-rpm
-                $device_rpms)
+                ${dry_run_opt:+--dry-run --download-only} $device_rpms)
             ok_retcodes=(0 106)
             ;;
         --zypper-dup )
             remote_username=root
             method=(zypper --non-interactive --quiet --no-gpg-checks --plus-repo RPMS
-                dup --from ~plus-repo-1)
+                dup --from ~plus-repo-1 ${dry_run_opt:+--dry-run --download-only})
             ok_retcodes=(0 106)
             ;;
         --manual )
