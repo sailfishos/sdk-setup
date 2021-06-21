@@ -112,14 +112,29 @@ description for more details:
     mb2 -t target build
 
     ls -1 ~/RPMS/bugXXXXX/my-target/
-    mb2 -t target -d device deploy --manual --all \\
-        && ssh device sudo zypper -p RPMS -v dup
+    mb2 -t target -d device deploy --sdk --all
 
 With these options the output directory is also searched for build-time
 dependencies by default, so if packageB requires packageA at build time, you
 do not need to install packageA manually to the build target.
 
-Note that it can be usefull to also pass '--from ~plus-repo-1' to 'zypper dup'.
+
+DEPLOYING PLATFORM PACKAGES
+
+With platform packages, subpackages specific to a particular device variant
+often exist, so a careful selection of subpackages to install is needed.
+Platform packages can be udated conveniently with the help of 'zypper dup',
+which avoids the need for manual selection in many cases:
+
+    mb2 -t target -d device deploy --manual --all \
+        && mb2 -d device run sudo zypper -p RPMS dup --from ~plus-repo-1
+
+A shorthand syntax exists for this approach - it is the '--zypper-dup'
+deployment method:
+
+    mb2 -t target -d device deploy --zypper-dup --all
+
+Pass '--dry-run' to preview the effect before actually applying it.
 
 
 CLEAN BUILDS
@@ -388,8 +403,8 @@ COMMANDS
         effect is cumulative and persists until overriden with later name
         prefixed with the opposite operator.
 
-    deploy {--pkcon|--rsync|--sdk|--zypper|--manual} [--all] [--debug]
-           [-n|--dry-run] [--] [[+|-]<pattern>...]
+    deploy {--pkcon|--rsync|--sdk|--zypper|--zypper-dup|--manual} [--all]
+           [--debug] [-n|--dry-run] [--] [[+|-]<pattern>...]
         Deploy build results to a device.
 
         By default, just the build results of the project under current working
@@ -432,6 +447,19 @@ COMMANDS
         --zypper
             Uses 'zypper' to install RPM packages.  Requires 'zypper'
             installed on the device.  Requires root access to the device.
+
+        --zypper-dup
+            Uses 'zypper dup' to install RPM packages.  Requires 'zypper'
+            installed on the device.  Requires root access to the device.
+
+            This method allows to deploy updates to platform packages
+            conveniently.  With platform packages, subpackages specific to a
+            particular device variant often exist, so a careful selection of
+            subpackages to install is needed.  Compared to the '--zypper'
+            method, which uses 'zypper in' and so fully relies on the user to
+            select packages to install, the '--zypper-dup' method is capable
+            of figuring out the right subset of packages automatically in many
+            cases.
 
         --manual
             Only transfers the RPM packages to the device for manual
@@ -2707,7 +2735,7 @@ run_deploy() {
     local method_opt= all_opt= debug_opt= patterns=() dry_run_opt=
     while [[ $# -ne 0 ]]; do
         case $1 in
-            --sdk | --pkcon | --zypper | --rsync | --manual )
+            --sdk | --pkcon | --zypper | --zypper-dup | --rsync | --manual )
                 [[ ! $method_opt ]] || fatal "Cannot combine '$1' and '$method_opt'"
                 method_opt=$1
                 ;;
@@ -2763,8 +2791,9 @@ run_deploy() {
     local device_rpms=$(sed "s,^$OPT_OUTPUTDIR/,RPMS/," <<<"$rpms")
 
     if [[ $dry_run_opt ]]; then
-        echo "The following packages would be deployed:"
-        sort <<<"$rpms"
+        echo "The following packages would be considered for deployment:"
+        sort <<<"$rpms" |sed 's/^/  /'
+        echo
         return
     fi
 
@@ -2785,6 +2814,12 @@ run_deploy() {
             remote_username=root
             method=(zypper --non-interactive --quiet in --force --allow-unsigned-rpm
                 $device_rpms)
+            ok_retcodes=(0 106)
+            ;;
+        --zypper-dup )
+            remote_username=root
+            method=(zypper --non-interactive --quiet --no-gpg-checks --plus-repo RPMS
+                dup --from ~plus-repo-1)
             ok_retcodes=(0 106)
             ;;
         --manual )
