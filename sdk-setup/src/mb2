@@ -2760,6 +2760,7 @@ run_deploy() {
 
     local rpms=$(find_rpms $all_opt "$OPT_OUTPUTDIR" "$STATEDIR/spec" "${patterns[@]}")
     [[ $rpms ]] || fatal "No package found or none matched the given criteria"
+    local device_rpms=$(sed "s,^$OPT_OUTPUTDIR/,RPMS/," <<<"$rpms")
 
     if [[ $dry_run_opt ]]; then
         echo "The following packages would be deployed:"
@@ -2775,14 +2776,15 @@ run_deploy() {
 
     case $method_opt in
         --sdk )
-            method=(sdk-deploy-rpm)
+            method=(sdk-deploy-rpm $device_rpms)
             ;;
         --pkcon )
-            method=(pkcon --plain --noninteractive install-local)
+            method=(pkcon --plain --noninteractive install-local $device_rpms)
             ;;
         --zypper )
             remote_username=root
-            method=(zypper --non-interactive --quiet in --force --allow-unsigned-rpm)
+            method=(zypper --non-interactive --quiet in --force --allow-unsigned-rpm
+                $device_rpms)
             ok_retcodes=(0 106)
             ;;
         --manual )
@@ -2797,8 +2799,7 @@ run_deploy() {
     local retcode=0
 
     if [[ $method_opt != --manual ]]; then
-        local device_rpms=$(sed "s,^$OPT_OUTPUTDIR/,RPMS/," <<<"$rpms")
-        ssh_as -t "$remote_username" "${method[@]}" ${device_rpms}
+        ssh_as -t "$remote_username" "${method[@]}"
         set_contains ok_retcodes "$?"
         retcode=$?
         ssh_as -t "$remote_username" rm -f ${device_rpms}
