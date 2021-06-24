@@ -112,14 +112,29 @@ description for more details:
     mb2 -t target build
 
     ls -1 ~/RPMS/bugXXXXX/my-target/
-    mb2 -t target -d device deploy --manual --all \\
-        && ssh device sudo zypper -p RPMS -v dup
+    mb2 -t target -d device deploy --sdk --all
 
 With these options the output directory is also searched for build-time
 dependencies by default, so if packageB requires packageA at build time, you
 do not need to install packageA manually to the build target.
 
-Note that it can be usefull to also pass '--from ~plus-repo-1' to 'zypper dup'.
+
+DEPLOYING PLATFORM PACKAGES
+
+With platform packages, subpackages specific to a particular device variant
+often exist, so a careful selection of subpackages to install is needed.
+Platform packages can be udated conveniently with the help of 'zypper dup',
+which avoids the need for manual selection in many cases:
+
+    mb2 -t target -d device deploy --manual --all \
+        && mb2 -d device run sudo zypper -p RPMS dup --from ~plus-repo-1
+
+A shorthand syntax exists for this approach - it is the '--zypper-dup'
+deployment method:
+
+    mb2 -t target -d device deploy --zypper-dup --all
+
+Pass '--dry-run' to preview the effect before actually applying it.
 
 
 CLEAN BUILDS
@@ -388,8 +403,8 @@ COMMANDS
         effect is cumulative and persists until overriden with later name
         prefixed with the opposite operator.
 
-    deploy {--pkcon|--rsync|--sdk|--zypper|--manual} [--all] [--debug]
-           [-n|--dry-run] [--] [[+|-]<pattern>...]
+    deploy {--pkcon|--rsync|--sdk|--zypper|--zypper-dup|--manual} [--all]
+           [--debug] [-n|--dry-run] [--] [[+|-]<pattern>...]
         Deploy build results to a device.
 
         By default, just the build results of the project under current working
@@ -400,7 +415,9 @@ COMMANDS
         '--rsync' method is used.
 
         With the '--dry-run' option, the list of (sub)packages that would be
-        deployed may be previewed without applying the changes.
+        deployed may be previewed without applying the changes.  Depending on
+        the selected deployment method, the packages may still get transferred
+        to the device.
 
         Selection of (sub)packages for deployment can be influenced with glob
         <pattern>s, each of which may be preceded with '+' or '-' to opt for
@@ -432,6 +449,19 @@ COMMANDS
         --zypper
             Uses 'zypper' to install RPM packages.  Requires 'zypper'
             installed on the device.  Requires root access to the device.
+
+        --zypper-dup
+            Uses 'zypper dup' to install RPM packages.  Requires 'zypper'
+            installed on the device.  Requires root access to the device.
+
+            This method allows to deploy updates to platform packages
+            conveniently.  With platform packages, subpackages specific to a
+            particular device variant often exist, so a careful selection of
+            subpackages to install is needed.  Compared to the '--zypper'
+            method, which uses 'zypper in' and so fully relies on the user to
+            select packages to install, the '--zypper-dup' method is capable
+            of figuring out the right subset of packages automatically in many
+            cases.
 
         --manual
             Only transfers the RPM packages to the device for manual
@@ -1471,9 +1501,14 @@ rsync_as() {
 }
 
 ssh_as() {
+    local maybe_t_opt=
+    if [[ $1 == -t ]]; then
+        maybe_t_opt=-t
+        shift
+    fi
     local user="$1";shift
     with_specific_or_default_keys "$user" \
-        ssh -F /etc/ssh/ssh_config.sdk -l $user $device_ip -p $device_sshport "$(quote "$@")"
+        ssh $maybe_t_opt -F /etc/ssh/ssh_config.sdk -l $user $device_ip -p $device_sshport "$(quote "$@")"
 }
 
 get_spec_setup_subdir() {
@@ -2702,7 +2737,7 @@ run_deploy() {
     local method_opt= all_opt= debug_opt= patterns=() dry_run_opt=
     while [[ $# -ne 0 ]]; do
         case $1 in
-            --sdk | --pkcon | --zypper | --rsync | --manual )
+            --sdk | --pkcon | --zypper | --zypper-dup | --rsync | --manual )
                 [[ ! $method_opt ]] || fatal "Cannot combine '$1' and '$method_opt'"
                 method_opt=$1
                 ;;
@@ -2755,11 +2790,15 @@ run_deploy() {
 
     local rpms=$(find_rpms $all_opt "$OPT_OUTPUTDIR" "$STATEDIR/spec" "${patterns[@]}")
     [[ $rpms ]] || fatal "No package found or none matched the given criteria"
+    local device_rpms=$(sed "s,^$OPT_OUTPUTDIR/,RPMS/," <<<"$rpms")
 
     if [[ $dry_run_opt ]]; then
-        echo "The following packages would be deployed:"
-        sort <<<"$rpms"
-        return
+        echo "The following packages would be considered for deployment:"
+        sort <<<"$rpms" |sed 's/^/  /'
+        echo
+        if [[ $method_opt != --zypper* ]]; then
+            return
+        fi
     fi
 
     local remote_username=$device_username
@@ -2770,14 +2809,21 @@ run_deploy() {
 
     case $method_opt in
         --sdk )
-            method=(sdk-deploy-rpm)
+            method=(sdk-deploy-rpm $device_rpms)
             ;;
         --pkcon )
-            method=(pkcon --plain --noninteractive install-local)
+            method=(pkcon --plain --noninteractive install-local $device_rpms)
             ;;
         --zypper )
             remote_username=root
-            method=(zypper --non-interactive --quiet in --force --allow-unsigned-rpm)
+            method=(zypper --non-interactive --quiet in --force --allow-unsigned-rpm
+                --details ${dry_run_opt:+--dry-run --download-only} $device_rpms)
+            ok_retcodes=(0 106)
+            ;;
+        --zypper-dup )
+            remote_username=root
+            method=(zypper --non-interactive --quiet --no-gpg-checks --plus-repo RPMS
+                dup --from ~plus-repo-1 --details ${dry_run_opt:+--dry-run --download-only})
             ok_retcodes=(0 106)
             ;;
         --manual )
@@ -2792,11 +2838,10 @@ run_deploy() {
     local retcode=0
 
     if [[ $method_opt != --manual ]]; then
-        local device_rpms=$(sed "s,^$OPT_OUTPUTDIR/,RPMS/," <<<"$rpms")
-        ssh_as "$remote_username" "${method[@]}" ${device_rpms}
+        ssh_as -t "$remote_username" "${method[@]}"
         set_contains ok_retcodes "$?"
         retcode=$?
-        ssh_as "$remote_username" rm -f ${device_rpms}
+        ssh_as -t "$remote_username" rm -f ${device_rpms}
     fi
 
     [[ $retcode -eq 0 ]] || { echo "Deploy failed"; return 1; }
@@ -2933,7 +2978,7 @@ run_undeploy() {
     candidates=$(cut -d' ' -f1 <<<"$candidates")
 
     if [[ $UNDEPLOY_METHOD_OPT != --rsync ]]; then
-        if ! ssh_as "$user" rpm --test -e $candidates; then
+        if ! ssh_as -t "$user" rpm --test -e $candidates; then
             return 1
         fi
     fi
@@ -2944,23 +2989,23 @@ run_undeploy() {
 
     case $UNDEPLOY_METHOD_OPT in
         --sdk )
-            ssh_as "$user" sdk-deploy-rpm --undeploy $candidates
+            ssh_as -t "$user" sdk-deploy-rpm --undeploy $candidates
             ;;
         --pkcon )
-            ssh_as "$user" pkcon --plain --noninteractive remove $candidates
+            ssh_as -t "$user" pkcon --plain --noninteractive remove $candidates
             ;;
         --rpm )
-            ssh_as "$user" rpm -e $candidates
+            ssh_as -t "$user" rpm -e $candidates
             ;;
         --rsync )
             local unsafe_to_rm_f=$(grep --invert-match '^/opt/sdk/[^.][^/]*$' <<<"$candidates")
             if [[ $unsafe_to_rm_f ]]; then
                 fatal "Internal error: Refusing to remove '$unsafe_to_rm_f'"
             fi
-            ssh_as "$user" rm -rf $candidates
+            ssh_as -t "$user" rm -rf $candidates
             ;;
         --zypper )
-            ssh_as "$user" zypper --non-interactive rm $candidates
+            ssh_as -t "$user" zypper --non-interactive rm $candidates
             ;;
     esac
 }
