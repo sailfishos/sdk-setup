@@ -312,7 +312,8 @@ COMMANDS
         'make' is the build tool used by the project).
 
     make-install
-        Run rpmbuild. Execute just the %install section of the .spec file.
+        Run rpmbuild. Execute just the %install section of the .spec file in
+        order to populate the RPM "buildroot".
 
     package [--no-check] [-s|--sign]
         Run rpmbuild. Execute just the %install section of the .spec file, then
@@ -415,28 +416,30 @@ COMMANDS
         mandatory option:
 
         --pkcon
-            Uses 'pkcon' to install RPM package(s). Does not require root
-            access to the device. Not all device operating system versions and
-            configurations permit use of this method.
+            Uses 'pkcon' to install RPM packages.  Not all device operating
+            system versions and configurations permit use of this method.
 
         --rsync
-            This method is special.  Uses 'rsync' to copy the installed files
-            under '/opt/sdk/<name>' without building/installing RPM package(s).
-            Does not require root access to the device.  Incompatible with
-            '--all'.
+            This method is special.  It can be used to transfer the RPM
+            "buildroot" to the device as '/opt/sdk/<name>' without building
+            and installing RPM packages (see also 'make-install').
+            Incompatible with '--all'.
 
         --sdk
-            Uses the method native to the SDK to install RPM package(s).
-            Requires developer mode enabled on the device, does not require
-            root access.
+            Uses the method native to the SDK to install RPM packages.
+            Requires developer mode enabled on the device.
 
         --zypper
-            Uses 'zypper' to install RPM package(s).  Requires 'zypper'
-            installed on the device, requires root access to the device.
+            Uses 'zypper' to install RPM packages.  Requires 'zypper'
+            installed on the device.  Requires root access to the device.
 
         --manual
-            Only transfers the RPM package(s) to the device for manual
+            Only transfers the RPM packages to the device for manual
             installation. Uses '~/RPMS' as the target directory on the device.
+
+        When "Requires root access to the device" is stated, the device will
+        be accessed as the 'root' user instead of the configured user. Other
+        connection parameters remain unchanged.
 
     undeploy {--sdk|--pkcon|--rpm|--rsync|--zypper} [--all] [-n|--dry-run]
              [--] [[+|-]<pattern>...]
@@ -481,29 +484,31 @@ COMMANDS
         the mandatory option:
 
         --pkcon
-            Uses 'pkcon' to remove RPM package(s).  Requires the "Allow
-            untrusted software" option enabled in Settings, does not require
-            root access to the device.
+            Uses 'pkcon' to remove RPM packages.  Not all device operating
+            system versions and configurations permit use of this method.
 
         --rpm
-            Uses plain 'rpm' to remove RPM package(s).  Requires root access
+            Uses plain 'rpm' to remove RPM packages.  Requires root access
             to the device.
 
         --rsync
             This method is special.  It does not work with RPM packages.  It
-            is only capable to remove files previously copied under
-            '/opt/sdk/' with 'deploy --rsync'.  With this method, the origin
-            of the data is not taken into consideration.  Does not require
-            root access to the device.
+            is only capable of removing files previously copied under
+            '/opt/sdk/<name>' with 'deploy --rsync'.  (The origin of the files
+            is not verified!)
 
         --sdk
-            Uses the method native to the SDK to remove RPM package(s).
-            Requires developer mode enabled on the device, does not require
-            root access. Not available with older devices.
+            Uses the method native to the SDK to remove RPM packages.
+            Requires developer mode enabled on the device. Not available with
+            older device operating system versions.
 
         --zypper
-            Uses 'zypper' to remove RPM package(s).  Requires 'zypper'
-            installed on the device, requires root access to the device.
+            Uses 'zypper' to remove RPM packages.  Requires 'zypper'
+            installed on the device. Requires root access to the device.
+
+        When "Requires root access to the device" is stated, the device will
+        be accessed as the 'root' user instead of the configured user. Other
+        connection parameters remain unchanged.
 
     run [<command> [<arg>...]]
         Run the given command on the device specified with '--device'.  Can be
@@ -2739,6 +2744,10 @@ run_deploy() {
             return
         fi
 
+        if [[ ! -d $buildroot || ! $(ls -A "$buildroot") ]]; then
+            fatal "Nothing to deploy. Maybe you forgot to use the \"make-install\" command."
+        fi
+
         rsync_as $device_username -av ${buildroot}/. $device_ip:/opt/sdk/$name \
             || { echo "Deploy failed"; return 1; }
         return
@@ -2768,7 +2777,7 @@ run_deploy() {
             ;;
         --zypper )
             remote_username=root
-            method=(zypper --non-interactive --quiet in -f)
+            method=(zypper --non-interactive --quiet in --force --allow-unsigned-rpm)
             ok_retcodes=(0 106)
             ;;
         --manual )
