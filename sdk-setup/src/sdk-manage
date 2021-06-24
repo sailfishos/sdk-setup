@@ -1475,6 +1475,8 @@ synchronise_target() {
 + $libdir/pkgconfig**
 + /usr/share/pkgconfig**
 + $libdir/cmake**
++ /usr/share/cmake/Modules**
++ /usr/share/cmake/include**
 # and nothing else
 - *
 EOF
