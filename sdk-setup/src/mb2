@@ -1646,7 +1646,7 @@ init_qmake_wrapper() (
 
         local assignments=()
         for arg in "$@"; do
-            if [[ $arg =~ ^[a-zA-Z_][a-zA-Z0-9_]*= ]]; then
+            if [[ $arg =~ ^[a-zA-Z_][a-zA-Z0-9_]*[+*-]?= ]]; then
                 assignments+=("$arg")
             fi
         done
