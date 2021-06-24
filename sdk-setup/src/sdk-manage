@@ -1469,6 +1469,7 @@ synchronise_target() {
 # Qt5 qml imports are here
 + $libdir/qt5/qml**
 + /usr/include**
++ $libdir/*/include**
 + /usr/share/qt**
 + $libdir/pkgconfig**
 + /usr/share/pkgconfig**
