@@ -17,6 +17,6 @@ EnvironmentFile=-/etc/login.defs.systemd
 ExecStartPre=/bin/mkdir -p ${SAILFISH_SDK_SRC%i_MOUNT_POINT}
 ExecStartPre=/bin/mkdir -p ${SAILFISH_SDK_SRC%i_MOUNT_POINT}.raw
 ExecStartPre=/bin/mount --move ${SAILFISH_SDK_SRC%i_MOUNT_POINT} ${SAILFISH_SDK_SRC%i_MOUNT_POINT}.raw
-ExecStart=/usr/bin/dynexecfs -f -o uid=${UID_MERSDK},gid=${GID_MERSDK},allow_other,${DYNEXECFS_FLAGS},root=${SAILFISH_SDK_SRC%i_MOUNT_POINT}.raw ${SAILFISH_SDK_SRC%i_MOUNT_POINT}
+ExecStart=/usr/bin/dynexecfs -f -o uid=${UID_MERSDK},gid=${GID_MERSDK},allow_other,nonempty,${DYNEXECFS_FLAGS},root=${SAILFISH_SDK_SRC%i_MOUNT_POINT}.raw ${SAILFISH_SDK_SRC%i_MOUNT_POINT}
 TimeoutSec=90
 Slice=system.slice
