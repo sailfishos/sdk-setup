@@ -719,11 +719,9 @@ init_machine_id() {
         enter "$type:$object" rm -f /var/lib/dbus/machine-id || return
     fi
 
-    if ! enter "$type:$object" systemd-machine-id-setup; then
-        echo >&2 "NOTICE: systemd-machine-id-setup failed, retrying"
-        enter "$type:$object" systemd-machine-id-setup || return
-    fi
     enter "$type:$object" dbus-uuidgen --ensure || return
+    # Do not use systemd-machine-id-setup for its unwanted side effects
+    enter "$type:$object" cp /var/lib/dbus/machine-id /etc/machine-id || return
 }
 
 reset_machine_id() {
@@ -744,8 +742,8 @@ reset_machine_id() {
 
         enter "$type:$object" rm -f /etc/machine-id || return
         enter "$type:$object" rm -f /var/lib/dbus/machine-id || return
-        enter "$type:$object" systemd-machine-id-setup || return
         enter "$type:$object" dbus-uuidgen --ensure || return
+        enter "$type:$object" cp /var/lib/dbus/machine-id /etc/machine-id || return
     done
 }
 
