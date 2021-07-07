@@ -1,7 +1,7 @@
 requires:bash
 requires:filesystem
 requires:glibc
-requires:jolla-ca
+requires:vendor-ca
 requires:rpm
 requires:sdk-chroot
 requires:shadow-utils
