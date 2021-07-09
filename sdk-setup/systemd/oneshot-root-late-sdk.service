@@ -1,0 +1,11 @@
+[Unit]
+Description=Oneshot stuff for root (late run for SDK)
+After=multi-user.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/oneshot --late
+
+[Install]
+WantedBy=multi-user.target
