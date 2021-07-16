@@ -1,0 +1,10 @@
+[Unit]
+Description=Update df.cache at shutdown
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStop=/bin/bash -c 'df --output=avail -B1048576 / |sed -n "\$s/^ *//p" > /etc/mersdk/share/df.cache'
+
+[Install]
+WantedBy=multi-user.target
