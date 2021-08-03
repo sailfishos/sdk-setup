@@ -256,6 +256,7 @@ rm -Rf /home/.zypp-cache
 %systemd_preun information.service
 %systemd_preun sdk-enginelan.service
 %systemd_preun oneshot-root-late-sdk.service
+%systemd_preun sdk-freespace.service
 
 %post -n sdk-vm
 %systemd_post workspace.service
@@ -272,6 +273,7 @@ rm -Rf /home/.zypp-cache
 %systemd_post sdk-setup-swap.service
 %systemd_post sshd.socket
 %systemd_post oneshot-root-late-sdk.service
+%systemd_post sdk-freespace.service
 # this could be mounted read-only so to avoid a
 # cpio: chmod failed - Read-only file system
 if [ $1 -eq 1 ] ; then
@@ -322,6 +324,7 @@ fi
 %{_unitdir}/sdk-setup-swap.service
 %{_unitdir}/dbus.socket.d/sdk.conf
 %{_unitdir}/oneshot-root-late-sdk.service
+%{_unitdir}/sdk-freespace.service
 %config %{_sysconfdir}/systemd/system/default.target
 %config %{_sysconfdir}/udev/rules.d/80-net-setup-link.rules
 %config %{_sysconfdir}/ssh/ssh-env.conf
