@@ -319,6 +319,10 @@ ssu() (
 
 disk_full() [[ $(stat --file-system --format '%a*%s/1024' "$1") -lt 10000 ]]
 
+update_df_cache() {
+    sudo systemctl restart sdk-freespace.service
+}
+
 # Replace 'shell' field in `getent passwd` output with /bin/bash
 fix_shell() {
     cut -d: -f1-6 |sed 's,$,:/bin/bash,'
@@ -977,6 +981,10 @@ install_tooling() {
 
     init_machine_id tooling "$name" || return
 
+    if [[ $INSIDE_VBOX ]]; then
+        update_df_cache
+    fi
+
     echo >&2 "Tooling '$name' now setup"
     succeeded=1
 }
@@ -1003,6 +1011,10 @@ remove_tooling() {
 
     if [[ $INSIDE_VBOX && $mode == "$MODE_USER" ]]; then
         manage_user_targets_repository rm tooling "$name"
+    fi
+
+    if [[ $INSIDE_VBOX ]]; then
+        update_df_cache
     fi
 }
 
@@ -1814,6 +1826,10 @@ install_target() {
         snapshot_target "$target"{,."$DEFAULT_SNAPSHOT_SUFFIX"} || return
     fi
 
+    if [[ $INSIDE_VBOX ]]; then
+        update_df_cache
+    fi
+
     echo >&2 "Target '$target' now setup"
     succeeded=1
 }
@@ -1944,6 +1960,10 @@ snapshot_target() {
             object_config_set "target:$snapshot" "$SNAPSHOT_TIME_KEY" "$(date -R)" || return
             maybe_synchronise_object "target:$snapshot" || return
         fi
+    fi
+
+    if [[ $INSIDE_VBOX ]]; then
+        update_df_cache
     fi
 
     succeeded=1
@@ -2091,6 +2111,11 @@ reserve_target() {
 
     object_config_set "target:$snapshot" "$LOCK_TIME_KEY" "$(date -R)" || return
     object_config_set "target:$snapshot" "$LOCK_KEY" "$lock_file" || return
+
+    if [[ $INSIDE_VBOX ]]; then
+        update_df_cache
+    fi
+
     echo "$snapshot"
 }
 
@@ -2153,6 +2178,8 @@ remove_target() {
     fi
 
     if [[ $INSIDE_VBOX ]]; then
+        update_df_cache
+
         # Notify Qt Creator always when we're in the VM to keep the
         # target information in sync
         updateQtCreatorTargets --delete --name "$target" --target-xml "$TARGETS_XML" || return
