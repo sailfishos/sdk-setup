@@ -458,6 +458,15 @@ get_all_or_selected_of_type() {
         done
     fi
 
+    # Exclude snapshots
+    if [[ $type == target ]]; then
+        local objects_=("${objects[@]}")
+        objects=()
+        for object in "${objects_[@]}"; do
+            target_is_snapshot "$object" || objects+=("$object")
+        done
+    fi
+
     # Fail here if --all was not used and no objects were given
     [[ ${#objects[*]} -ne 0 || $get_all ]] || { usage >&2; return 1; }
 
@@ -1989,6 +1998,7 @@ target_snapshot_needs_reset() {
     (( most_recent_install_time > snapshot_time )) && return
 
     ! diff "$MER_TARGETS"/{"$original","$snapshot"}/etc/ssu/ssu.ini &>/dev/null && return
+    ! diff "$MER_TARGETS"/{"$original","$snapshot"}/etc/machine-id &>/dev/null && return
 
     # The rpm database does not know about the most recent package removal, so
     # parse the zypper install log. zypp/history looks like this:
