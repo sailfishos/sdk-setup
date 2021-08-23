@@ -521,9 +521,12 @@ fi
 if [[ $OPT_REGISTER ]]; then
     common_options=(${OPT_USER:+--user "$OPT_USER"} ${OPT_PASSWORD:+--password "$OPT_PASSWORD"} --force)
     if [[ ! $OPT_TYPE && $OPT_ALL ]]; then
-        _ sdk-manage register-all "${common_options[@]}" --no-sdk
+        _ sdk-manage register-all "${common_options[@]}" --no-sdk || exit
+        _ sdk-manage refresh-all --no-sdk
     else
-        _ sdk-manage "$OPT_TYPE" register "${common_options[@]}" ${OPT_ALL:+--all} ${OPT_NAME:+"$OPT_NAME"}
+        _ sdk-manage "$OPT_TYPE" register "${common_options[@]}" ${OPT_ALL:+--all} \
+            ${OPT_NAME:+"$OPT_NAME"} || exit
+        _ sdk-manage "$OPT_TYPE" refresh ${OPT_ALL:+--all} ${OPT_NAME:+"$OPT_NAME"}
     fi
     exit
 fi
