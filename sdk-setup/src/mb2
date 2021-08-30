@@ -2783,6 +2783,8 @@ run_deploy() {
             fatal "Nothing to deploy. Maybe you forgot to use the \"make-install\" command."
         fi
 
+        ensure_device_prepared
+
         rsync_as $device_username -av ${buildroot}/. $device_ip:/opt/sdk/$name \
             || { echo "Deploy failed"; return 1; }
         return
