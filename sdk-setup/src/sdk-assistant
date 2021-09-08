@@ -532,7 +532,9 @@ if [[ $OPT_REGISTER ]]; then
 fi
 
 if [[ $OPT_REMOVE ]]; then
-    _ sdk-manage "$OPT_TYPE" remove ${OPT_SNAPSHOTS_OF:+--snapshots-of} "$OPT_NAME"
+    with_force=$([[ $OPT_TYPE == target ]] && echo 1)
+    _ sdk-manage "$OPT_TYPE" remove ${with_force:+--force} ${OPT_SNAPSHOTS_OF:+--snapshots-of} \
+        "$OPT_NAME"
     exit
 fi
 
