@@ -1213,8 +1213,27 @@ filter_repo()
 maybe_verify_target_dependencies() {
     [[ $OPT_PULL_BUILD_REQUIRES ]] || return 0
 
+    local arg= extra_args=()
+    set -- "${BUILD_EXTRA_ARGS[@]}"
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --with)
+                extra_args+=(--define "_with_$2 1")
+                shift
+                ;;
+            --without)
+                extra_args+=(--define "_without_$2 1")
+                shift
+                ;;
+            *)
+                ;;
+        esac
+        shift
+    done
+
     local deps=()
-    readarray -t deps < <(sb2 -t "$OPT_TARGET" rpmspec --query --buildrequires "$OPT_SPEC" |sed 's/\s*$//')
+    readarray -t deps < <(sb2 -t "$OPT_TARGET" rpmspec --query --buildrequires "${extra_args[@]}" \
+        "$OPT_SPEC" |sed 's/\s*$//')
 
     if inside_build_engine; then
         local oldpkgs=$(sb2 -t "$OPT_TARGET" -m sdk-install rpm -qa)
