@@ -203,6 +203,8 @@ class Xmp(Fuse):
 
     def fsinit(self):
         os.chdir(self.root)
+        if self.systemd:
+            os.system("systemd-notify --ready")
 
     class XmpFile(object):
 
@@ -213,12 +215,10 @@ class Xmp(Fuse):
             self.fd = self.file.fileno()
 
         def read(self, length, offset):
-            self.file.seek(offset)
-            return self.file.read(length)
+            return os.pread(self.fd, length, offset)
 
         def write(self, buf, offset):
-            self.file.seek(offset)
-            self.file.write(buf)
+            os.pwrite(self.fd, buf, offset)
             self._fflush()
             return len(buf)
 
@@ -312,6 +312,8 @@ underlaying filesystem without POSIX compatible permission handling.
 
     server.parser.add_option(mountopt="root", metavar="PATH", default='/',
                              help="mirror filesystem from under PATH [default: %default]")
+    server.parser.add_option("--systemd", action="store_true", dest="systemd", default=False,
+                             help="notify systemd when ready")
     server.parse(values=server, errex=1)
 
     try:
