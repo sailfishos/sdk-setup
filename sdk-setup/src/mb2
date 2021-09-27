@@ -2386,9 +2386,8 @@ run_build() {
             "${BUILD_NOPREP_ARGS[@]}" "${BUILD_NOCHECK_ARGS[@]}" \
             -bb \
             "$TMP_SPEC" \
-            "${BUILD_EXTRA_ARGS[@]}" \
-            || return
-    )
+            "${BUILD_EXTRA_ARGS[@]}"
+    ) || return
 
     [[ ! $BUILD_SIGN ]] || sign_rpms || return
 
@@ -2729,9 +2728,8 @@ run_package() {
             --define "_buildhost $(get_hostname)" \
             --buildroot="$buildroot" \
             -bb --noprep --nobuildstage "${PACKAGE_NOCHECK_ARGS[@]}" --noclean \
-            "$TMP_SPEC" \
-            || return
-    )
+            "$TMP_SPEC"
+    ) || return
 
     [[ ! $PACKAGE_SIGN ]] || sign_rpms
 
