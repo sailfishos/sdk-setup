@@ -1805,7 +1805,7 @@ install_target() {
     (
         cd "$MER_TARGETS/$target" && sb2-init \
             -L "--sysroot=/" -C "--sysroot=/" ${transparency:+-c "$transparency"} \
-            -m sdk-build -n -N -t "$MER_TOOLINGS/$tooling" "$target" "$MER_TOOLINGS/$tooling/$compiler"
+            -m sdk-build -n -N -t "$MER_TOOLINGS/$tooling" "$target" "$MER_TOOLINGS/${tooling}${compiler}"
     ) || return
 
     init_machine_id target "$target" || return
