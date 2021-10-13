@@ -1,14 +1,14 @@
 Name:       sdk-setup
 
 Summary:    SDK setup packages for Mer SDK
-Version:    0.63
+Version:    1.4.14
 Release:    1
 Group:      System/Base
 License:    GPL
 BuildArch:  noarch
 URL:        https://github.com/sailfishos/sdk-setup
 Source0:    %{name}-%{version}.tar.bz2
-BuildRequires:  systemd
+BuildRequires:  pkgconfig(systemd)
 
 %description
 Scripts, configurations and utilities to build Mer SDK and variants
