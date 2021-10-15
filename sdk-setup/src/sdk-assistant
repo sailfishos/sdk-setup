@@ -83,8 +83,8 @@ Usage:
                               by toolings they use. With '--slow' the state
                               is checked more thoroughly.
 
-    $(basename $0) [tooling|target] package-list <name> [<pattern>...]
-                            : list packages inside the sb2 tooling or target
+    $(basename $0) [tooling|target] package-search <name> [<pattern>...]
+                            : search packages inside the sb2 tooling or target
                               identified by <name>, installed and available.
 
     $(basename $0) [tooling|target] package-install <name> <package-name>...
@@ -291,9 +291,11 @@ case $1 in
         shift
         [[ $# -eq 0 ]] || fail "list: unexpected argument: '$1'"
         ;;
-    package-list )
+    package-list|package-search )
+        [[ $1 == package-list ]] && echo "WARNING: The 'package-list' command is " \
+            "deprecated, use 'package-search' instead" >&2
         OPT_PACKAGE_LIST=1
-        [[ $# -ge 2 && $2 ]] || fail "package-list: ${OPT_TYPE:+$OPT_TYPE }name required"
+        [[ $# -ge 2 && $2 ]] || fail "$1: ${OPT_TYPE:+$OPT_TYPE }name required"
         OPT_NAME=$2
         OPT_PACKAGE_NAME_PATTERNS=("${@:3}")
         shift $#
