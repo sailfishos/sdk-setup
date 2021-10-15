@@ -162,7 +162,8 @@ errors like "file not found on the server", .i.e., because the local
 repository cache got outdated, it is the original target that should be
 updated, not the snapshot.
 
-Existing snapshots can be listed and removed using 'sdk-assistant'.
+Existing snapshots can be listed and removed using the standalone
+'sdk-assistant' command.
 
 
 QUALITY ASSURANCE
@@ -335,9 +336,25 @@ COMMANDS
         build binary packages and optionally sign those. Unless '--no-check'
         is passed, execute also the %check section if present.
 
-    build-shell [<command> [<arg>...]]
+    build-shell [--maintain] [--] [<command> [<arg>...]]
         Execute an arbitrary <command> in the build environment.  If no
         <command> is specified, an interactive shell is opened.
+
+        Pass the '--maintain' option when running maintenance commands - such
+        that are used to inspect and/or modify the build environment
+        installation.  Failure to do so leads to undefined results.
+
+        Unless the '--no-snapshot' global option is used, any modifications to
+        the build environment introduced this way can be reverted with the
+        'build-requires reset' command, which also happens implicitly under
+        certain conditions. Use any of the '[pre-|post-]pull-build-requires'
+        hooks to persist your build environment modifications.  Alternatively,
+        use the standalone 'sdk-assistant maintain' command for direct
+        modification of the original build target.
+
+        If all you are looking for is a way to supply locally available build
+        time dependencies conveniently, see the '--search-output-dir' global
+        option.
 
     compiledb [<make-extra-arg>...]
         Run rpmbuild. Execute just the %build section of the .spec file,
@@ -660,6 +677,26 @@ GLOBAL OPTIONS
         regular use - create a script file named after the .spec file but with
         '.changes.run' extension to instruct $ME to generate changelog with
         'git-change-log <args>' instead.
+
+    --build-shell-args <args>
+        Arguments to pass to sb2 when used to run build commands. Defaults to no
+        arguments.
+
+        <args> will be split into arguments as with shell word splitting. Use
+        backslash to escape possible whitespace characters within arguments.
+
+        The essential '-t <target>' option is passed to sb2 independently of
+        this option and it is an error to include it in the <args>.
+
+    --build-shell-maintenance-args <args>
+        Arguments to pass to sb2 when used to run maintenance commands.
+        Defaults to '-m sdk-install -R'.
+
+        <args> will be split into arguments as with shell word splitting. Use
+        backslash to escape possible whitespace characters within arguments.
+
+        The essential '-t <target>' option is passed to sb2 independently of
+        this option and it is an error to include it in the <args>.
 
     --check-levels [+|-]<level>...
         Override the default test levels the 'check' command operates on. See
@@ -1122,7 +1159,7 @@ find_latest_rpms() {
     local dir=$1 patterns=("${@:2}")
 
     local latest=$(
-        sb2 -t "$OPT_TARGET" -m sdk-install \
+        sb2_maintain \
             zypper --plus-repo "$dir/" search --repo ~plus-repo-1 --details \
             `# drop header` \
             |sed '1,/^--/d' \
@@ -1232,11 +1269,11 @@ maybe_verify_target_dependencies() {
     done
 
     local deps=()
-    readarray -t deps < <(sb2 -t "$OPT_TARGET" rpmspec --query --buildrequires "${extra_args[@]}" \
+    readarray -t deps < <(sb2_build rpmspec --query --buildrequires "${extra_args[@]}" \
         "$OPT_SPEC" |sed 's/\s*$//')
 
     if inside_build_engine; then
-        local oldpkgs=$(sb2 -t "$OPT_TARGET" -m sdk-install rpm -qa)
+        local oldpkgs=$(sb2_maintain rpm -qa)
     fi
 
     local args=(--non-interactive)
@@ -1262,7 +1299,7 @@ maybe_verify_target_dependencies() {
             || fatal "The 'pull-build-requires' hook failed"
     else
         if [[ $deps ]]; then
-            sb2 -t "$OPT_TARGET" -m sdk-install -R zypper "${args[@]}" in "${deps[@]}"
+            sb2_maintain zypper "${args[@]}" in "${deps[@]}"
         fi
 
         if [[ $OPT_SEARCH_OUTPUTDIR ]]; then
@@ -1271,7 +1308,7 @@ maybe_verify_target_dependencies() {
             # those would be pulled in preferably.  This happens not only when
             # working with older sources but also when a package hardcodes
             # version in its spec and the --fix-version option is not active.
-            sb2 -t "$OPT_TARGET" -m sdk-install -R zypper "${args[@]}" dup --from '~plus-repo-1'
+            sb2_maintain zypper "${args[@]}" dup --from '~plus-repo-1'
         fi
     fi
 
@@ -1279,7 +1316,7 @@ maybe_verify_target_dependencies() {
         || fatal "The 'post-pull-build-requires' hook failed"
 
     if inside_build_engine; then
-        local newpkgs=$(sb2 -t "$OPT_TARGET" -m sdk-install rpm -qa)
+        local newpkgs=$(sb2_maintain rpm -qa)
         if [[ $newpkgs != $oldpkgs ]]; then
             sdk-manage target sync "$OPT_TARGET"
         fi
@@ -2226,7 +2263,7 @@ run_build_requires() {
     fi
     if [[ ! $BUILD_REQUIRES_NOREFRESH ]]; then
         # Refresh repos before installing dependencies
-        sb2 -t "$OPT_TARGET" -m sdk-install -R zypper --non-interactive ref
+        sb2_maintain zypper --non-interactive ref
     fi
     maybe_verify_target_dependencies
 }
@@ -2355,7 +2392,7 @@ run_build() {
 
     maybe_fix_package_version "$TMP_SPEC"
 
-    local build_tgt=$(sb2 -t $OPT_TARGET gcc -dumpmachine)
+    local build_tgt=$(sb2_build gcc -dumpmachine)
     build_tgt=${build_tgt%-gnueabi}
 
     if is_shadow_build; then
@@ -2374,7 +2411,7 @@ run_build() {
     (
         maybe_cd_to_spec_setup_subdir
         [[ $OPT_CLEAN_OUTPUTDIR ]] && rm -f "$OPT_OUTPUTDIR/"*.rpm;
-        oomadvice sb2 -t $OPT_TARGET env PATH="$WRAPPERSDIR:$USERWRAPPERSDIR:$PATH" rpmbuild \
+        sb2_build env PATH="$WRAPPERSDIR:$USERWRAPPERSDIR:$PATH" rpmbuild \
             --build-in-place --target=$build_tgt \
             "${BUILD_DEBUG_ARGS[@]}" \
             --define "_smp_mflags -j$(rpm_quote "$BUILD_JOBS")" \
@@ -2408,12 +2445,12 @@ run_prepare() {
 
     maybe_fix_package_version "$TMP_SPEC"
 
-    local build_tgt=$(sb2 -t $OPT_TARGET gcc -dumpmachine)
+    local build_tgt=$(sb2_build gcc -dumpmachine)
     build_tgt=${build_tgt%-gnueabi}
     (
         maybe_cd_to_spec_setup_subdir
         [[ $OPT_CLEAN_OUTPUTDIR ]] && rm -f "$OPT_OUTPUTDIR/"*.rpm;
-        oomadvice sb2 -t $OPT_TARGET rpmbuild --build-in-place --target=$build_tgt \
+        sb2_build rpmbuild --build-in-place --target=$build_tgt \
             --define "_smp_mflags -j$BUILD_JOBS" \
             --define "_rpmdir $OPT_OUTPUTDIR" \
             --define "_sourcedir $(dirname $OPT_SPEC)" \
@@ -2486,7 +2523,7 @@ run_cmake__process_args() {
 }
 
 run_cmake() {
-    local build_tgt=$(sb2 -t $OPT_TARGET gcc -dumpmachine)
+    local build_tgt=$(sb2_build gcc -dumpmachine)
     build_tgt=${build_tgt%-gnueabi}
 
     cp -a "$OPT_SPEC" "$TMP_SPEC"
@@ -2514,7 +2551,7 @@ run_cmake() {
 
     (
         maybe_cd_to_spec_setup_subdir
-        oomadvice sb2 -t $OPT_TARGET env PATH="${WRAPPERSDIR}:${USERWRAPPERSDIR}:${PATH}" rpmbuild \
+        sb2_build env PATH="${WRAPPERSDIR}:${USERWRAPPERSDIR}:${PATH}" rpmbuild \
             --build-in-place --target=$build_tgt \
             --define "noecho 1" \
             --define "_sourcedir $(dirname $OPT_SPEC)" \
@@ -2546,7 +2583,7 @@ run_qmake__process_args() {
 }
 
 run_qmake() {
-    local build_tgt=$(sb2 -t $OPT_TARGET gcc -dumpmachine)
+    local build_tgt=$(sb2_build gcc -dumpmachine)
     build_tgt=${build_tgt%-gnueabi}
 
     cp -a "$OPT_SPEC" "$TMP_SPEC"
@@ -2564,7 +2601,7 @@ run_qmake() {
 
     (
         maybe_cd_to_spec_setup_subdir
-        oomadvice sb2 -t $OPT_TARGET env PATH="$WRAPPERSDIR:$USERWRAPPERSDIR:$PATH" rpmbuild \
+        sb2_build env PATH="$WRAPPERSDIR:$USERWRAPPERSDIR:$PATH" rpmbuild \
             --build-in-place --target=$build_tgt \
             --define "noecho 1" \
             --define "_sourcedir $(dirname $OPT_SPEC)" \
@@ -2585,7 +2622,7 @@ run_compiledb() {
     # This is a good time to verify the target dependencies as per mb
     maybe_verify_target_dependencies
 
-    local build_tgt=$(sb2 -t $OPT_TARGET gcc -dumpmachine)
+    local build_tgt=$(sb2_build gcc -dumpmachine)
     build_tgt=${build_tgt%-gnueabi}
 
     if is_shadow_build; then
@@ -2605,7 +2642,7 @@ run_compiledb() {
 
     (
         maybe_cd_to_spec_setup_subdir
-        oomadvice sb2 -t $OPT_TARGET env PATH="$WRAPPERSDIR:$USERWRAPPERSDIR:$PATH" rpmbuild \
+        sb2_build env PATH="$WRAPPERSDIR:$USERWRAPPERSDIR:$PATH" rpmbuild \
             --build-in-place --target=$build_tgt \
             --define "noecho 1" \
             --define "_sourcedir $(dirname $OPT_SPEC)" \
@@ -2628,7 +2665,7 @@ run_make() {
 
     maybe_fix_package_version "$TMP_SPEC"
 
-    local build_tgt=$(sb2 -t $OPT_TARGET gcc -dumpmachine)
+    local build_tgt=$(sb2_build gcc -dumpmachine)
     build_tgt=${build_tgt%-gnueabi}
 
     init_noop_wrapper $WRAPPERSDIR/qmake
@@ -2639,7 +2676,7 @@ run_make() {
 
     (
         maybe_cd_to_spec_setup_subdir
-        oomadvice sb2 -t $OPT_TARGET env PATH="$WRAPPERSDIR:$USERWRAPPERSDIR:$PATH" rpmbuild \
+        sb2_build env PATH="$WRAPPERSDIR:$USERWRAPPERSDIR:$PATH" rpmbuild \
             --build-in-place --target=$build_tgt \
             --define "noecho 1" \
             --define "_sourcedir $(dirname $OPT_SPEC)" \
@@ -2657,7 +2694,7 @@ run_make_install() {
         shift
     fi
 
-    local build_tgt=$(sb2 -t $OPT_TARGET gcc -dumpmachine)
+    local build_tgt=$(sb2_build gcc -dumpmachine)
     build_tgt=${build_tgt%-gnueabi}
 
     cp -a "$OPT_SPEC" "$TMP_SPEC"
@@ -2670,7 +2707,7 @@ run_make_install() {
     # Install to buildroot which should be rsync'ed to /opt/sdk/$package on device
     (
         maybe_cd_to_spec_setup_subdir
-        oomadvice sb2 -t $OPT_TARGET rpmbuild --build-in-place --target=$build_tgt \
+        sb2_build rpmbuild --build-in-place --target=$build_tgt \
             --define "noecho 1" \
             --define "_sourcedir $(dirname $OPT_SPEC)" \
             --define "_buildhost $(get_hostname)" \
@@ -2704,7 +2741,7 @@ run_package__process_args() {
 }
 
 run_package() {
-    local build_tgt=$(sb2 -t $OPT_TARGET gcc -dumpmachine)
+    local build_tgt=$(sb2_build gcc -dumpmachine)
     build_tgt=${build_tgt%-gnueabi}
 
     cp -a "$OPT_SPEC" "$TMP_SPEC"
@@ -2720,7 +2757,7 @@ run_package() {
         maybe_increment_build_number
         maybe_cd_to_spec_setup_subdir
         [[ $OPT_CLEAN_OUTPUTDIR ]] && rm -f "$OPT_OUTPUTDIR/"*.rpm;
-        oomadvice sb2 -t $OPT_TARGET rpmbuild --build-in-place --target=$build_tgt \
+        sb2_build rpmbuild --build-in-place --target=$build_tgt \
             --define "noecho 1" \
             --define "_rpmdir $OPT_OUTPUTDIR" \
             --define "_sourcedir $(dirname $OPT_SPEC)" \
@@ -2739,11 +2776,58 @@ run_package() {
 }
 
 run_build_shell() {
+    local maintain=
+
+    while (($# > 0)); do
+        case $1 in
+            --maintain)
+                maintain=1
+                ;;
+            --)
+                break
+                ;;
+            -*)
+                fatal "Unrecognized option: '$1'"
+                ;;
+            *)
+                break
+                ;;
+        esac
+        shift
+    done
+
+    if [[ $maintain ]]; then
+        sb2_maintain "$@"
+    else
+        sb2_build "$@"
+    fi
+}
+
+sb2_build() {
+    local sb2_args=()
+    if [[ $OPT_BUILD_SHELL_ARGS ]]; then
+        read -a sb2_args <<<$OPT_BUILD_SHELL_ARGS || return
+    fi
+
     if [[ $# -gt 0 ]]; then
-        oomadvice sb2 -t $OPT_TARGET -- "$@"
+        oomadvice sb2 -t $OPT_TARGET "${sb2_args[@]}" -- "$@"
     else
         # Keep PS1 aligned with `sdk-manage maintain`
-        sb2 -t $OPT_TARGET -- env PS1="[$OPT_ORIGINAL_TARGET] \W $ " /bin/bash --noprofile --norc
+        sb2 -t $OPT_TARGET "${sb2_args[@]}" -- env PS1="[$OPT_ORIGINAL_TARGET] \W $ " /bin/bash --noprofile --norc
+    fi
+}
+
+sb2_maintain() {
+    local sb2_args=(-m sdk-install -R)
+    if [[ $OPT_BUILD_SHELL_MAINTENANCE_ARGS ]]; then
+        read -a sb2_args <<<$OPT_BUILD_SHELL_MAINTENANCE_ARGS || return
+    fi
+
+    if [[ $# -gt 0 ]]; then
+        sb2 -t $OPT_TARGET "${sb2_args[@]}" -- "$@"
+    else
+        # Keep PS1 aligned with `sdk-manage maintain`
+        sb2 -t $OPT_TARGET "${sb2_args[@]}" -- env PS1="[$OPT_ORIGINAL_TARGET] \W # " /bin/bash --noprofile --norc
     fi
 }
 
@@ -3320,6 +3404,8 @@ OPT_SHARED_DIR=/etc/mersdk/share
 OPT_INC_BUILD_NUMBER=0
 OPT_PULL_BUILD_REQUIRES=1
 OPT_WRAP=()
+OPT_BUILD_SHELL_ARGS=
+OPT_BUILD_SHELL_MAINTENANCE_ARGS=
 OPT_CHECK_LEVELS=
 OPT_PACKAGE_SIGN_USER=
 OPT_PACKAGE_SIGN_PASSPHRASE=
@@ -3565,6 +3651,12 @@ while [[ "$1" ]]; do
         "-m" | "--submodule" )
             notice "The '$1' option is deprecated and does nothing currently"
             shift 2
+            ;;
+        "--build-shell-args") shift
+            OPT_BUILD_SHELL_ARGS="$1"; shift
+            ;;
+        "--build-shell-maintenance-args") shift
+            OPT_BUILD_SHELL_MAINTENANCE_ARGS="$1"; shift
             ;;
         "--package-signing-user") shift
             OPT_PACKAGE_SIGN_USER="$1"; shift
