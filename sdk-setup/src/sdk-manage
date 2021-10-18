@@ -550,21 +550,37 @@ object_zypper() {
     enter "$object" zypper ${NON_INTERACTIVE:+--non-interactive} "${args[@]}"
     local rc=$?
 
+    (( rc < 100 || rc > 128 )) && return $rc
+
     case $rc in
-        100|101|102)
-            # Ignored exit codes:
-            # 100 - ZYPPER_EXIT_INF_UPDATE_NEEDED
-            # 101 - ZYPPER_EXIT_INF_SEC_UPDATE_NEEDED
-            # 102 - ZYPPER_EXIT_INF_REBOOT_NEEDED
+        100) # ZYPPER_EXIT_INF_UPDATE_NEEDED
             return 0
             ;;
-        103)
-            # 103 - ZYPPER_EXIT_INF_RESTART_NEEDED
+        101) # ZYPPER_EXIT_INF_SEC_UPDATE_NEEDED
+            return 0
+            ;;
+        102) # ZYPPER_EXIT_INF_REBOOT_NEEDED
+            return 0
+            ;;
+        103) # ZYPPER_EXIT_INF_RESTART_NEEDED
             object_zypper "$@"
             return
             ;;
+        104) # ZYPPER_EXIT_INF_CAP_NOT_FOUND
+            return $rc
+            ;;
+        105) # ZYPPER_EXIT_ON_SIGNAL
+            return $rc
+            ;;
+        106) # ZYPPER_EXIT_INF_REPOS_SKIPPED
+            return 0
+            ;;
+        107) # ZYPPER_EXIT_INF_RPM_SCRIPT_FAILED
+            return 0
+            ;;
     esac
 
+    echo >&2 "WARNING: Unhandled zypper exit code $rc. Please report."
     return $rc
 }
 
