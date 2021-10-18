@@ -511,8 +511,17 @@ fi
 if [[ $OPT_UPDATE ]]; then
     if [[ $OPT_TYPE == target ]]; then
         echo "Updating the tooling '$OPT_TOOLING_NAME'..." >&2
-        _ sdk-manage ${OPT_INTERACTIVE:+--interactive} tooling refresh "$OPT_TOOLING_NAME" || exit
-        _ sdk-manage ${OPT_INTERACTIVE:+--interactive} tooling update "$OPT_TOOLING_NAME"
+        _ sdk-manage ${OPT_INTERACTIVE:+--interactive} tooling refresh "$OPT_TOOLING_NAME" \
+            && _ sdk-manage ${OPT_INTERACTIVE:+--interactive} tooling update "$OPT_TOOLING_NAME"
+        rc=$?
+        if [[ $rc -ne 0 ]]; then
+            echo "Target update canceled:" \
+                "An error occurred while updating the tooling '$OPT_TOOLING_NAME'" >&2
+            exit $rc
+        fi
+
+        echo >&2
+        echo >&2
     fi
     echo "Updating the $OPT_TYPE '$OPT_NAME'..." >&2
     _ sdk-manage ${OPT_INTERACTIVE:+--interactive} "$OPT_TYPE" refresh "$OPT_NAME" || exit
