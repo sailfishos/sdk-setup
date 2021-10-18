@@ -185,13 +185,13 @@ OPT_TYPE=
 OPT_UPDATE=
 OPT_USER=
 OPT_URL=
-OPT_YES=
+OPT_INTERACTIVE=1
 
 positional_args=()
 while [[ ${1:-} ]]; do
     case "$1" in
         -y | --non-interactive )
-            OPT_YES=1
+            OPT_INTERACTIVE=
             ;;
         -z | --dry-run )
             OPT_DRY_RUN=1
@@ -468,7 +468,7 @@ if [[ $OPT_PACKAGE_REMOVE ]]; then
     echo "Going to remove package(s) [${OPT_PACKAGE_NAMES[*]}] from the $OPT_TYPE [$OPT_NAME]"
 fi
 
-if [[ $OPT_MAINTAIN && ! $OPT_YES ]]; then
+if [[ $OPT_MAINTAIN && $OPT_INTERACTIVE ]]; then
     if [[ ${#OPT_COMMAND[@]} -gt 0 ]]; then
         echo "Going to execute maintenance command under $OPT_TYPE [$OPT_NAME]"
     else
@@ -479,7 +479,7 @@ fi
 [[ $OPT_DRY_RUN ]] && echo "[only print out what would be done]"
 
 # confirm
-if [[ -z $OPT_YES ]]; then
+if [[ $OPT_INTERACTIVE ]]; then
     while true; do
     read -p "Do you want to continue? (y/n) " answer
     case $answer in
@@ -510,13 +510,13 @@ fi
 
 if [[ $OPT_UPDATE ]]; then
     if [[ $OPT_TYPE == target ]]; then
-        echo "Updating the tooling '$OPT_TOOLING_NAME'..."
-        _ sdk-manage tooling refresh "$OPT_TOOLING_NAME" || exit
-        _ sdk-manage tooling update "$OPT_TOOLING_NAME" || exit
+        echo "Updating the tooling '$OPT_TOOLING_NAME'..." >&2
+        _ sdk-manage ${OPT_INTERACTIVE:+--interactive} tooling refresh "$OPT_TOOLING_NAME" || exit
+        _ sdk-manage ${OPT_INTERACTIVE:+--interactive} tooling update "$OPT_TOOLING_NAME"
     fi
-    echo "Updating the $OPT_TYPE '$OPT_NAME'..."
-    _ sdk-manage "$OPT_TYPE" refresh "$OPT_NAME" || exit
-    _ sdk-manage "$OPT_TYPE" update "$OPT_NAME"
+    echo "Updating the $OPT_TYPE '$OPT_NAME'..." >&2
+    _ sdk-manage ${OPT_INTERACTIVE:+--interactive} "$OPT_TYPE" refresh "$OPT_NAME" || exit
+    _ sdk-manage ${OPT_INTERACTIVE:+--interactive} "$OPT_TYPE" update "$OPT_NAME"
     exit
 fi
 
@@ -541,12 +541,12 @@ if [[ $OPT_REMOVE ]]; then
 fi
 
 if [[ $OPT_PACKAGE_INSTALL ]]; then
-    _ sdk-manage "$OPT_TYPE" package-install "$OPT_NAME" "${OPT_PACKAGE_NAMES[@]}"
+    _ sdk-manage ${OPT_INTERACTIVE:+--interactive} "$OPT_TYPE" package-install "$OPT_NAME" "${OPT_PACKAGE_NAMES[@]}"
     exit
 fi
 
 if [[ $OPT_PACKAGE_REMOVE ]]; then
-    _ sdk-manage "$OPT_TYPE" package-remove "$OPT_NAME" "${OPT_PACKAGE_NAMES[@]}"
+    _ sdk-manage ${OPT_INTERACTIVE:+--interactive} "$OPT_TYPE" package-remove "$OPT_NAME" "${OPT_PACKAGE_NAMES[@]}"
     exit
 fi
 

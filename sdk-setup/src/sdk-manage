@@ -133,6 +133,9 @@ Global options
         removed in the user mode. This option is not meant to be used by
         regular users.
 
+    --interactive
+        Require confirmation and allow user intervention in some cases.
+
 For more information see https://sailfishos.org/wiki/Platform_SDK
 
 EOF
@@ -544,7 +547,7 @@ set_object_mode()
 object_zypper() {
     local object=$1 args=("${@:2}")
 
-    enter "$object" zypper --non-interactive "${args[@]}"
+    enter "$object" zypper ${NON_INTERACTIVE:+--non-interactive} "${args[@]}"
     local rc=$?
 
     case $rc in
@@ -2403,6 +2406,7 @@ SBOX2DIR=${HOME}/.scratchbox2
 TARGETS_XML=${HOST_TARGETS}/targets.xml
 USER_TARGETS_REPOSITORY=${HOST_TARGETS}/targets.repository
 CONFIG_FILE=.sdk-manage.conf
+NON_INTERACTIVE=1
 
 MODE_KEY=mode
 MODE_USER=user
@@ -2471,6 +2475,9 @@ while (( $# > 0)); do
                     ;;
             esac
             shift
+            ;;
+        --interactive)
+            NON_INTERACTIVE=
             ;;
         --version)
             echo "$0, version VERSION_FROM_SPEC"
