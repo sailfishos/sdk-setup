@@ -447,6 +447,10 @@ if [[ $OPT_REGISTER ]]; then
     if [[ $OPT_PASSWORD && ! $OPT_USER ]]; then
         fail "Cannot use '--password' without '--user'"
     fi
+    if [[ ! $OPT_PASSWORD ]]; then
+        # The act of supplying a password interactively is considered a confirmation
+        OPT_INTERACTIVE=
+    fi
 fi
 
 if [[ $OPT_REMOVE ]]; then
