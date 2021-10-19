@@ -133,6 +133,9 @@ Global options
         removed in the user mode. This option is not meant to be used by
         regular users.
 
+    --interactive
+        Require confirmation and allow user intervention in some cases.
+
 For more information see https://sailfishos.org/wiki/Platform_SDK
 
 EOF
@@ -544,24 +547,40 @@ set_object_mode()
 object_zypper() {
     local object=$1 args=("${@:2}")
 
-    enter "$object" zypper --non-interactive "${args[@]}"
+    enter "$object" zypper ${NON_INTERACTIVE:+--non-interactive} "${args[@]}"
     local rc=$?
 
+    (( rc < 100 || rc > 128 )) && return $rc
+
     case $rc in
-        100|101|102)
-            # Ignored exit codes:
-            # 100 - ZYPPER_EXIT_INF_UPDATE_NEEDED
-            # 101 - ZYPPER_EXIT_INF_SEC_UPDATE_NEEDED
-            # 102 - ZYPPER_EXIT_INF_REBOOT_NEEDED
+        100) # ZYPPER_EXIT_INF_UPDATE_NEEDED
             return 0
             ;;
-        103)
-            # 103 - ZYPPER_EXIT_INF_RESTART_NEEDED
+        101) # ZYPPER_EXIT_INF_SEC_UPDATE_NEEDED
+            return 0
+            ;;
+        102) # ZYPPER_EXIT_INF_REBOOT_NEEDED
+            return 0
+            ;;
+        103) # ZYPPER_EXIT_INF_RESTART_NEEDED
             object_zypper "$@"
             return
             ;;
+        104) # ZYPPER_EXIT_INF_CAP_NOT_FOUND
+            return $rc
+            ;;
+        105) # ZYPPER_EXIT_ON_SIGNAL
+            return $rc
+            ;;
+        106) # ZYPPER_EXIT_INF_REPOS_SKIPPED
+            return 0
+            ;;
+        107) # ZYPPER_EXIT_INF_RPM_SCRIPT_FAILED
+            return 0
+            ;;
     esac
 
+    echo >&2 "WARNING: Unhandled zypper exit code $rc. Please report."
     return $rc
 }
 
@@ -2403,6 +2422,7 @@ SBOX2DIR=${HOME}/.scratchbox2
 TARGETS_XML=${HOST_TARGETS}/targets.xml
 USER_TARGETS_REPOSITORY=${HOST_TARGETS}/targets.repository
 CONFIG_FILE=.sdk-manage.conf
+NON_INTERACTIVE=1
 
 MODE_KEY=mode
 MODE_USER=user
@@ -2471,6 +2491,9 @@ while (( $# > 0)); do
                     ;;
             esac
             shift
+            ;;
+        --interactive)
+            NON_INTERACTIVE=
             ;;
         --version)
             echo "$0, version VERSION_FROM_SPEC"
