@@ -4,7 +4,7 @@ Summary:    SDK setup packages for Mer SDK
 Version:    1.4.14
 Release:    1
 Group:      System/Base
-License:    GPL
+License:    GPLv2+
 BuildArch:  noarch
 URL:        https://github.com/sailfishos/sdk-setup
 Source0:    %{name}-%{version}.tar.bz2
@@ -27,6 +27,7 @@ Contains the mer_sdk_chroot script and supporting configs
 %package -n sdk-vm
 Summary:    Mer SDK files for the VM variant
 Group:      System/Base
+License:    GPLv2+ and LGPLv2+ and BSD
 BuildArch:  noarch
 Requires:   sdk-utils == %{version}
 Requires:   sdk-welcome-message
@@ -66,6 +67,7 @@ Contains the sdk-build and sdk-install mode symlinks for scratchbox2.
 %package -n sdk-utils
 Summary:    Mer SDK utility scripts
 Group:      System/Base
+License:    GPLv2+ and BSD
 BuildArch:  noarch
 Requires:   createrepo_c
 Requires:   libxml2
@@ -90,6 +92,7 @@ Contains some utility scripts to support Mer SDK development
 %package -n sdk-resize-rootfs
 Summary:    Service that expands root FS at system startup
 Group:      System/Base
+License:    BSD
 BuildArch:  noarch
 Requires:   util-linux
 Requires:   e2fsprogs
