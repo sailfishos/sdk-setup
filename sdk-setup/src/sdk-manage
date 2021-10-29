@@ -692,7 +692,8 @@ rebuild_rpmdb() {
 
     # rpm can't overwrite directory on a different overlay layer
     if [[ $(findmnt --noheadings --output FSTYPE / ) == overlay ]]; then
-        enter "$object" rpm --rebuilddb 2>&1 | sed -e '/failed to replace old database/,+1d'
+        # Use rpmdb directly to work around an sb2 bug
+        enter "$object" rpmdb --rebuilddb 2>&1 | sed -e '/failed to replace old database/,+1d'
         local new_db=$(enter "$object" find /var/lib -maxdepth 1 -name 'rpmrebuilddb.*' |head -n1)
         if [[ $new_db ]]; then
             # sb2 recreates rpm directory on startup, so we need to do these in
@@ -700,7 +701,7 @@ rebuild_rpmdb() {
             enter "$object" sh -c "rm -rf /var/lib/rpm && mv $new_db /var/lib/rpm"
         fi
     else
-        enter "$object" rpm --rebuilddb
+        enter "$object" rpmdb --rebuilddb
     fi
 }
 
