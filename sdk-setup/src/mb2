@@ -2315,7 +2315,8 @@ run_apply() {
             fi
             patch_file="$(sed -n "s/^Patch$p: \+\(.*\)/\1/p" "$TMP_SPEC")"
             echo "$message $patch_file" >&2
-            patch "${common_op[@]}" $op < "$(dirname "$OPT_SPEC")/$patch_file" >&2
+            patch "${common_op[@]}" $op < "$(dirname "$OPT_SPEC")/$patch_file" >&2 \
+                || fatal "$message $patch_file failed, exiting"
         done
     )
 }
