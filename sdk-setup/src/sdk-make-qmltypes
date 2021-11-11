@@ -519,7 +519,7 @@ set_up_emulator()
         if [[ $tree_created ]]; then
             emulator_run sudo rmdir --parents "$OPT_WORK_DIR" 2>/dev/null
         fi
-        if [[ $emulator_started ]]; then
+        if [[ $emulator_started || $snapshot_taken ]]; then
             emulator_stop
         fi
         if [[ $snapshot_taken ]]; then
