@@ -1430,7 +1430,7 @@ parse_options()
 
     OPT_EMULATOR_DEPS=(make qt5-plugin-platform-minimal qt5-qtdeclarative-devel-tools qtchooser
         zypper)
-    OPT_SHARED_MEDIA_PATH=/media/sdcard/sdk
+    OPT_SHARED_MEDIA_PATH=/run/media/defaultuser/sdk
     OPT_SNAPSHOT=qmltypes
     OPT_KEEP_DIRECTIVE=sdk-make-qmltypes:keep
 
