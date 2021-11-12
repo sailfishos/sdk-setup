@@ -430,7 +430,7 @@ emulator_run_c()
 sfdk_dbus_send()
 {
     local reply=
-    reply=$(dbus-send --type=method_call --print-reply --reply-timeout=30000 --system \
+    reply=$(dbus-send --type=method_call --print-reply --reply-timeout=60000 --system \
         --dest="$SAILFISH_SDK_SFDK_DBUS_SERVICE" "$@") || true
 
     # dbus-send behaves so when error is received - it also prints it
@@ -519,7 +519,7 @@ set_up_emulator()
         if [[ $tree_created ]]; then
             emulator_run sudo rmdir --parents "$OPT_WORK_DIR" 2>/dev/null
         fi
-        if [[ $emulator_started ]]; then
+        if [[ $emulator_started || $snapshot_taken ]]; then
             emulator_stop
         fi
         if [[ $snapshot_taken ]]; then
@@ -1430,7 +1430,7 @@ parse_options()
 
     OPT_EMULATOR_DEPS=(make qt5-plugin-platform-minimal qt5-qtdeclarative-devel-tools qtchooser
         zypper)
-    OPT_SHARED_MEDIA_PATH=/media/sdcard/sdk
+    OPT_SHARED_MEDIA_PATH=/run/media/defaultuser/sdk
     OPT_SNAPSHOT=qmltypes
     OPT_KEEP_DIRECTIVE=sdk-make-qmltypes:keep
 
