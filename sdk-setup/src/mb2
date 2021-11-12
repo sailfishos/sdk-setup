@@ -3734,6 +3734,17 @@ if [[ -n "$OPT_DEVICE" ]]; then
     fi
 fi
 
+if [[ $1 == @(run|ssh) ]]; then
+    if [[ $1 == ssh ]]; then
+        notice "The 'ssh' command is deprecated. Use 'run' instead."
+    fi
+    if [[ ! "$OPT_DEVICE" ]]; then
+        fatal "No device specified"
+    fi
+    ssh_as "$device_username" "${@:2}"
+    exit
+fi
+
 if [[ ! "$OPT_TARGET" ]]; then
     if [[ -f ~/.scratchbox2/config ]]; then
         . ~/.scratchbox2/config
@@ -3787,16 +3798,6 @@ case "$1" in
             ${cmd}__process_args "$@"
             shift $#
         fi
-        ;;
-    run | ssh )
-        if [[ $1 == ssh ]]; then
-            notice "The 'ssh' command is deprecated. Use 'run' instead."
-        fi
-        shift
-        if [[ ! "$OPT_DEVICE" ]]; then
-            fatal "No device specified"
-        fi
-        cmd="ssh_as $device_username"
         ;;
     *)
         short_usage quit
