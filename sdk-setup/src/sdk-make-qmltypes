@@ -1167,6 +1167,7 @@ main_batch()
     config=$(read_config) || return
 
     local -A job=
+    local jobs_ok=1
 
     while job_init job && read job[name] job[url] job[revision] job[binaries] <&3; do
         local job_data=
@@ -1241,8 +1242,8 @@ main_batch()
 
             if [[ $rc -ne 0 ]]; then
                 fatal "Transition ${job[state]}->${next_state} failed for '${job[name]}'"
-                false
-                return 1
+                jobs_ok=
+                break
             fi
 
             job[state]=$next_state
@@ -1250,9 +1251,10 @@ main_batch()
         done
     done 3<<<"$config"
 
-    info "All done"
-
-    ok=1
+    if [[ $jobs_ok ]]; then
+        info "All done"
+        ok=1
+    fi
 }
 
 show_status()
