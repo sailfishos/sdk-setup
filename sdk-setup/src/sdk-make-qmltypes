@@ -215,10 +215,11 @@ CONFIGURATION FILE
         Normalized Git URL
             This must be in the form
                 SERVICE ':' PATH
-            E.g. "git.merproject.org:mer-core/ssu". The PATH must be relative.
+            E.g. "github.com:sailfishos/ssu". The PATH must be relative.
 
-        Git Branch
-            The Git branch to check out
+        Git Revision
+            The Git revision to check out. Standalone or trailing "-" will be
+            replaced with the revision determined for the first binary package.
 
         Binary Packages
             A comma separated list of the binary packages which provide the QML
@@ -229,9 +230,10 @@ CONFIGURATION FILE
 
     Example configuration file
 
-        # PACKAGE  REPOSITORY                       BRANCH  BINARIES
-        ssu        git.merproject.org:mer-core/ssu  master  -declarative
-        mpris-qt5  github.com:nemomobile/qtmpris    master  -qml-plugin
+        # PACKAGE  REPOSITORY                  REVISION       BINARIES
+        foo        github.com:sailfishos/foo   -              -declarative
+        bar        github.com:sailfishos/bar   v1.2.3         -qml-plugin
+        baz        bitbucket.org:jolla/baz     sailfishos/-   -
 
     A remote configuration file may be specified with an HTTP(S)/FTP(S) URL in
     which case curl(1) will be used for download. Note that curl does not
@@ -253,6 +255,9 @@ OVERVIEW OF BATCH OPERATION
     TODO
         Processing not started yet
 
+    INSTALLED
+        Binary packages were installed to the emulator
+
     CLONED
         Reference repository was located under PROJECTS_DIR and it was cloned
         under the working directory
@@ -260,9 +265,6 @@ OVERVIEW OF BATCH OPERATION
     MAKEFILES-READY
         Depending on the project either qmake or CMake was run to produce
         Makefiles
-
-    INSTALLED
-        Binary packages were installed to the emulator
 
     DONE
         The qmltypes files were updated by running \`make qmltypes\` in every
@@ -590,6 +592,12 @@ set_up_emulator()
     fi
     rm -f "$stamp"
 
+    EMULATOR_OS_VERSION=$(emulator_run sed -n 's/^VERSION_ID=\(.*\)\.[0-9]\+$/\1/p' /etc/os-release)
+    if [[ $? -ne 0 || ! $EMULATOR_OS_VERSION ]]; then
+        fatal "Failed to determine OS version of the emulator"
+        return 1
+    fi
+
     ok=1
 }
 
@@ -865,6 +873,33 @@ revert_removal_of_manual_additions()
     done <<<"$all_modified"
 }
 
+find_installed_revision()
+{
+    [[ $1 = self ]] || local -n self=$1
+    local repo=$2
+    local prefix=${3:-v}
+
+    local main_binary=
+    main_binary=$(job_expand_binaries self |awk '{print $1}') || return
+
+    local installed_version=
+    if ! installed_version=$(emulator_run rpm -q --queryformat '%{VERSION}\n' \
+            "$main_binary"); then
+        fatal "Failed to determine version of '$main_binary' package on the emulator"
+        return 1
+    fi
+
+    local candidate=
+    for candidate in {upgrade-"$EMULATOR_OS_VERSION"/,}{"$prefix",}"$installed_version"; do
+        git -C "$repo" rev-parse --revs-only --verify --symbolic-full-name "$candidate" \
+                2>/dev/null \
+            && return
+    done
+
+    fatal "No Git tag matches the installed version '$installed_version' of '$main_binary'"
+    return 1
+}
+
 job_do_clone()
 {
     [[ $1 = self ]] || local -n self=$1
@@ -913,9 +948,20 @@ job_do_clone()
     trap 'job_do_clone_cleanup; trap - RETURN' RETURN
     trap 'return 1' INT TERM HUP
 
-    local ref=refs/remotes/${self[remote]}/${self[branch]}
-    local commit=
-    commit=$(git -C "$original" rev-parse "$ref" --) || return
+    local ref=
+    if [[ ${self[revision]:-} && ${self[revision]} != *- ]]; then
+        ref=$(git -C "$original" rev-parse --revs-only --verify --symbolic-full-name \
+            "${self[revision]}" 2>/dev/null)
+        if [[ $? -ne 0 ]]; then
+            fatal "Bad revision '${self[revision]}'"
+            return 1
+        fi
+    else
+        ref=$(find_installed_revision self "$original" "${self[revision]%-}") || return
+        info "Using revision '$ref'"
+    fi
+
+    self[resolved_revision]=$ref
 
     git -C "$OPT_WORK_DIR" submodule --quiet add -- "$original" "${self[local_path]}" || return
     git -C "$OPT_WORK_DIR" submodule --quiet init -- "${self[local_path]}" || return
@@ -940,7 +986,8 @@ job_do_prepare_makefiles()
     local subdirs=
     subdirs=$(find_subdirs_with_qmltypes) || return
     if [[ ! $subdirs ]]; then
-        fatal "No *.qmltypes file found in '${self[local_path]}', branch '${self[branch]}'"
+        fatal "No *.qmltypes file found in '${self[local_path]}'," \
+            "revision '${self[resolved_revision]}'"
         return 1
     fi
 
@@ -994,7 +1041,8 @@ job_do_make_qmltypes()
     local subdirs=
     subdirs=$(find_subdirs_with_qmltypes) || return
     if [[ ! $subdirs ]]; then
-        fatal "No *.qmltypes file found in '${self[local_path]}', branch '${self[branch]}'"
+        fatal "No *.qmltypes file found in '${self[local_path]}'," \
+            "revision '${self[resolved_revision]}'"
         return 1
     fi
 
@@ -1012,9 +1060,9 @@ job_do_make_qmltypes()
 }
 
 S_TODO='todo'
+S_INSTALLED='installed'
 S_CLONED='cloned'
 S_MAKEFILES_READY='makefiles-ready'
-S_INSTALLED='installed'
 S_DONE='done'
 S_FAIL='fail'
 
@@ -1024,7 +1072,8 @@ job_read()
     read_ \
         self[name] \
         self[url] \
-        self[branch] \
+        self[revision] \
+        self[resolved_revision] \
         self[binaries] \
         self[local_path] \
         self[remote] \
@@ -1037,7 +1086,8 @@ job_write()
     write_ \
         "${self[name]}" \
         "${self[url]}" \
-        "${self[branch]}" \
+        "${self[revision]}" \
+        "${self[resolved_revision]}" \
         "${self[binaries]}" \
         "${self[local_path]}" \
         "${self[remote]}" \
@@ -1117,14 +1167,15 @@ main_batch()
     config=$(read_config) || return
 
     local -A job=
+    local jobs_ok=1
 
-    while job_init job && read job[name] job[url] job[branch] job[binaries] <&3; do
+    while job_init job && read job[name] job[url] job[revision] job[binaries] <&3; do
         local job_data=
         if [[ -s $STATE_FILE ]] && job_data=$(look "${job[name]}$SEPARATOR" "$STATE_FILE"); then
             local -A saved_job
             job_read saved_job <<<"$job_data" || return
             if [[ ${saved_job[url]} == ${job[url]}
-                && ${saved_job[branch]} == ${job[branch]}
+                && ${saved_job[revision]} == ${job[revision]}
                 && ${saved_job[binaries]} == ${job[binaries]} ]]; then
                 job_read job < <(job_write saved_job)
                 case ${job[state]} in
@@ -1152,6 +1203,10 @@ main_batch()
             local next_task= next_state=
             case ${job[state]} in
                 $S_TODO)
+                    next_task=job_do_install
+                    next_state=$S_INSTALLED
+                    ;;
+                $S_INSTALLED)
                     next_task=job_do_clone
                     next_state=$S_CLONED
                     ;;
@@ -1160,10 +1215,6 @@ main_batch()
                     next_state=$S_MAKEFILES_READY
                     ;;
                 $S_MAKEFILES_READY)
-                    next_task=job_do_install
-                    next_state=$S_INSTALLED
-                    ;;
-                $S_INSTALLED)
                     next_task=job_do_make_qmltypes
                     next_state=$S_DONE
                     ;;
@@ -1191,8 +1242,8 @@ main_batch()
 
             if [[ $rc -ne 0 ]]; then
                 fatal "Transition ${job[state]}->${next_state} failed for '${job[name]}'"
-                false
-                return 1
+                jobs_ok=
+                break
             fi
 
             job[state]=$next_state
@@ -1200,9 +1251,10 @@ main_batch()
         done
     done 3<<<"$config"
 
-    info "All done"
-
-    ok=1
+    if [[ $jobs_ok ]]; then
+        info "All done"
+        ok=1
+    fi
 }
 
 show_status()
@@ -1225,13 +1277,13 @@ show_status()
     config=$(read_config) || return
 
     local -A job=
-    while job_init job && read job[name] job[url] job[branch] job[binaries] <&3; do
+    while job_init job && read job[name] job[url] job[revision] job[binaries] <&3; do
         local job_data=
         if [[ -s $STATE_FILE ]] && job_data=$(look "${job[name]}$SEPARATOR" "$STATE_FILE"); then
             local -A saved_job
             job_read saved_job <<<"$job_data" || return
             if [[ ${saved_job[url]} == ${job[url]}
-                && ${saved_job[branch]} == ${job[branch]}
+                && ${saved_job[revision]} == ${job[revision]}
                 && ${saved_job[binaries]} == ${job[binaries]} ]]; then
                 job_read job < <(job_write saved_job)
             fi
@@ -1262,13 +1314,16 @@ show_status()
 
         printf '%s %-60s  state: %s\n' "$brief_state" "$name" "${job[state]}"
         printf '     local path:    %q\n' "${job[local_path]}"
-        printf '     remote/branch: %s / %s\n' "${job[remote]}" "${job[branch]}"
+        printf '     remote#rev:    %s#%s\n' "${job[remote]}" "${job[resolved_revision]}"
         printf '     binaries:      %s\n' "$(job_expand_binaries job)"
 
         if [[ ${job[state]} == $S_DONE ]]; then
             git -C "$OPT_WORK_DIR/${job[local_path]}" --no-pager diff ${colorful:+--color} |sed 's/^/     /'
         fi
     done 3<<<"$config" |pager
+
+    # Avoid false error when pager exits before end is reached
+    return 0
 }
 
 main_single()
