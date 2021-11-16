@@ -1500,6 +1500,11 @@ synchronise_target() {
 # It would be verbose about these, which we rsync from elsewhere
 - /opt
 - /opt/**
+# Ignore broken symlinks - rsync would fail on them. This includes absolute
+# symlinks - those would be unresolvable on the host anyway. ('--safe-links'
+# would not help here. It would require '--archive' but we can't use that with
+# vboxsf).
+$(cd "$MER_TARGETS/$target/" && find -xtype l |sed 's,^\.,- ,')
 # Ensure all dirs are copied (--prune-empty-dirs will clean up)
 + */
 # We want this for QtCreator to determine the architecture
