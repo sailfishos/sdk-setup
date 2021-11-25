@@ -184,10 +184,6 @@ OTHER OPTIONS
         Disobey any "$OPT_KEEP_DIRECTIVE" directive. See DEALING WITH
         INCOMPLETE RESULTS above.
 
-    --no-build
-        Valid for in-place execution mode. Do not (re)build the package, use
-        existing build artefacts.
-
     --no-restore-emulator
         Keep the emulator running to spead up subsequent executions. Normally
         emulator state would be restored when exiting successfuly.
