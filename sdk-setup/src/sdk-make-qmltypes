@@ -180,6 +180,10 @@ OTHER OPTIONS
         Accept configuration file for batch operation in CSV format instead of
         the default blanks-separated format.
 
+    --no-deploy
+        Assume binaries have beem already deployed. Only valid for in-place
+        execution mode.
+
     --no-keep
         Disobey any "$OPT_KEEP_DIRECTIVE" directive. See DEALING WITH
         INCOMPLETE RESULTS above.
@@ -1359,29 +1363,31 @@ main_single()
 
     subdirs=$(find_build_dirs_for_qmltypes_subdirs "$subdirs") || return
 
-    if ! emulator_run_c "rm -rf RPMS"; then
-        fatal "Failed to remove old RPM packages from emulator"
-        return 1
-    fi
+    if [[ ! $OPT_NO_DEPLOY ]]; then
+        if ! emulator_run_c "rm -rf RPMS"; then
+            fatal "Failed to remove old RPM packages from emulator"
+            return 1
+        fi
 
-    silent mb2 "${OPT_MB2_OPTIONS[@]}" deploy --manual || return
+        silent mb2 "${OPT_MB2_OPTIONS[@]}" deploy --manual || return
 
-    local installables=()
-    if ! installables=($(emulator_run_c "$(declare -f match_packages_with_qmltypes); \
-            match_packages_with_qmltypes RPMS/*.rpm")); then
-        fatal "Failed to gather RPM package with '*.qmltypes' file(s)"
-        return 1
-    fi
+        local installables=()
+        if ! installables=($(emulator_run_c "$(declare -f match_packages_with_qmltypes); \
+                match_packages_with_qmltypes RPMS/*.rpm")); then
+            fatal "Failed to gather RPM package with '*.qmltypes' file(s)"
+            return 1
+        fi
 
-    if [[ ${#installables[@]} -eq 0 ]]; then
-        fatal "Found no RPM package with '*.qmltypes' file(s)"
-        return 1
-    fi
+        if [[ ${#installables[@]} -eq 0 ]]; then
+            fatal "Found no RPM package with '*.qmltypes' file(s)"
+            return 1
+        fi
 
-    if ! emulator_run_c "$(declare -f silent); silent sudo zypper --no-gpg-checks --non-interactive \
-            -p RPMS in --force-resolution ${installables[@]@Q}"; then
-        fatal "Failed to install RPM packages inside emulator"
-        return 1
+        if ! emulator_run_c "$(declare -f silent); silent sudo zypper --no-gpg-checks --non-interactive \
+                -p RPMS in --force-resolution ${installables[@]@Q}"; then
+            fatal "Failed to install RPM packages inside emulator"
+            return 1
+        fi
     fi
 
     if ! emulator_run_c "$(declare -f make_qmltypes); \
@@ -1406,6 +1412,7 @@ parse_options()
     OPT_H=
     OPT_HELP=
     OPT_MB2_OPTIONS=()
+    OPT_NO_DEPLOY=
     OPT_NO_KEEP=
     OPT_NO_RESTORE_EMULATOR=
     OPT_RESTORE_EMULATOR=
@@ -1435,6 +1442,9 @@ parse_options()
                 OPT_DEVICE=$2
                 OPT_MB2_OPTIONS+=(--device "$2")
                 shift
+                ;;
+            --no-deploy)
+                OPT_NO_DEPLOY=1
                 ;;
             --no-keep)
                 OPT_NO_KEEP=1
