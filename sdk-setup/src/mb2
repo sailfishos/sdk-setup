@@ -3889,6 +3889,7 @@ ORIG_PATH=$PATH
 export PATH="$STUBS_DIR:$PATH"
 
 BUILDHOST=$(get_hostname)
+OPT_TARGET=faketarget
 
 if ! which make >/dev/null; then
     fatal "Please install 'make' and try again"
@@ -4046,6 +4047,7 @@ sb2_stub() {
 
     [[ $1 == -t ]] && shift 2 || { bad_args; return 1; }
     [[ $1 == -m ]] && shift 2
+    [[ $1 == -R ]] && shift
     [[ $1 == -- ]] && shift
     [[ $1 != -* ]] || { bad_args; return 1; }
 
@@ -4230,7 +4232,7 @@ KNOWN_ISSUE "Passes -j without argument"
 KNOWN_ISSUE "Silently ignores extra arguments"
 run_tc sb2_arg_pass "prepare" \
     "$(expect_args \
-        -t "$DEFAULT_TARGET" rpmbuild --build-in-place --target= \
+        -t "$DEFAULT_TARGET" -- rpmbuild --build-in-place --target= \
         --define '_smp_mflags -j' \
         --define '_rpmdir /tmp/@TMPDIR@/RPMS' \
         --define '_sourcedir /tmp/@TMPDIR@/rpm' \
@@ -4243,7 +4245,7 @@ run_tc sb2_arg_pass "prepare" \
 
 run_tc sb2_arg_pass "build" \
     "$(expect_args \
-        -t "$DEFAULT_TARGET" env PATH="$WRAPPERS_PATH:/tmp/@TMPDIR@/stubs:$ORIG_PATH" rpmbuild \
+        -t "$DEFAULT_TARGET" -- env PATH="$WRAPPERS_PATH:/tmp/@TMPDIR@/stubs:$ORIG_PATH" rpmbuild \
         --build-in-place --target= \
         --define 'debug_package %{nil}' \
         --define "_smp_mflags -j$(rpm_quote "bad  1")" \
@@ -4259,7 +4261,7 @@ run_tc sb2_arg_pass "build" \
 
 run_tc sb2_arg_pass "build with debug" \
     "$(expect_args \
-        -t "$DEFAULT_TARGET" env PATH="$WRAPPERS_PATH:/tmp/@TMPDIR@/stubs:$ORIG_PATH" rpmbuild \
+        -t "$DEFAULT_TARGET" -- env PATH="$WRAPPERS_PATH:/tmp/@TMPDIR@/stubs:$ORIG_PATH" rpmbuild \
         --build-in-place --target= \
         --define "_smp_mflags -j$(rpm_quote "bad  1")" \
         --define '_rpmdir /tmp/@TMPDIR@/RPMS' \
@@ -4274,7 +4276,7 @@ run_tc sb2_arg_pass "build with debug" \
 
 run_tc sb2_arg_pass "qmake" \
     "$(expect_args \
-        -t "$DEFAULT_TARGET" env PATH="$WRAPPERS_PATH:/tmp/@TMPDIR@/stubs:$ORIG_PATH" rpmbuild \
+        -t "$DEFAULT_TARGET" -- env PATH="$WRAPPERS_PATH:/tmp/@TMPDIR@/stubs:$ORIG_PATH" rpmbuild \
         --build-in-place --target= \
         --define 'noecho 1' \
         --define '_sourcedir /tmp/@TMPDIR@/rpm' \
@@ -4285,7 +4287,7 @@ run_tc sb2_arg_pass "qmake" \
 
 run_tc sb2_arg_pass "cmake" \
     "$(expect_args \
-        -t "$DEFAULT_TARGET" env PATH="$WRAPPERS_PATH:/tmp/@TMPDIR@/stubs:$ORIG_PATH" rpmbuild \
+        -t "$DEFAULT_TARGET" -- env PATH="$WRAPPERS_PATH:/tmp/@TMPDIR@/stubs:$ORIG_PATH" rpmbuild \
         --build-in-place --target= \
         --define 'noecho 1' \
         --define '_sourcedir /tmp/@TMPDIR@/rpm' \
@@ -4296,7 +4298,7 @@ run_tc sb2_arg_pass "cmake" \
 
 run_tc sb2_arg_pass "make" \
     "$(expect_args \
-        -t "$DEFAULT_TARGET" env PATH="$WRAPPERS_PATH:/tmp/@TMPDIR@/stubs:$ORIG_PATH" rpmbuild \
+        -t "$DEFAULT_TARGET" -- env PATH="$WRAPPERS_PATH:/tmp/@TMPDIR@/stubs:$ORIG_PATH" rpmbuild \
         --build-in-place --target= \
         --define 'noecho 1' \
         --define '_sourcedir /tmp/@TMPDIR@/rpm' \
@@ -4308,7 +4310,7 @@ run_tc sb2_arg_pass "make" \
 KNOWN_ISSUE "Silently ignores extra arguments"
 run_tc sb2_arg_pass "make-install" \
     "$(expect_args \
-        -t "$DEFAULT_TARGET" rpmbuild --build-in-place --target= \
+        -t "$DEFAULT_TARGET" -- rpmbuild --build-in-place --target= \
         --define 'noecho 1' \
         --define '_sourcedir /tmp/@TMPDIR@/rpm' \
         --define "_buildhost $BUILDHOST" \
@@ -4320,7 +4322,7 @@ run_tc sb2_arg_pass "make-install" \
 
 run_tc sb2_arg_pass "package" \
     "$(expect_args \
-        -t "$DEFAULT_TARGET" rpmbuild --build-in-place --target= \
+        -t "$DEFAULT_TARGET" -- rpmbuild --build-in-place --target= \
         --define 'noecho 1' \
         --define '_rpmdir /tmp/@TMPDIR@/RPMS' \
         --define '_sourcedir /tmp/@TMPDIR@/rpm' \
