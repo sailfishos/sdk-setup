@@ -80,7 +80,7 @@ Limitations related to shadow builds:
        GNU Automake).  Additionally, their build and install procedure must be
        fully realized using qmake (or CMake or GNU Automake) with no
        additional steps implemented at .spec level.
-    2. The "--doprep" option to the "build" command cannot be used with shadow
+    2. The "--prepare" option to the "build" command cannot be used with shadow
        builds.
     3. If "prepare" or "apply" is needed, it must be used directly on the
        source tree prior to starting a shadow build (shadow builds for
@@ -4255,7 +4255,7 @@ run_tc sb2_arg_pass "build" \
         -bb \
         /tmp/@TMPDIR@/.mb2/spec \
         "a b" "c  d" e f)" \
-    build --doprep -j "bad  1" "a b" "c  d" e f
+    build --prepare -j "bad  1" "a b" "c  d" e f
 
 run_tc sb2_arg_pass "build with debug" \
     "$(expect_args \
@@ -4270,7 +4270,7 @@ run_tc sb2_arg_pass "build with debug" \
         -bb \
         /tmp/@TMPDIR@/.mb2/spec \
         "a b" "c  d" e f)" \
-    build --doprep --enable-debug -j "bad  1" "a b" "c  d" e f
+    build --prepare --enable-debug -j "bad  1" "a b" "c  d" e f
 
 run_tc sb2_arg_pass "qmake" \
     "$(expect_args \
@@ -4902,8 +4902,8 @@ run_tc rpmbuild_phases "prepare" \
     "+prepare -qmake -cmake-c -cmake-b -make -make-install -check -package" prepare
 run_tc rpmbuild_phases "build" \
     "-prepare +qmake +cmake-c +cmake-b +make +make-install +check +package" build
-run_tc rpmbuild_phases "build --doprep" \
-    "+prepare +qmake +cmake-c +cmake-b +make +make-install +check +package" build --doprep
+run_tc rpmbuild_phases "build --prepare" \
+    "+prepare +qmake +cmake-c +cmake-b +make +make-install +check +package" build --prepare
 run_tc rpmbuild_phases "qmake" \
     "-prepare +qmake +cmake-c +cmake-b -make -make-install -check -package" qmake
 run_tc rpmbuild_phases "cmake / configure" \
@@ -5005,8 +5005,8 @@ special_packaging_tc() {
     #   - N: No
     #   - APPLY: Yes, use 'mb2 apply' to apply them
     #   - PREP: Yes, use 'mb2 prepare' to apply them
-    #   - DOPREP: Yes, use 'mb2 build --doprep' to apply them
-    local enable_patch=$([[ $3 == APPLY || $3 == PREP || $3 == DOPREP ]] && echo "$3")
+    #   - BPREP: Yes, use 'mb2 build --prepare' to apply them
+    local enable_patch=$([[ $3 == APPLY || $3 == PREP || $3 == BPREP ]] && echo "$3")
 
     # SHADOW BUILD: Do shadow build
     #   - Y/N
@@ -5145,7 +5145,7 @@ END
     find -ls >&2
 
     (
-        maybe_doprep=
+        maybe_build_prepare=
         case $enable_patch in
             APPLY) (
                 cd "$srcdir" || return
@@ -5159,8 +5159,8 @@ END
                 set -x
                 "$SELF" ${spec_arg[@]:+"${spec_arg[@]}"} prepare || return
                 ) || return;;
-            DOPREP)
-                maybe_doprep=--doprep
+            BPREP)
+                maybe_build_prepare=--prepare
                 ;;
         esac
 
@@ -5168,7 +5168,7 @@ END
             cd "$builddir" || return
             echo "--- Running build" >&2
             set -x
-            "$SELF" ${spec_arg[@]:+"${spec_arg[@]}"} build ${maybe_doprep} ${project_on_cmdln:+"$project_on_cmdln"} || return
+            "$SELF" ${spec_arg[@]:+"${spec_arg[@]}"} build ${maybe_build_prepare} ${project_on_cmdln:+"$project_on_cmdln"} || return
         ) || return
 
         rm -rf "$builddir"/{.mb2,RPMS,Makefile,foo} "$buildroot" || return
@@ -5246,8 +5246,8 @@ run_tc special_packaging "Use prepare" \
     N       N      PREP   N       N        N         N
 run_tc special_packaging "Use prepare (shadow)" \
     N       N      PREP   Y       N        N         N
-run_tc special_packaging "Use --doprep" \
-    N       N      DOPREP N       N        N         N
+run_tc special_packaging "Use build --prepare" \
+    N       N      BPREP  N       N        N         N
 tear_down_ts special_packaging
 
 #   SUBDIR  MULTI  PATCH  SHADOW  PROJECT  PROJECT   AUTO
@@ -5262,8 +5262,8 @@ run_tc special_packaging "Use prepare" \
     N       N      PREP   N       N        N         Y
 run_tc special_packaging "Use prepare (shadow)" \
     N       N      PREP   Y       N        N         Y
-run_tc special_packaging "Use --doprep" \
-    N       N      DOPREP N       N        N         Y
+run_tc special_packaging "Use build --prepare" \
+    N       N      BPREP  N       N        N         Y
 tear_down_ts special_packaging
 
 #   SUBDIR  MULTI  PATCH  SHADOW  PROJECT  PROJECT   AUTO
@@ -5336,8 +5336,8 @@ run_tc special_packaging "Use prepare" \
     Y       N      PREP   N       N        N         N
 run_tc special_packaging "Use prepare (shadow)" \
     Y       N      PREP   Y       N        N         N
-run_tc special_packaging "Use doprep" \
-    Y       N      DOPREP N       N        N         N
+run_tc special_packaging "Use build --prepare" \
+    Y       N      BPREP  N       N        N         N
 tear_down_ts special_packaging
 
 #   SUBDIR  MULTI  PATCH  SHADOW  PROJECT  PROJECT   AUTO
@@ -5352,8 +5352,8 @@ run_tc special_packaging "Use prepare" \
     Y       N      PREP   N       N        N         Y
 run_tc special_packaging "Use prepare (shadow)" \
     Y       N      PREP   Y       N        N         Y
-run_tc special_packaging "Use doprep" \
-    Y       N      DOPREP N       N        N         Y
+run_tc special_packaging "Use build --prepare" \
+    Y       N      BPREP  N       N        N         Y
 tear_down_ts special_packaging
 
 ################################################################################
