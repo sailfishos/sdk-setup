@@ -5963,7 +5963,7 @@ touch %{buildroot}/foo
 END
     # Set output-dir explicitly to prevent removal of previously built packages
     mkdir -p RPMS || return
-    "$SELF" --output-dir RPMS build || return
+    "$SELF" --output-dir RPMS build >&2 || return
 }
 
 find_latest_rpms_tc() {
