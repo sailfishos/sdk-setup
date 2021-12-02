@@ -456,8 +456,8 @@ COMMANDS
         --rsync
             This method is special.  It can be used to transfer the RPM
             "buildroot" to the device as '/opt/sdk/<name>' without building
-            and installing RPM packages (see also 'make-install').
-            Incompatible with '--all'.
+            and installing true RPM packages.  Use the 'make-install' command
+            to populate the RPM buildroot.  Incompatible with '--all'.
 
         --sdk
             Uses the method native to the SDK to install RPM packages.
