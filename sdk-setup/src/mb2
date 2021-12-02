@@ -3369,7 +3369,7 @@ maybe_symlink_read() {
 ME=${0/#*\//}
 
 # this is what is closer to the user
-if inside_build_engine && [[ $1 != --self-test ]]; then
+if inside_build_engine && [[ $1 != --self-test && ! $MB2_SELF_TEST_RUN ]]; then
     WE=sfdk
 else
     WE=mb2
