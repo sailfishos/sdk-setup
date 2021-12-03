@@ -2124,9 +2124,9 @@ switch_to_snapshot() {
         local pool_size=${BASH_REMATCH[1]#,}
         : ${pool_size:=$DEF_SNAPSHOT_POOL_SIZE}
 
-        local lock=$STATEDIR/snapshot.lock
-        exec 10> "$lock" || return
-        if ! flock --nonblock 10; then
+        local lock=$STATEDIR/snapshot.lock lock_fd=
+        exec {lock_fd}> "$lock" || return
+        if ! flock --nonblock "$lock_fd"; then
             fatal "Failed to flock '$lock'"
         fi
         OPT_TARGET=$(sdk-manage target reserve "$OPT_ORIGINAL_TARGET" \
