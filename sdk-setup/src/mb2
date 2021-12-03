@@ -2474,11 +2474,8 @@ run_prepare() {
         [[ $OPT_CLEAN_OUTPUTDIR ]] && rm -f "$OPT_OUTPUTDIR/"*.rpm;
         sb2_build rpmbuild --build-in-place --target=$build_tgt \
             --define "_smp_mflags -j$BUILD_JOBS" \
-            --define "_rpmdir $OPT_OUTPUTDIR" \
             --define "_sourcedir $(dirname $OPT_SPEC)" \
-            --define "_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm" \
             --define "_buildhost $(get_hostname)" \
-            --buildroot="$buildroot" \
             -bp --short-circuit \
             "$TMP_SPEC"
     )
@@ -4255,11 +4252,8 @@ run_tc sb2_arg_pass "prepare" \
     "$(expect_args \
         -t "$DEFAULT_TARGET" -- rpmbuild --build-in-place --target= \
         --define '_smp_mflags -j' \
-        --define '_rpmdir /tmp/@TMPDIR@/RPMS' \
         --define '_sourcedir /tmp/@TMPDIR@/rpm' \
-        --define '_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm' \
         --define "_buildhost $BUILDHOST" \
-        --buildroot=/tmp/@TMPDIR@/installroot \
         -bp --short-circuit \
         /tmp/@TMPDIR@/.mb2/spec)" \
     prepare "a b" "c  d" e f
