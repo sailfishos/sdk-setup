@@ -964,6 +964,61 @@ make_gvariant_array() {
     printf "[%s]\n" "$body"
 }
 
+global_lock_init() {
+    [[ $MB2_SELF_TEST_RUN ]] && return
+
+    # Lock files need to be available from sb2, hence the use of $HOME.
+
+    # Two lock files are used in order to allow child processes to acquire the
+    # lock on behalf of mb2. This is done by interchanging the main lock file.
+    #
+    # Special care needs to be taken when the two mechanisms need to be nested.
+    # See how EXTENDED_PRE_INSTALL_LOCK_ARGS is overriden locally after calling
+    # global_lock_acquire at some places.
+    GLOBAL_LOCK=$HOME/.$ME.lock
+    GLOBAL_LOCK_INTERCHANGE_LOCK=$HOME/.$ME.lock.lock
+
+    # A child process may interchange the actual lock for this one, pre-acquired
+    # by mb2 and released only when mb2 exits.
+    #
+    # TODO global cleanup
+    trap '[[ $GLOBAL_LOCK_EXTENDED_LOCK ]] && rm -f "$GLOBAL_LOCK_EXTENDED_LOCK"' EXIT
+    GLOBAL_LOCK_EXTENDED_LOCK=$(mktemp "$HOME/.$ME.lock.XXX") || return
+    exec {GLOBAL_LOCK_EXTENDED_LOCK_FD}>"$GLOBAL_LOCK_EXTENDED_LOCK"
+    flock "$GLOBAL_LOCK_EXTENDED_LOCK_FD"
+
+    # Keep in sync with `rpm --showrc`
+    local def_spec_install_pre_head='%{___build_pre}'
+    local def_spec_install_pre_tail='[ "$RPM_BUILD_ROOT" != "/" ] && rm -rf "${RPM_BUILD_ROOT}"\
+mkdir -p `dirname "$RPM_BUILD_ROOT"`\
+mkdir "$RPM_BUILD_ROOT"\
+%{nil}'
+
+    # Let rpmbuild acquire the lock at the beginning of the %install section
+    # (before the shared build root or a shared output directory is accessed)
+    EXTENDED_PRE_INSTALL_LOCK_ARGS=(--define "__spec_install_pre \
+$def_spec_install_pre_head\\
+flock ${GLOBAL_LOCK_INTERCHANGE_LOCK@Q} flock ${GLOBAL_LOCK@Q} \\\\\\
+    ln -f ${GLOBAL_LOCK_EXTENDED_LOCK@Q} ${GLOBAL_LOCK@Q}\\
+$def_spec_install_pre_tail")
+}
+
+global_lock_acquire() {
+    [[ $MB2_SELF_TEST_RUN ]] && return
+
+    exec {GLOBAL_LOCK_INTERCHANGE_LOCK_FD}>"$GLOBAL_LOCK_INTERCHANGE_LOCK"
+    flock "$GLOBAL_LOCK_INTERCHANGE_LOCK_FD"
+    exec {GLOBAL_LOCK_FD}>"$GLOBAL_LOCK"
+    flock "$GLOBAL_LOCK_FD"
+}
+
+global_lock_release() {
+    [[ $MB2_SELF_TEST_RUN ]] && return
+
+    flock --unlock "$GLOBAL_LOCK_FD"
+    flock --unlock "$GLOBAL_LOCK_INTERCHANGE_LOCK_FD"
+}
+
 has_hook() {
     local hook=$1
 
@@ -1283,6 +1338,15 @@ maybe_verify_target_dependencies() {
         esac
         shift
     done
+
+    maybe_verify_target_dependencies_cleanup() (
+        trap 'echo cleaning up...' INT TERM HUP
+        global_lock_release
+    )
+    trap 'maybe_verify_target_dependencies_cleanup; trap - RETURN' RETURN
+    trap 'return 1' INT TERM HUP
+
+    global_lock_acquire
 
     if [[ $opt_reset ]]; then
         if ! sdk-manage target snapshot --reset=force "$OPT_ORIGINAL_TARGET" "$OPT_TARGET"; then
@@ -2441,6 +2505,7 @@ run_build() {
             --define "_sourcedir $(dirname $OPT_SPEC)" \
             --define "_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm" \
             --define "_buildhost $(get_hostname)" \
+            "${EXTENDED_PRE_INSTALL_LOCK_ARGS[@]}" \
             --buildroot="$buildroot" \
             "${BUILD_NOPREP_ARGS[@]}" "${BUILD_NOCHECK_ARGS[@]}" \
             -bb \
@@ -2731,10 +2796,14 @@ run_make_install() {
             --define "_sourcedir $(dirname $OPT_SPEC)" \
             --define "_buildhost $(get_hostname)" \
             --define "_skip_install_processing 1" \
+            "${EXTENDED_PRE_INSTALL_LOCK_ARGS[@]}" \
             --buildroot="$buildroot" \
             -bi --short-circuit $maybe_nocheck \
             "$TMP_SPEC"
-    )
+    ) || return
+
+    mkdir -p "$buildroot" # hack for self-test to pass with stubbed sb2
+    touch --reference="$buildroot" "$INSTALL_STAMP"
 }
 
 run_package__process_args() {
@@ -2782,6 +2851,7 @@ run_package() {
             --define "_sourcedir $(dirname $OPT_SPEC)" \
             --define "_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm" \
             --define "_buildhost $(get_hostname)" \
+            "${EXTENDED_PRE_INSTALL_LOCK_ARGS[@]}" \
             --buildroot="$buildroot" \
             -bb --noprep --nobuildstage "${PACKAGE_NOCHECK_ARGS[@]}" --noclean \
             "$TMP_SPEC"
@@ -2890,6 +2960,15 @@ run_deploy() {
     [[ ! $all_opt || $method_opt != --rsync ]] || fatal "Cannot use '--all' with '--rsync'"
     [[ ${method_opt:-} ]] || fatal "Argument expected"
 
+    run_deploy_cleanup() (
+        trap 'echo cleaning up...' INT TERM HUP
+        global_lock_release
+    )
+    trap 'run_deploy_cleanup; trap - RETURN' RETURN
+    trap 'return 1' INT TERM HUP
+
+    global_lock_acquire
+
     # rsync method is special
     if [[ $method_opt == --rsync ]]; then
         local name=$(get_spec_tag "%{name}")
@@ -2901,6 +2980,10 @@ run_deploy() {
 
         if [[ ! -d $buildroot || ! $(ls -A "$buildroot") ]]; then
             fatal "Nothing to deploy. Maybe you forgot to use the \"make-install\" command."
+        fi
+
+        if [[ -e $INSTALL_STAMP && $buildroot -nt $INSTALL_STAMP ]]; then
+            fatal "The content of the RPM \"%buildroot\" directory does not match this build."
         fi
 
         ensure_device_prepared
@@ -3285,6 +3368,16 @@ run_check() {
         return
     fi
 
+    run_check_cleanup() (
+        trap 'echo cleaning up...' INT TERM HUP
+        global_lock_release
+    )
+    trap 'run_check_cleanup; trap - RETURN' RETURN
+    trap 'return 1' INT TERM HUP
+
+    global_lock_acquire
+    local EXTENDED_PRE_INSTALL_LOCK_ARGS=()
+
     local rc=0 done_count=0
 
     if set_contains CHECK_LEVELS "$CHECK_LEVEL_UNIT"; then
@@ -3435,6 +3528,7 @@ OPT_HOOKS_DIR=
 STATEDIR=$PWD/.$WE
 TMP_SPEC=$STATEDIR/spec
 COMPILEDB_INPUT=$STATEDIR/compiledb-input.txt
+INSTALL_STAMP=$STATEDIR/installed
 
 SDK_RPMSIGN=/usr/libexec/sdk-setup/sdk-rpmsign
 
@@ -3733,6 +3827,8 @@ while [[ "$1" ]]; do
             ;;
     esac
 done
+
+global_lock_init
 
 mkdir -p "$STATEDIR" || exit
 echo '*' > "$STATEDIR/.gitignore"
