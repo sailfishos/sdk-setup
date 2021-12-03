@@ -1266,7 +1266,7 @@ maybe_verify_target_dependencies() {
         shift
     done
 
-    local arg= extra_args=()
+    local extra_args=()
     set -- "${BUILD_EXTRA_ARGS[@]}"
     while [[ $# -gt 0 ]]; do
         case $1 in
