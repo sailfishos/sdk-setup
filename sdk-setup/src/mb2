@@ -1260,7 +1260,7 @@ find_rpms()
         shift
     fi
 
-    local dir=$1 spec=$2 patterns=("${@:3}")
+    local dir=$1 src_dir=$2 spec=$3 patterns=("${@:4}")
 
     if [[ $all ]]; then
         find_latest_rpms "$dir" "${patterns[@]}"
@@ -1268,7 +1268,10 @@ find_rpms()
     fi
 
     local wanted_source_name= wanted_evr=
-    read wanted_source_name wanted_evr < <(rpmspec -q --srpm --queryformat '%{NAME} %{EVR}\n' "$spec")
+    read wanted_source_name wanted_evr < <(rpmspec -q --srpm \
+        --queryformat '%{NAME} %{EVR}\n' \
+        --define "_sourcedir $src_dir" \
+        "$spec")
 
     local pkg=
     while read -r pkg; do
@@ -1361,6 +1364,7 @@ maybe_verify_target_dependencies() {
 
     local deps=()
     readarray -t deps < <(sb2_build rpmspec --query --buildrequires "${extra_args[@]}" \
+        --define "_sourcedir $OPT_PKGDIR" \
         "$OPT_SPEC" |sed 's/\s*$//')
 
     if inside_build_engine; then
@@ -1415,7 +1419,8 @@ maybe_verify_target_dependencies() {
 }
 
 get_spec_tag() {
-    rpmspec --query --srpm --queryformat="$1" "$OPT_SPEC"
+    rpmspec --query --srpm --define "_sourcedir $OPT_PKGDIR" \
+        --queryformat="$1" "$OPT_SPEC"
 }
 
 maybe_fix_package_version() {
@@ -2211,7 +2216,7 @@ sign_rpms__prepare() {
 
 sign_rpms() {
     [[ -e $STATEDIR/spec ]] || fatal "No previous build found"
-    local rpms=$(find_rpms $all_opt "$OPT_OUTPUTDIR" "$STATEDIR/spec")
+    local rpms=$(find_rpms $all_opt "$OPT_OUTPUTDIR" "$OPT_PKGDIR" "$STATEDIR/spec")
     [[ $rpms ]] || fatal "No package found"
 
     local hook_exports=()
@@ -2516,7 +2521,7 @@ run_build() {
     [[ ! $BUILD_SIGN ]] || sign_rpms || return
 
     local hook_exports=()
-    local rpms=$(find_rpms "$OPT_OUTPUTDIR" "$STATEDIR/spec")
+    local rpms=$(find_rpms "$OPT_OUTPUTDIR" "$OPT_PKGDIR" "$STATEDIR/spec")
     run_hook post-package "${hook_exports[*]}" ${rpms} || fatal "The 'post-package' hook failed"
 }
 
@@ -2860,7 +2865,7 @@ run_package() {
     [[ ! $PACKAGE_SIGN ]] || sign_rpms
 
     local hook_exports=()
-    local rpms=$(find_rpms "$OPT_OUTPUTDIR" "$STATEDIR/spec")
+    local rpms=$(find_rpms "$OPT_OUTPUTDIR" "$OPT_PKGDIR" "$STATEDIR/spec")
     run_hook post-package "${hook_exports[*]}" ${rpms} || fatal "The 'post-package' hook failed"
 }
 
@@ -2993,7 +2998,8 @@ run_deploy() {
         return
     fi
 
-    local rpms=$(find_rpms $all_opt "$OPT_OUTPUTDIR" "$STATEDIR/spec" "${patterns[@]}")
+    local rpms=$(find_rpms $all_opt "$OPT_OUTPUTDIR" "$OPT_PKGDIR" "$STATEDIR/spec" \
+            "${patterns[@]}")
     [[ $rpms ]] || fatal "No package found or none matched the given criteria"
     local device_rpms=$(sed "s,^$OPT_OUTPUTDIR/,RPMS/," <<<"$rpms")
 
@@ -3405,7 +3411,7 @@ run_check() {
                 if [[ ! -e $STATEDIR/spec ]]; then
                     notice "No previous build found and no package to verify specified explicitly"
                 else
-                    packages=($(find_rpms "$OPT_OUTPUTDIR" "$STATEDIR/spec" \
+                    packages=($(find_rpms "$OPT_OUTPUTDIR" "$OPT_PKGDIR" "$STATEDIR/spec" \
                         '-*-debug@(source|info)'))
                     if [[ ${#packages[*]} -eq 0 ]]; then
                         notice "No packages found and none specified explicitly"
