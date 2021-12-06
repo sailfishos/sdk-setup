@@ -2380,7 +2380,7 @@ run_apply() {
     fi
 
     tr -d '\r' < "$OPT_SPEC" > "$TMP_SPEC"
-    cmp -s "$OPT_SPEC" "TMP_SPEC" || common_op+=(--binary)
+    cmp -s "$OPT_SPEC" "$TMP_SPEC" || common_op+=(--binary)
 
     local to_apply=
     local auto_applied=$(grep -q "^%autosetup" "$TMP_SPEC" \
