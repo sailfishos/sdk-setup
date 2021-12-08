@@ -271,8 +271,6 @@ rm -Rf /home/.zypp-cache
 %systemd_post host_targets.service
 %systemd_post information.service
 %systemd_post sdk-enginelan.service
-%systemd_post sdk-refresh.service
-%systemd_post sdk-refresh.timer
 %systemd_post sdk-setup-swap.service
 %systemd_post sshd.socket
 %systemd_post oneshot-root-late-sdk.service
@@ -322,8 +320,6 @@ fi
 %{_unitdir}/sdk-setup-env.service
 %{_unitdir}/etc-mersdk-share.service
 %{_unitdir}/etc-ssh-authorized_keys.mount
-%{_unitdir}/sdk-refresh.service
-%{_unitdir}/sdk-refresh.timer
 %{_unitdir}/sdk-setup-swap.service
 %{_unitdir}/dbus.socket.d/sdk.conf
 %{_unitdir}/oneshot-root-late-sdk.service
