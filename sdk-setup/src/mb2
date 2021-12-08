@@ -637,7 +637,7 @@ GLOBAL OPTIONS
         is useful when the deploy command is used outside of virtual machine.
 
     -T, --task[=<name>|=git:<regex>]
-        Modifies behavior of '--output-prefix' and '--snapshot' options.
+        Modifies behavior of '--output-prefix' option.
         The task name can be specified either directly as <name> or it can be
         derived from the current Git branch name, using the POSIX extended
         regular expression <regex> both as a condition to enable this option
