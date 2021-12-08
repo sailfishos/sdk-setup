@@ -731,6 +731,9 @@ GLOBAL OPTIONS
         packages, read the passphrase from the <file>. Only the first line will
         be read.
 
+    --package-timeline
+        Preserve older packages in the output directory.
+
     --hooks-dir <dir>
         The directory where to look for hooks. See HOOKS below.
 
@@ -1306,6 +1309,28 @@ find_rpms()
         if [[ $source_name == $wanted_source_name && $evr == $wanted_evr ]] \
                 && match_multi "$name" "${patterns[@]}"; then
             printf '%s\n' "$pkg"
+        fi
+    done < <(find "$dir" -maxdepth 1 -name '*.rpm')
+}
+
+prune_older_rpms()
+{
+    local dir=$1 src_dir=$2 spec=$3
+
+    local prune_source_name= latest_evr=
+    read prune_source_name latest_evr < <(rpmspec -q --srpm \
+        --queryformat '%{NAME} %{EVR}\n' \
+        --define "_sourcedir $src_dir" \
+        "$spec")
+
+    local pkg=
+    while read -r pkg; do
+        local source_rpm= evr=
+        read source_rpm evr < <(rpm -q --queryformat '%{SOURCERPM} %{EVR}\n' -p "$pkg")
+        local source_name=${source_rpm%-$evr.src.rpm}
+        if [[ $source_name == $prune_source_name && $evr != $latest_evr ]]; then
+            # Align messages with those of rpmbuild
+            rm -fv "$pkg" |sed "s/^removed '\(.*\)'$/Removed: \1/"
         fi
     done < <(find "$dir" -maxdepth 1 -name '*.rpm')
 }
@@ -2559,6 +2584,7 @@ run_build() {
             "${BUILD_EXTRA_ARGS[@]}"
     ) || return
 
+    [[ $OPT_PACKAGE_TIMELINE ]] || prune_older_rpms "$OPT_OUTPUTDIR" "$OPT_PKGDIR" "$TMP_SPEC"
     [[ ! $BUILD_SIGN ]] || sign_rpms || return
 
     local hook_exports=()
@@ -2903,6 +2929,7 @@ run_package() {
             "$TMP_SPEC"
     ) || return
 
+    [[ $OPT_PACKAGE_TIMELINE ]] || prune_older_rpms "$OPT_OUTPUTDIR" "$OPT_PKGDIR" "$TMP_SPEC"
     [[ ! $PACKAGE_SIGN ]] || sign_rpms
 
     local hook_exports=()
@@ -3551,6 +3578,7 @@ OPT_SNAPSHOT=$DEF_SNAPSHOT
 OPT_NO_SNAPSHOT=
 OPT_DEVICE=
 OPT_OUTPUTDIR=$(readlink -f ./RPMS)
+OPT_PACKAGE_TIMELINE=
 OPT_CLEAN_OUTPUTDIR=1
 OPT_SEARCH_OUTPUTDIR=
 OPT_SEARCH_OUTPUTDIR_VERBOSITY=verbose
@@ -3832,6 +3860,9 @@ while [[ "$1" ]]; do
             ;;
         "--package-signing-passphrase-file") shift
             OPT_PACKAGE_SIGN_PASSPHRASE_FILE="$1"; shift
+            ;;
+        "--package-timeline") shift
+            OPT_PACKAGE_TIMELINE=1
             ;;
         "--check-levels" )
             [[ $2 ]] || fatal "The '$1' option requires an argument"
