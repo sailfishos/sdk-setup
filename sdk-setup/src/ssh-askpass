@@ -31,5 +31,5 @@
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 
-echo "Warning: Use of password-protected SSH keys is not supported" >&2
+echo "Warning: Unable to load a password-protected SSH key. Use ssh-agent to supply it!" >&2
 exit 1

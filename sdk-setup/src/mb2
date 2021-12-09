@@ -1667,6 +1667,28 @@ with_specific_or_default_keys() {
         [[ -f $key ]] || fatal "SSH key not configured for user '$user' on '$device_name'"
     fi
 
+    local use_default_auth=
+    local agent_reachable=$(ssh-add -l &>/dev/null; [[ $? -ne 2 ]] && echo 1)
+    if [[ $agent_reachable ]]; then
+        if [[ $key ]]; then
+            # Does the agent have the required key?
+            local fingerprint=$(ssh-keygen -l -f "$key" 2>/dev/null)
+            if [[ $fingerprint ]] && ssh-add -l |grep -q -F "$fingerprint"; then
+                use_default_auth=1
+            fi
+        else
+            # No specific key required - does the agent have any key?
+            if ssh-add -l &>/dev/null; then
+                use_default_auth=1
+            fi
+        fi
+    fi
+
+    if [[ $use_default_auth ]]; then
+        "${command[@]}"
+        return
+    fi
+
     add_specific_or_default_keys() {
 
         ssh-add() {
