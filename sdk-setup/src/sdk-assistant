@@ -36,8 +36,8 @@
 set -o nounset
 
 fail() {
-    echo "sdk-assistant: $@" 1>&2
-    echo "Try 'sdk-assistant --help' for usage information" 1>&2
+    echo "$*" 1>&2
+    echo "Try passing '--help' for more information" 1>&2
     exit 1
 }
 
