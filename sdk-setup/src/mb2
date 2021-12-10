@@ -245,6 +245,15 @@ with command like this (executed on host):
 
 
 COMMANDS
+    build-init [<project-dir-or-file>]
+        Initialize build directory. This is normally done implicitly by the
+        'build', 'qmake' or 'cmake' commands and does not need to be done
+        explicitly with this comand.
+
+        When a <project-dir-or-file> is passed, a shadow build directory will
+        be initialized.  Otherwise the current working directory is treated as
+        the project directory.
+
     build-requires [--[no-]refresh] {pull|reset}
         When 'pull' is used, install or update the build-time dependencies as
         is done implicitly by the 'prepare', 'build' and 'qmake' (or 'cmake')
@@ -829,6 +838,22 @@ if ! type readarray &>/dev/null; then
         done
     }
 fi
+
+find_upwards() {
+    local start=$1
+    local name=$2
+
+    local ancestor=$start
+    while [[ ! -e $ancestor/$name && $ancestor != / ]]; do
+        ancestor=$(dirname "$ancestor")
+    done
+
+    if [[ -e $ancestor/$name ]]; then
+        printf '%s\n' "$ancestor"
+    else
+        return 1
+    fi
+}
 
 set_insert() {
     eval local set=(\${$1[*]})
@@ -2316,6 +2341,22 @@ sign_rpms_native() {
     rpmsign --addsign "${rpms[@]}" "${extra_args[@]}" </dev/null
 }
 
+run_build_init__process_args() {
+    if [[ $# -gt 0 ]]; then
+        OPT_PRO_FILE_OR_DIR=$1
+        shift
+    fi
+    if [[ $# -gt 0 ]]; then
+        fatal "Unexpected argument: '$1'"
+    fi
+
+    handle_pro_file_or_dir_option
+}
+
+run_build_init() {
+    :
+}
+
 run_build_requires__process_args() {
     BUILD_REQUIRES_MODE=
     BUILD_REQUIRES_NOREFRESH=
@@ -3389,7 +3430,12 @@ run_check() {
     if set_contains CHECK_LEVELS "$CHECK_LEVEL_UNIT"; then
         if set_contains CHECK_SUITES "$CHECK_RPMSPEC"; then
             let done_count++
-            run_make_install --check || rc=1
+            if [[ -d $STATEDIR ]]; then
+                run_make_install --check || rc=1
+            else
+                notice "The \"$CHECK_RPMSPEC\" suite needs to be run from the top of a build tree"
+                rc=1
+            fi
         fi
     fi
 
@@ -3409,7 +3455,8 @@ run_check() {
             packages=(${CHECK_PACKAGE_ARTEFACTS:+"${CHECK_PACKAGE_ARTEFACTS[@]}"})
             if [[ ${#packages[*]} -eq 0 ]]; then
                 if [[ ! -e $STATEDIR/spec ]]; then
-                    notice "No previous build found and no package to verify specified explicitly"
+                    notice "No previous build found under the current working directory" \
+                        "and no package to verify was specified explicitly"
                 else
                     packages=($(find_rpms "$OPT_OUTPUTDIR" "$OPT_PKGDIR" "$STATEDIR/spec" \
                         '-*-debug@(source|info)'))
@@ -3813,7 +3860,7 @@ while [[ "$1" ]]; do
             OPT_NEEDSPEC=1
             break
             ;;
-        check | build-shell )
+        build-init | build-shell | check )
             OPT_NEEDTARGET=1
             break;
             ;;
@@ -3836,8 +3883,28 @@ done
 
 global_lock_init
 
-mkdir -p "$STATEDIR" || exit
-echo '*' > "$STATEDIR/.gitignore"
+case $1 in
+    build-init | build | qmake | cmake )
+        if [[ $1 == build-init && -d $STATEDIR ]]; then
+            notice "Already initialized. Preserving existing configuration."
+        fi
+        mkdir -p "$STATEDIR" || exit
+        echo '*' > "$STATEDIR/.gitignore"
+        ;;
+    check | run | ssh )
+        # These can deal with STATEDIR missing
+        ;;
+    *)
+        if [[ ! -d $STATEDIR ]]; then
+            if ancestor=$(find_upwards "$PWD" ".$WE"); then
+                fatal "The command needs to be used from the top of the build tree ($ancestor)"
+            else
+                fatal "The command needs to be used from the top of a build tree." \
+                    "See the 'build-init' command."
+            fi
+        fi
+        ;;
+esac
 
 if [[ -n "$OPT_SPEC" ]]; then
     try_to_make_spec "$OPT_SPEC"
@@ -3890,12 +3957,15 @@ elif [[ $OPT_NO_SNAPSHOT != force && ! $MB2_SELF_TEST_RUN ]]; then
         fi
     fi
 fi
-printf '%s\n' "$OPT_TARGET" > "$STATEDIR/target"
+
+if [[ -e $STATEDIR ]]; then
+    printf '%s\n' "$OPT_TARGET" > "$STATEDIR/target"
+fi
 
 case "$1" in
     build | qmake | cmake | make | make-install | install | package | rpm | deploy | undeploy \
             | build-requires | installdeps | prepare | prep | apply | build-shell | compiledb \
-            | check )
+            | check | build-init )
         if [[ $1 == install ]]; then
             notice "The 'install' command is deprecated. Use 'make-install' instead."
             set -- make-install "${@:2}"
@@ -4303,6 +4373,7 @@ sb2_arg_pass_ts_set_up() {
     # Create an empty spec file
     mkdir rpm || return
     : >rpm/test.spec || return
+    "$SELF" build-init || return
 }
 
 sb2_arg_pass_ts_tear_down() {
@@ -5270,12 +5341,14 @@ END
                 cd "$srcdir" || return
                 echo "--- Preparing sources" >&2
                 set -x
+                "$SELF" build-init || return
                 "$SELF" ${spec_arg[@]:+"${spec_arg[@]}"} apply || return
                 ) || return;;
             PREP) (
                 cd "$srcdir" || return
                 echo "--- Preparing sources" >&2
                 set -x
+                "$SELF" build-init || return
                 "$SELF" ${spec_arg[@]:+"${spec_arg[@]}"} prepare || return
                 ) || return;;
             BPREP)
