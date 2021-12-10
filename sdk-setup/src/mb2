@@ -80,7 +80,7 @@ Limitations related to shadow builds:
        GNU Automake).  Additionally, their build and install procedure must be
        fully realized using qmake (or CMake or GNU Automake) with no
        additional steps implemented at .spec level.
-    2. The "--doprep" option to the "build" command cannot be used with shadow
+    2. The "--prepare" option to the "build" command cannot be used with shadow
        builds.
     3. If "prepare" or "apply" is needed, it must be used directly on the
        source tree prior to starting a shadow build (shadow builds for
@@ -456,8 +456,8 @@ COMMANDS
         --rsync
             This method is special.  It can be used to transfer the RPM
             "buildroot" to the device as '/opt/sdk/<name>' without building
-            and installing RPM packages (see also 'make-install').
-            Incompatible with '--all'.
+            and installing true RPM packages.  Use the 'make-install' command
+            to populate the RPM buildroot.  Incompatible with '--all'.
 
         --sdk
             Uses the method native to the SDK to install RPM packages.
@@ -964,6 +964,61 @@ make_gvariant_array() {
     printf "[%s]\n" "$body"
 }
 
+global_lock_init() {
+    [[ $MB2_SELF_TEST_RUN ]] && return
+
+    # Lock files need to be available from sb2, hence the use of $HOME.
+
+    # Two lock files are used in order to allow child processes to acquire the
+    # lock on behalf of mb2. This is done by interchanging the main lock file.
+    #
+    # Special care needs to be taken when the two mechanisms need to be nested.
+    # See how EXTENDED_PRE_INSTALL_LOCK_ARGS is overriden locally after calling
+    # global_lock_acquire at some places.
+    GLOBAL_LOCK=$HOME/.$ME.lock
+    GLOBAL_LOCK_INTERCHANGE_LOCK=$HOME/.$ME.lock.lock
+
+    # A child process may interchange the actual lock for this one, pre-acquired
+    # by mb2 and released only when mb2 exits.
+    #
+    # TODO global cleanup
+    trap '[[ $GLOBAL_LOCK_EXTENDED_LOCK ]] && rm -f "$GLOBAL_LOCK_EXTENDED_LOCK"' EXIT
+    GLOBAL_LOCK_EXTENDED_LOCK=$(mktemp "$HOME/.$ME.lock.XXX") || return
+    exec {GLOBAL_LOCK_EXTENDED_LOCK_FD}>"$GLOBAL_LOCK_EXTENDED_LOCK"
+    flock "$GLOBAL_LOCK_EXTENDED_LOCK_FD"
+
+    # Keep in sync with `rpm --showrc`
+    local def_spec_install_pre_head='%{___build_pre}'
+    local def_spec_install_pre_tail='[ "$RPM_BUILD_ROOT" != "/" ] && rm -rf "${RPM_BUILD_ROOT}"\
+mkdir -p `dirname "$RPM_BUILD_ROOT"`\
+mkdir "$RPM_BUILD_ROOT"\
+%{nil}'
+
+    # Let rpmbuild acquire the lock at the beginning of the %install section
+    # (before the shared build root or a shared output directory is accessed)
+    EXTENDED_PRE_INSTALL_LOCK_ARGS=(--define "__spec_install_pre \
+$def_spec_install_pre_head\\
+flock ${GLOBAL_LOCK_INTERCHANGE_LOCK@Q} flock ${GLOBAL_LOCK@Q} \\\\\\
+    ln -f ${GLOBAL_LOCK_EXTENDED_LOCK@Q} ${GLOBAL_LOCK@Q}\\
+$def_spec_install_pre_tail")
+}
+
+global_lock_acquire() {
+    [[ $MB2_SELF_TEST_RUN ]] && return
+
+    exec {GLOBAL_LOCK_INTERCHANGE_LOCK_FD}>"$GLOBAL_LOCK_INTERCHANGE_LOCK"
+    flock "$GLOBAL_LOCK_INTERCHANGE_LOCK_FD"
+    exec {GLOBAL_LOCK_FD}>"$GLOBAL_LOCK"
+    flock "$GLOBAL_LOCK_FD"
+}
+
+global_lock_release() {
+    [[ $MB2_SELF_TEST_RUN ]] && return
+
+    flock --unlock "$GLOBAL_LOCK_FD"
+    flock --unlock "$GLOBAL_LOCK_INTERCHANGE_LOCK_FD"
+}
+
 has_hook() {
     local hook=$1
 
@@ -1250,7 +1305,23 @@ filter_repo()
 maybe_verify_target_dependencies() {
     [[ $OPT_PULL_BUILD_REQUIRES ]] || return 0
 
-    local arg= extra_args=()
+    local opt_refresh= opt_reset=
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --refresh)
+                opt_refresh=1
+                ;;
+            --reset)
+                opt_reset=1
+                ;;
+            *)
+                fatal "Internal error: Unexpected argument to ${BASH_FUNCTION[0]}: '$1'"
+                ;;
+        esac
+        shift
+    done
+
+    local extra_args=()
     set -- "${BUILD_EXTRA_ARGS[@]}"
     while [[ $# -gt 0 ]]; do
         case $1 in
@@ -1267,6 +1338,26 @@ maybe_verify_target_dependencies() {
         esac
         shift
     done
+
+    maybe_verify_target_dependencies_cleanup() (
+        trap 'echo cleaning up...' INT TERM HUP
+        global_lock_release
+    )
+    trap 'maybe_verify_target_dependencies_cleanup; trap - RETURN' RETURN
+    trap 'return 1' INT TERM HUP
+
+    global_lock_acquire
+
+    if [[ $opt_reset ]]; then
+        if ! sdk-manage target snapshot --reset=force "$OPT_ORIGINAL_TARGET" "$OPT_TARGET"; then
+            fatal "Failed to reset build target snapshot '$OPT_TARGET' to '$OPT_ORIGINAL_TARGET'"
+        fi
+    fi
+
+    if [[ $opt_refresh ]]; then
+        # Refresh repos before installing dependencies
+        sb2_maintain zypper --non-interactive ref
+    fi
 
     local deps=()
     readarray -t deps < <(sb2_build rpmspec --query --buildrequires "${extra_args[@]}" \
@@ -2097,9 +2188,9 @@ switch_to_snapshot() {
         local pool_size=${BASH_REMATCH[1]#,}
         : ${pool_size:=$DEF_SNAPSHOT_POOL_SIZE}
 
-        local lock=$STATEDIR/snapshot.lock
-        exec 10> "$lock" || return
-        if ! flock --nonblock 10; then
+        local lock=$STATEDIR/snapshot.lock lock_fd=
+        exec {lock_fd}> "$lock" || return
+        if ! flock --nonblock "$lock_fd"; then
             fatal "Failed to flock '$lock'"
         fi
         OPT_TARGET=$(sdk-manage target reserve "$OPT_ORIGINAL_TARGET" \
@@ -2256,16 +2347,10 @@ run_build_requires__process_args() {
 }
 
 run_build_requires() {
-    if [[ $BUILD_REQUIRES_MODE == reset ]]; then
-        if ! sdk-manage target snapshot --reset=force "$OPT_ORIGINAL_TARGET" "$OPT_TARGET"; then
-            fatal "Failed to reset build target snapshot '$OPT_TARGET' to '$OPT_ORIGINAL_TARGET'"
-        fi
-    fi
-    if [[ ! $BUILD_REQUIRES_NOREFRESH ]]; then
-        # Refresh repos before installing dependencies
-        sb2_maintain zypper --non-interactive ref
-    fi
-    maybe_verify_target_dependencies
+    local args=()
+    [[ $BUILD_REQUIRES_MODE == reset ]] && args+=(--reset)
+    [[ $BUILD_REQUIRES_NOREFRESH ]] || args+=(--refresh)
+    OPT_PULL_BUILD_REQUIRES=1 maybe_verify_target_dependencies "${args[@]}"
 }
 
 run_apply__process_args() {
@@ -2420,6 +2505,7 @@ run_build() {
             --define "_sourcedir $(dirname $OPT_SPEC)" \
             --define "_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm" \
             --define "_buildhost $(get_hostname)" \
+            "${EXTENDED_PRE_INSTALL_LOCK_ARGS[@]}" \
             --buildroot="$buildroot" \
             "${BUILD_NOPREP_ARGS[@]}" "${BUILD_NOCHECK_ARGS[@]}" \
             -bb \
@@ -2453,11 +2539,8 @@ run_prepare() {
         [[ $OPT_CLEAN_OUTPUTDIR ]] && rm -f "$OPT_OUTPUTDIR/"*.rpm;
         sb2_build rpmbuild --build-in-place --target=$build_tgt \
             --define "_smp_mflags -j$BUILD_JOBS" \
-            --define "_rpmdir $OPT_OUTPUTDIR" \
             --define "_sourcedir $(dirname $OPT_SPEC)" \
-            --define "_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm" \
             --define "_buildhost $(get_hostname)" \
-            --buildroot="$buildroot" \
             -bp --short-circuit \
             "$TMP_SPEC"
     )
@@ -2713,10 +2796,14 @@ run_make_install() {
             --define "_sourcedir $(dirname $OPT_SPEC)" \
             --define "_buildhost $(get_hostname)" \
             --define "_skip_install_processing 1" \
+            "${EXTENDED_PRE_INSTALL_LOCK_ARGS[@]}" \
             --buildroot="$buildroot" \
             -bi --short-circuit $maybe_nocheck \
             "$TMP_SPEC"
-    )
+    ) || return
+
+    mkdir -p "$buildroot" # hack for self-test to pass with stubbed sb2
+    touch --reference="$buildroot" "$INSTALL_STAMP"
 }
 
 run_package__process_args() {
@@ -2764,6 +2851,7 @@ run_package() {
             --define "_sourcedir $(dirname $OPT_SPEC)" \
             --define "_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm" \
             --define "_buildhost $(get_hostname)" \
+            "${EXTENDED_PRE_INSTALL_LOCK_ARGS[@]}" \
             --buildroot="$buildroot" \
             -bb --noprep --nobuildstage "${PACKAGE_NOCHECK_ARGS[@]}" --noclean \
             "$TMP_SPEC"
@@ -2872,6 +2960,15 @@ run_deploy() {
     [[ ! $all_opt || $method_opt != --rsync ]] || fatal "Cannot use '--all' with '--rsync'"
     [[ ${method_opt:-} ]] || fatal "Argument expected"
 
+    run_deploy_cleanup() (
+        trap 'echo cleaning up...' INT TERM HUP
+        global_lock_release
+    )
+    trap 'run_deploy_cleanup; trap - RETURN' RETURN
+    trap 'return 1' INT TERM HUP
+
+    global_lock_acquire
+
     # rsync method is special
     if [[ $method_opt == --rsync ]]; then
         local name=$(get_spec_tag "%{name}")
@@ -2883,6 +2980,10 @@ run_deploy() {
 
         if [[ ! -d $buildroot || ! $(ls -A "$buildroot") ]]; then
             fatal "Nothing to deploy. Maybe you forgot to use the \"make-install\" command."
+        fi
+
+        if [[ -e $INSTALL_STAMP && $buildroot -nt $INSTALL_STAMP ]]; then
+            fatal "The content of the RPM \"%buildroot\" directory does not match this build."
         fi
 
         ensure_device_prepared
@@ -3267,6 +3368,16 @@ run_check() {
         return
     fi
 
+    run_check_cleanup() (
+        trap 'echo cleaning up...' INT TERM HUP
+        global_lock_release
+    )
+    trap 'run_check_cleanup; trap - RETURN' RETURN
+    trap 'return 1' INT TERM HUP
+
+    global_lock_acquire
+    local EXTENDED_PRE_INSTALL_LOCK_ARGS=()
+
     local rc=0 done_count=0
 
     if set_contains CHECK_LEVELS "$CHECK_LEVEL_UNIT"; then
@@ -3369,7 +3480,7 @@ maybe_symlink_read() {
 ME=${0/#*\//}
 
 # this is what is closer to the user
-if inside_build_engine && [[ $1 != --self-test ]]; then
+if inside_build_engine && [[ $1 != --self-test && ! $MB2_SELF_TEST_RUN ]]; then
     WE=sfdk
 else
     WE=mb2
@@ -3417,6 +3528,7 @@ OPT_HOOKS_DIR=
 STATEDIR=$PWD/.$WE
 TMP_SPEC=$STATEDIR/spec
 COMPILEDB_INPUT=$STATEDIR/compiledb-input.txt
+INSTALL_STAMP=$STATEDIR/installed
 
 SDK_RPMSIGN=/usr/libexec/sdk-setup/sdk-rpmsign
 
@@ -3716,6 +3828,8 @@ while [[ "$1" ]]; do
     esac
 done
 
+global_lock_init
+
 mkdir -p "$STATEDIR" || exit
 echo '*' > "$STATEDIR/.gitignore"
 
@@ -3889,6 +4003,7 @@ ORIG_PATH=$PATH
 export PATH="$STUBS_DIR:$PATH"
 
 BUILDHOST=$(get_hostname)
+OPT_TARGET=faketarget
 
 if ! which make >/dev/null; then
     fatal "Please install 'make' and try again"
@@ -4046,6 +4161,7 @@ sb2_stub() {
 
     [[ $1 == -t ]] && shift 2 || { bad_args; return 1; }
     [[ $1 == -m ]] && shift 2
+    [[ $1 == -R ]] && shift
     [[ $1 == -- ]] && shift
     [[ $1 != -* ]] || { bad_args; return 1; }
 
@@ -4230,20 +4346,17 @@ KNOWN_ISSUE "Passes -j without argument"
 KNOWN_ISSUE "Silently ignores extra arguments"
 run_tc sb2_arg_pass "prepare" \
     "$(expect_args \
-        -t "$DEFAULT_TARGET" rpmbuild --build-in-place --target= \
+        -t "$DEFAULT_TARGET" -- rpmbuild --build-in-place --target= \
         --define '_smp_mflags -j' \
-        --define '_rpmdir /tmp/@TMPDIR@/RPMS' \
         --define '_sourcedir /tmp/@TMPDIR@/rpm' \
-        --define '_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm' \
         --define "_buildhost $BUILDHOST" \
-        --buildroot=/tmp/@TMPDIR@/installroot \
         -bp --short-circuit \
         /tmp/@TMPDIR@/.mb2/spec)" \
     prepare "a b" "c  d" e f
 
 run_tc sb2_arg_pass "build" \
     "$(expect_args \
-        -t "$DEFAULT_TARGET" env PATH="$WRAPPERS_PATH:/tmp/@TMPDIR@/stubs:$ORIG_PATH" rpmbuild \
+        -t "$DEFAULT_TARGET" -- env PATH="$WRAPPERS_PATH:/tmp/@TMPDIR@/stubs:$ORIG_PATH" rpmbuild \
         --build-in-place --target= \
         --define 'debug_package %{nil}' \
         --define "_smp_mflags -j$(rpm_quote "bad  1")" \
@@ -4255,11 +4368,11 @@ run_tc sb2_arg_pass "build" \
         -bb \
         /tmp/@TMPDIR@/.mb2/spec \
         "a b" "c  d" e f)" \
-    build --doprep -j "bad  1" "a b" "c  d" e f
+    build --prepare -j "bad  1" "a b" "c  d" e f
 
 run_tc sb2_arg_pass "build with debug" \
     "$(expect_args \
-        -t "$DEFAULT_TARGET" env PATH="$WRAPPERS_PATH:/tmp/@TMPDIR@/stubs:$ORIG_PATH" rpmbuild \
+        -t "$DEFAULT_TARGET" -- env PATH="$WRAPPERS_PATH:/tmp/@TMPDIR@/stubs:$ORIG_PATH" rpmbuild \
         --build-in-place --target= \
         --define "_smp_mflags -j$(rpm_quote "bad  1")" \
         --define '_rpmdir /tmp/@TMPDIR@/RPMS' \
@@ -4270,11 +4383,11 @@ run_tc sb2_arg_pass "build with debug" \
         -bb \
         /tmp/@TMPDIR@/.mb2/spec \
         "a b" "c  d" e f)" \
-    build --doprep --enable-debug -j "bad  1" "a b" "c  d" e f
+    build --prepare --enable-debug -j "bad  1" "a b" "c  d" e f
 
 run_tc sb2_arg_pass "qmake" \
     "$(expect_args \
-        -t "$DEFAULT_TARGET" env PATH="$WRAPPERS_PATH:/tmp/@TMPDIR@/stubs:$ORIG_PATH" rpmbuild \
+        -t "$DEFAULT_TARGET" -- env PATH="$WRAPPERS_PATH:/tmp/@TMPDIR@/stubs:$ORIG_PATH" rpmbuild \
         --build-in-place --target= \
         --define 'noecho 1' \
         --define '_sourcedir /tmp/@TMPDIR@/rpm' \
@@ -4285,7 +4398,7 @@ run_tc sb2_arg_pass "qmake" \
 
 run_tc sb2_arg_pass "cmake" \
     "$(expect_args \
-        -t "$DEFAULT_TARGET" env PATH="$WRAPPERS_PATH:/tmp/@TMPDIR@/stubs:$ORIG_PATH" rpmbuild \
+        -t "$DEFAULT_TARGET" -- env PATH="$WRAPPERS_PATH:/tmp/@TMPDIR@/stubs:$ORIG_PATH" rpmbuild \
         --build-in-place --target= \
         --define 'noecho 1' \
         --define '_sourcedir /tmp/@TMPDIR@/rpm' \
@@ -4296,7 +4409,7 @@ run_tc sb2_arg_pass "cmake" \
 
 run_tc sb2_arg_pass "make" \
     "$(expect_args \
-        -t "$DEFAULT_TARGET" env PATH="$WRAPPERS_PATH:/tmp/@TMPDIR@/stubs:$ORIG_PATH" rpmbuild \
+        -t "$DEFAULT_TARGET" -- env PATH="$WRAPPERS_PATH:/tmp/@TMPDIR@/stubs:$ORIG_PATH" rpmbuild \
         --build-in-place --target= \
         --define 'noecho 1' \
         --define '_sourcedir /tmp/@TMPDIR@/rpm' \
@@ -4308,7 +4421,7 @@ run_tc sb2_arg_pass "make" \
 KNOWN_ISSUE "Silently ignores extra arguments"
 run_tc sb2_arg_pass "make-install" \
     "$(expect_args \
-        -t "$DEFAULT_TARGET" rpmbuild --build-in-place --target= \
+        -t "$DEFAULT_TARGET" -- rpmbuild --build-in-place --target= \
         --define 'noecho 1' \
         --define '_sourcedir /tmp/@TMPDIR@/rpm' \
         --define "_buildhost $BUILDHOST" \
@@ -4320,7 +4433,7 @@ run_tc sb2_arg_pass "make-install" \
 
 run_tc sb2_arg_pass "package" \
     "$(expect_args \
-        -t "$DEFAULT_TARGET" rpmbuild --build-in-place --target= \
+        -t "$DEFAULT_TARGET" -- rpmbuild --build-in-place --target= \
         --define 'noecho 1' \
         --define '_rpmdir /tmp/@TMPDIR@/RPMS' \
         --define '_sourcedir /tmp/@TMPDIR@/rpm' \
@@ -4902,8 +5015,8 @@ run_tc rpmbuild_phases "prepare" \
     "+prepare -qmake -cmake-c -cmake-b -make -make-install -check -package" prepare
 run_tc rpmbuild_phases "build" \
     "-prepare +qmake +cmake-c +cmake-b +make +make-install +check +package" build
-run_tc rpmbuild_phases "build --doprep" \
-    "+prepare +qmake +cmake-c +cmake-b +make +make-install +check +package" build --doprep
+run_tc rpmbuild_phases "build --prepare" \
+    "+prepare +qmake +cmake-c +cmake-b +make +make-install +check +package" build --prepare
 run_tc rpmbuild_phases "qmake" \
     "-prepare +qmake +cmake-c +cmake-b -make -make-install -check -package" qmake
 run_tc rpmbuild_phases "cmake / configure" \
@@ -5005,8 +5118,8 @@ special_packaging_tc() {
     #   - N: No
     #   - APPLY: Yes, use 'mb2 apply' to apply them
     #   - PREP: Yes, use 'mb2 prepare' to apply them
-    #   - DOPREP: Yes, use 'mb2 build --doprep' to apply them
-    local enable_patch=$([[ $3 == APPLY || $3 == PREP || $3 == DOPREP ]] && echo "$3")
+    #   - BPREP: Yes, use 'mb2 build --prepare' to apply them
+    local enable_patch=$([[ $3 == APPLY || $3 == PREP || $3 == BPREP ]] && echo "$3")
 
     # SHADOW BUILD: Do shadow build
     #   - Y/N
@@ -5145,7 +5258,7 @@ END
     find -ls >&2
 
     (
-        maybe_doprep=
+        maybe_build_prepare=
         case $enable_patch in
             APPLY) (
                 cd "$srcdir" || return
@@ -5159,8 +5272,8 @@ END
                 set -x
                 "$SELF" ${spec_arg[@]:+"${spec_arg[@]}"} prepare || return
                 ) || return;;
-            DOPREP)
-                maybe_doprep=--doprep
+            BPREP)
+                maybe_build_prepare=--prepare
                 ;;
         esac
 
@@ -5168,7 +5281,7 @@ END
             cd "$builddir" || return
             echo "--- Running build" >&2
             set -x
-            "$SELF" ${spec_arg[@]:+"${spec_arg[@]}"} build ${maybe_doprep} ${project_on_cmdln:+"$project_on_cmdln"} || return
+            "$SELF" ${spec_arg[@]:+"${spec_arg[@]}"} build ${maybe_build_prepare} ${project_on_cmdln:+"$project_on_cmdln"} || return
         ) || return
 
         rm -rf "$builddir"/{.mb2,RPMS,Makefile,foo} "$buildroot" || return
@@ -5246,8 +5359,8 @@ run_tc special_packaging "Use prepare" \
     N       N      PREP   N       N        N         N
 run_tc special_packaging "Use prepare (shadow)" \
     N       N      PREP   Y       N        N         N
-run_tc special_packaging "Use --doprep" \
-    N       N      DOPREP N       N        N         N
+run_tc special_packaging "Use build --prepare" \
+    N       N      BPREP  N       N        N         N
 tear_down_ts special_packaging
 
 #   SUBDIR  MULTI  PATCH  SHADOW  PROJECT  PROJECT   AUTO
@@ -5262,8 +5375,8 @@ run_tc special_packaging "Use prepare" \
     N       N      PREP   N       N        N         Y
 run_tc special_packaging "Use prepare (shadow)" \
     N       N      PREP   Y       N        N         Y
-run_tc special_packaging "Use --doprep" \
-    N       N      DOPREP N       N        N         Y
+run_tc special_packaging "Use build --prepare" \
+    N       N      BPREP  N       N        N         Y
 tear_down_ts special_packaging
 
 #   SUBDIR  MULTI  PATCH  SHADOW  PROJECT  PROJECT   AUTO
@@ -5336,8 +5449,8 @@ run_tc special_packaging "Use prepare" \
     Y       N      PREP   N       N        N         N
 run_tc special_packaging "Use prepare (shadow)" \
     Y       N      PREP   Y       N        N         N
-run_tc special_packaging "Use doprep" \
-    Y       N      DOPREP N       N        N         N
+run_tc special_packaging "Use build --prepare" \
+    Y       N      BPREP  N       N        N         N
 tear_down_ts special_packaging
 
 #   SUBDIR  MULTI  PATCH  SHADOW  PROJECT  PROJECT   AUTO
@@ -5352,8 +5465,8 @@ run_tc special_packaging "Use prepare" \
     Y       N      PREP   N       N        N         Y
 run_tc special_packaging "Use prepare (shadow)" \
     Y       N      PREP   Y       N        N         Y
-run_tc special_packaging "Use doprep" \
-    Y       N      DOPREP N       N        N         Y
+run_tc special_packaging "Use build --prepare" \
+    Y       N      BPREP  N       N        N         Y
 tear_down_ts special_packaging
 
 ################################################################################
@@ -5961,7 +6074,7 @@ touch %{buildroot}/foo
 END
     # Set output-dir explicitly to prevent removal of previously built packages
     mkdir -p RPMS || return
-    "$SELF" --output-dir RPMS build || return
+    "$SELF" --output-dir RPMS build >&2 || return
 }
 
 find_latest_rpms_tc() {
