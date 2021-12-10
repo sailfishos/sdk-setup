@@ -434,11 +434,10 @@ COMMANDS
         Deploy build results to a device.
 
         By default, just the build results of the project under current working
-        directory will be deployed. When a shared output directory is used (see
-        '--output-dir' and '--output-prefix'), the option '--all' can be used to
-        require deployment of all packages found under the output directory, no
-        matter of their origin. The '--all' option is not available when the
-        '--rsync' method is used.
+        directory will be deployed. The '--all' option can be used to require
+        deployment of all packages found under the output directory, no matter
+        of their origin. The '--all' option is not available when the '--rsync'
+        method is used.
 
         With the '--dry-run' option, the list of (sub)packages that would be
         deployed may be previewed without applying the changes.  Depending on
@@ -586,8 +585,7 @@ GLOBAL OPTIONS
 
     -o, --output-dir <dir>
         Defaults to './RPMS'. The resulting RPM packages will be placed
-        directly under the specified <dir>. With this option existing files in
-        the output directory are preserved.  Implies '--search-output-dir'
+        directly under the specified <dir>.  Implies '--search-output-dir'.
 
     -O, --output-prefix <dir>
         Much like '--output-dir' except that a subdirectory of the given <dir>
@@ -637,7 +635,7 @@ GLOBAL OPTIONS
         is useful when the deploy command is used outside of virtual machine.
 
     -T, --task[=<name>|=git:<regex>]
-        Modifies behavior of '--output-prefix' and '--snapshot' options.
+        Modifies behavior of '--output-prefix' option.
         The task name can be specified either directly as <name> or it can be
         derived from the current Git branch name, using the POSIX extended
         regular expression <regex> both as a condition to enable this option
@@ -730,6 +728,9 @@ GLOBAL OPTIONS
         In case a passphrase-protected signing key is selected for signing
         packages, read the passphrase from the <file>. Only the first line will
         be read.
+
+    --package-timeline
+        Preserve older packages in the output directory.
 
     --hooks-dir <dir>
         The directory where to look for hooks. See HOOKS below.
@@ -1306,6 +1307,28 @@ find_rpms()
         if [[ $source_name == $wanted_source_name && $evr == $wanted_evr ]] \
                 && match_multi "$name" "${patterns[@]}"; then
             printf '%s\n' "$pkg"
+        fi
+    done < <(find "$dir" -maxdepth 1 -name '*.rpm')
+}
+
+prune_older_rpms()
+{
+    local dir=$1 src_dir=$2 spec=$3
+
+    local prune_source_name= latest_evr=
+    read prune_source_name latest_evr < <(rpmspec -q --srpm \
+        --queryformat '%{NAME} %{EVR}\n' \
+        --define "_sourcedir $src_dir" \
+        "$spec")
+
+    local pkg=
+    while read -r pkg; do
+        local source_rpm= evr=
+        read source_rpm evr < <(rpm -q --queryformat '%{SOURCERPM} %{EVR}\n' -p "$pkg")
+        local source_name=${source_rpm%-$evr.src.rpm}
+        if [[ $source_name == $prune_source_name && $evr != $latest_evr ]]; then
+            # Align messages with those of rpmbuild
+            rm -fv "$pkg" |sed "s/^removed '\(.*\)'$/Removed: \1/"
         fi
     done < <(find "$dir" -maxdepth 1 -name '*.rpm')
 }
@@ -2542,7 +2565,6 @@ run_build() {
 
     (
         maybe_cd_to_spec_setup_subdir
-        [[ $OPT_CLEAN_OUTPUTDIR ]] && rm -f "$OPT_OUTPUTDIR/"*.rpm;
         sb2_build env PATH="$WRAPPERSDIR:$USERWRAPPERSDIR:$PATH" rpmbuild \
             --build-in-place --target=$build_tgt \
             "${BUILD_DEBUG_ARGS[@]}" \
@@ -2559,6 +2581,7 @@ run_build() {
             "${BUILD_EXTRA_ARGS[@]}"
     ) || return
 
+    [[ $OPT_PACKAGE_TIMELINE ]] || prune_older_rpms "$OPT_OUTPUTDIR" "$OPT_PKGDIR" "$TMP_SPEC"
     [[ ! $BUILD_SIGN ]] || sign_rpms || return
 
     local hook_exports=()
@@ -2582,7 +2605,6 @@ run_prepare() {
     build_tgt=${build_tgt%-gnueabi}
     (
         maybe_cd_to_spec_setup_subdir
-        [[ $OPT_CLEAN_OUTPUTDIR ]] && rm -f "$OPT_OUTPUTDIR/"*.rpm;
         sb2_build rpmbuild --build-in-place --target=$build_tgt \
             --define "_smp_mflags -j$BUILD_JOBS" \
             --define "_sourcedir $(dirname $OPT_SPEC)" \
@@ -2890,7 +2912,6 @@ run_package() {
     (
         maybe_increment_build_number
         maybe_cd_to_spec_setup_subdir
-        [[ $OPT_CLEAN_OUTPUTDIR ]] && rm -f "$OPT_OUTPUTDIR/"*.rpm;
         sb2_build rpmbuild --build-in-place --target=$build_tgt \
             --define "noecho 1" \
             --define "_rpmdir $OPT_OUTPUTDIR" \
@@ -2903,6 +2924,7 @@ run_package() {
             "$TMP_SPEC"
     ) || return
 
+    [[ $OPT_PACKAGE_TIMELINE ]] || prune_older_rpms "$OPT_OUTPUTDIR" "$OPT_PKGDIR" "$TMP_SPEC"
     [[ ! $PACKAGE_SIGN ]] || sign_rpms
 
     local hook_exports=()
@@ -3551,7 +3573,7 @@ OPT_SNAPSHOT=$DEF_SNAPSHOT
 OPT_NO_SNAPSHOT=
 OPT_DEVICE=
 OPT_OUTPUTDIR=$(readlink -f ./RPMS)
-OPT_CLEAN_OUTPUTDIR=1
+OPT_PACKAGE_TIMELINE=
 OPT_SEARCH_OUTPUTDIR=
 OPT_SEARCH_OUTPUTDIR_VERBOSITY=verbose
 OPT_OUTPUT_PREFIX=
@@ -3705,14 +3727,12 @@ while [[ "$1" ]]; do
             [[ -d "$1" ]] || fatal "'$1' is not a directory"
             OPT_OUTPUTDIR="${1%%+(/)}"; shift
             OPT_OUTPUT_PREFIX=
-            OPT_CLEAN_OUTPUTDIR=
             OPT_SEARCH_OUTPUTDIR=1
             ;;
         "-O" | "--output-prefix") shift
             [[ -d "$1" ]] || fatal "'$1' is not a directory"
             OPT_OUTPUT_PREFIX="${1%%+(/)}"; shift
             OPT_OUTPUTDIR=
-            OPT_CLEAN_OUTPUTDIR=
             OPT_SEARCH_OUTPUTDIR=1
             ;;
         "-p" | "--projectdir")
@@ -3832,6 +3852,9 @@ while [[ "$1" ]]; do
             ;;
         "--package-signing-passphrase-file") shift
             OPT_PACKAGE_SIGN_PASSPHRASE_FILE="$1"; shift
+            ;;
+        "--package-timeline") shift
+            OPT_PACKAGE_TIMELINE=1
             ;;
         "--check-levels" )
             [[ $2 ]] || fatal "The '$1' option requires an argument"
