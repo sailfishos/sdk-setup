@@ -149,6 +149,8 @@ cp etc/sdk-chroot.check %{buildroot}%{_sysconfdir}/zypp/systemCheck.d/
 mkdir -p %{buildroot}%{_libexecdir}/%{name}
 
 # sdk-vm
+mkdir -p %{buildroot}%{_sbindir}/
+cp src/init.container %{buildroot}%{_sbindir}/
 mkdir -p %{buildroot}/%{_unitdir}
 cp -r --no-dereference systemd/* %{buildroot}/%{_unitdir}/
 cp src/sdk-info %{buildroot}%{_bindir}/
@@ -300,6 +302,7 @@ fi
 
 %files -n sdk-vm
 %defattr(-,root,root,-)
+%{_sbindir}/init.container
 %{_bindir}/sdk-version
 %{_bindir}/sdk-info
 %{_bindir}/sdk-setup-enginelan
@@ -316,7 +319,6 @@ fi
 %{_unitdir}/workspace.service
 %{_unitdir}/workspace-raw@.service
 %{_unitdir}/workspace-dynexec@.service
-%{_unitdir}/workspace-dynexec-docker@.service
 %{_unitdir}/sdk-setup-env.service
 %{_unitdir}/etc-mersdk-share.service
 %{_unitdir}/etc-ssh-authorized_keys.mount
