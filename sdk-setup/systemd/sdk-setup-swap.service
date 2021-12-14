@@ -3,7 +3,6 @@
 [Unit]
 Description=Setup swap inside VirtualBox based SDK Build Engine
 After=vboxservice.service
-ConditionVirtualization=oracle
 
 [Service]
 Type=oneshot

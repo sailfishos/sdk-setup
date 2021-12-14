@@ -323,6 +323,7 @@ ssu() (
 disk_full() [[ $(stat --file-system --format '%a*%s/1024' "$1") -lt 10000 ]]
 
 update_df_cache() {
+    [[ $(systemd-detect-virt) == docker ]] && return
     sudo systemctl restart sdk-freespace.service
 }
 
