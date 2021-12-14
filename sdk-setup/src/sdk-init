@@ -2,7 +2,7 @@
 #
 # Initialize a project
 #
-# Copyright (C) 2019 Jolla Ltd.
+# Copyright (C) 2019-2021 Jolla Ltd.
 # Contact: Martin Kampas <martin.kampas@jolla.com>
 # All rights reserved.
 #
@@ -171,6 +171,7 @@ install_template()
         -e "s/%{Summary}/My $OPT_NAME application/g" \
         -e 's/%{Version}/0/g' \
         -e "s/%{SpectacleBuilder}/$OPT_SPECTACLE_BUILDER/g" \
+        -e "s/%{ApplicationName}/$OPT_APPLICATION_NAME/g" \
         -e 's/\\\\/\\/g' \
         || return
 }
@@ -249,6 +250,7 @@ set_defaults()
     OPT_FORCE=
     OPT_LIST_TYPES=
     OPT_NAME=$(basename "$PWD")
+    OPT_APPLICATION_NAME=${OPT_NAME#"harbour-"}
     OPT_TYPE=
     OPT_BUILDER=$DEF_BUILDER
     OPT_SPECTACLE_BUILDER=
