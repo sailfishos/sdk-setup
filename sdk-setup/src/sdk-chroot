@@ -1,10 +1,5 @@
 #!/bin/bash
-# mer-sdk-chroot
-
-# TODO
-#
-# Support a Mer clean setup (ie no .oscrc)
-# Support multiple shells (ie split setup/entry)
+# sdk-chroot
 
 usage()
 {
@@ -12,8 +7,8 @@ usage()
     usage: $0 [-u <user>] [-m <all|none|root|home>] [-r <SDK root path>] [<command> <args> ..]
            $0 -h
 
-       This is the Mer chroot SDK.
-       For information see https://sailfishos.org/wiki/Platform_SDK
+       This is the minimal, chroot-based Sailfish SDK.
+       For information see https://docs.sailfishos.org/Tools/Platform_SDK/
 
       If command is not present,
          used to enter the SDK and begin working. The SDK bash shell is a
@@ -344,12 +339,14 @@ run_user_hook() {
 retval=0
 cwd=$(pwd)
 
+[[ $0 = *mer-sdk-chroot ]] && echo "WARNING: mer-sdk-chroot is deprecated. Use sdk-chroot instead."
+
 # For back compatibility abort on 'mount/umount' and warn on 'enter' 
 if [[ $# == 1 ]]; then
     case $1 in
 	mount|umount )
 	    cat <<EOF
-ERROR: the mer-sdk-chroot command no longer needs or supports 'mount/umount/enter'
+ERROR: the sdk-chroot command no longer needs or supports 'mount/umount/enter'
 Just enter the SDK using:
  $0
 

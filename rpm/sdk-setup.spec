@@ -22,7 +22,7 @@ Requires(pre): /bin/rm
 Conflicts:  sdk-vm
 
 %description -n sdk-chroot
-Contains the mer_sdk_chroot script and supporting configs
+Contains the sdk-chroot script and supporting configs
 
 %package -n sdk-vm
 Summary:    Mer SDK files for the VM variant
@@ -139,7 +139,8 @@ ln -s /var/cache/zypp %{buildroot}/home/.zypp-cache
 
 # sdk-chroot
 mkdir -p %{buildroot}/%{_sysconfdir}
-cp src/mer-sdk-chroot %{buildroot}/
+cp src/sdk-chroot %{buildroot}/
+ln -s sdk-chroot %{buildroot}/mer-sdk-chroot
 cp src/mer-bash-setup %{buildroot}/
 echo "This file serves for detection that this is a chroot SDK installation" > %{buildroot}/%{_sysconfdir}/mer-sdk-chroot
 mkdir -p %{buildroot}/srv/mer/targets
@@ -290,6 +291,7 @@ fi
 %files -n sdk-chroot
 %defattr(-,root,root,-)
 /mer-sdk-chroot
+/sdk-chroot
 /mer-bash-setup
 %{_bindir}/sdk-version
 /home/.zypp-cache
