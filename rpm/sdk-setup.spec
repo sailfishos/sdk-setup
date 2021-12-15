@@ -37,7 +37,9 @@ Requires:   virtualbox-guest-tools
 Requires:   openssh-server
 Requires:   kbd
 Requires:   ncurses
+Requires:   python3-dbus
 Requires:   python3-fuse
+Requires:   python3-gobject
 Requires(post): /bin/ln
 Conflicts:  sdk-chroot
 %systemd_requires
@@ -162,6 +164,7 @@ mkdir -p %{buildroot}%{_libexecdir}/%{name}
 cp src/workspace-autodetect %{buildroot}%{_libexecdir}/%{name}/
 cp src/sdk-setup-env %{buildroot}%{_libexecdir}/%{name}/
 cp src/dnat-emulators %{buildroot}%{_libexecdir}/%{name}/
+cp src/proxymanager %{buildroot}%{_libexecdir}/%{name}/
 # This should really be %%{_unitdir}/default.target but systemd owns that :/
 mkdir -p %{buildroot}/%{_sysconfdir}/systemd/system/
 ln -sf %{_unitdir}/multi-user.target  %{buildroot}/%{_sysconfdir}/systemd/system/default.target
@@ -260,6 +263,7 @@ rm -Rf /home/.zypp-cache
 %systemd_preun host_targets.service
 %systemd_preun information.service
 %systemd_preun sdk-enginelan.service
+%systemd_preun sdk-proxymanager.service
 %systemd_preun oneshot-root-late-sdk.service
 %systemd_preun sdk-freespace.service
 
@@ -273,6 +277,7 @@ rm -Rf /home/.zypp-cache
 %systemd_post host_targets.service
 %systemd_post information.service
 %systemd_post sdk-enginelan.service
+%systemd_post sdk-proxymanager.service
 %systemd_post sdk-setup-swap.service
 %systemd_post sshd.socket
 %systemd_post oneshot-root-late-sdk.service
@@ -311,9 +316,11 @@ fi
 %{_libexecdir}/%{name}/workspace-autodetect
 %{_libexecdir}/%{name}/sdk-setup-env
 %{_libexecdir}/%{name}/dnat-emulators
+%{_libexecdir}/%{name}/proxymanager
 /home/.zypp-cache
 %{_unitdir}/information.service
 %{_unitdir}/sdk-enginelan.service
+%{_unitdir}/sdk-proxymanager.service
 %{_unitdir}/host_home.service
 %{_unitdir}/host_install.service
 %{_unitdir}/host_targets.service

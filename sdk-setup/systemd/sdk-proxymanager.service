@@ -1,0 +1,9 @@
+[Unit]
+Description=Configure HTTP proxy
+After=etc-mersdk-share.service
+
+[Service]
+ExecStart=/usr/libexec/sdk-setup/proxymanager
+
+[Install]
+WantedBy=multi-user.target
