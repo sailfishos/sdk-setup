@@ -43,7 +43,7 @@ Should you hit such a condition try to fix your SDK by upgrading the SDK Chroot 
 
 === Using shared directory for related RPMs ===
 
-To make deployment easier, <code>mb2</code> can use a shared output directory.  Add yourself <code>alias mb2='mb2 --output-prefix &lt;path&gt;'</code> to <code>~/.mersdk.profile</code> to achieve this. Add <code>--task</code> as well to let it further adjust the output path based on your Git branch name.
+To make deployment easier, <code>mb2</code> can use a shared output directory.  Add yourself <code>alias mb2='mb2 --output-prefix &lt;path&gt;'</code> to <code>~/.sfossdk.profile</code> to achieve this. Add <code>--task</code> as well to let it further adjust the output path based on your Git branch name.
 
 
 When the <code>--output-prefix</code> option is used, the output directory is also searched for build-time dependencies by default, so if <code>packageB</code> requires another locally built <code>packageA</code> at build time, it is not necessary to install <code>packageA</code> manually to the build target.

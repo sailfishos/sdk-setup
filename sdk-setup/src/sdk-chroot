@@ -37,7 +37,7 @@ usage()
       The environment variable MERSDK is set to allow .profile to
       detect the SDK.
 
-      If the user has a ~/.mersdk.profile then it is sourced after the
+      If the user has a ~/.sfossdk.profile then it is sourced after the
       normal .profile handling (this allows the common use case of
       setting a profile to be handled).
 

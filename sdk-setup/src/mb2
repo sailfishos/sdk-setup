@@ -97,7 +97,7 @@ With shared output directory, it is possible to deploy all required packages
 built from different sources more conveniently. This can be achieved with the
 '--output-dir' option or even better with the combination of '--output-prefix'
 and '--task' options.  Consider enabling '--output-prefix' and '--task' by
-default by creating an alias in your '~/.mersdk.profile' to get build results
+default by creating an alias in your '~/.sfossdk.profile' to get build results
 grouped by the tasks they are related to.  By default, the task will be
 determined based on the current Git branch - check the '--task' option
 description for more details:
