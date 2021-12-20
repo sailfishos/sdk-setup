@@ -35,7 +35,6 @@ set -o pipefail
 VBOX_PROPERTY_PREFIX=/SailfishSDK/ENV/
 inside_build_engine() [[ -f /etc/mer-sdk-vbox ]]
 inside_virtualbox() [[ $(systemd-detect-virt) == oracle ]]
-inside_docker() [[ $(systemd-detect-virt) == docker ]]
 
 vbox_property_enumerate()
 {
@@ -70,16 +69,6 @@ setup_vbox_env()
     done
 }
 
-setup_docker_env()
-{
-    local env=
-    while IFS= read -r -d '' env; do
-        if [[ $env == SAILFISH_SDK_* ]]; then
-            systemctl set-environment "$env"
-        fi
-    done </proc/1/environ
-}
-
 if ! inside_build_engine; then
     echo "$0: Fatal: Not inside an SDK build engine" >&2
     exit 1
@@ -87,9 +76,7 @@ fi
 
 if inside_virtualbox; then
     setup_vbox_env
-elif inside_docker; then
-    setup_docker_env
 else
-    echo "$0: Fatal: Unrecognized build engine type" >&2
+    echo "$0: Fatal: Unrecognized or otherwise unsupported build engine type" >&2
     exit 1
 fi

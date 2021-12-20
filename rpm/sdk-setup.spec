@@ -37,7 +37,9 @@ Requires:   virtualbox-guest-tools
 Requires:   openssh-server
 Requires:   kbd
 Requires:   ncurses
+Requires:   python3-dbus
 Requires:   python3-fuse
+Requires:   python3-gobject
 Requires(post): /bin/ln
 Conflicts:  sdk-chroot
 %systemd_requires
@@ -150,6 +152,8 @@ cp etc/sdk-chroot.check %{buildroot}%{_sysconfdir}/zypp/systemCheck.d/
 mkdir -p %{buildroot}%{_libexecdir}/%{name}
 
 # sdk-vm
+mkdir -p %{buildroot}%{_sbindir}/
+cp src/init.container %{buildroot}%{_sbindir}/
 mkdir -p %{buildroot}/%{_unitdir}
 cp -r --no-dereference systemd/* %{buildroot}/%{_unitdir}/
 cp src/sdk-info %{buildroot}%{_bindir}/
@@ -161,6 +165,8 @@ cp src/dynexecfs %{buildroot}%{_bindir}/
 mkdir -p %{buildroot}%{_libexecdir}/%{name}
 cp src/workspace-autodetect %{buildroot}%{_libexecdir}/%{name}/
 cp src/sdk-setup-env %{buildroot}%{_libexecdir}/%{name}/
+cp src/dnat-emulators %{buildroot}%{_libexecdir}/%{name}/
+cp src/proxymanager %{buildroot}%{_libexecdir}/%{name}/
 # This should really be %%{_unitdir}/default.target but systemd owns that :/
 mkdir -p %{buildroot}/%{_sysconfdir}/systemd/system/
 ln -sf %{_unitdir}/multi-user.target  %{buildroot}/%{_sysconfdir}/systemd/system/default.target
@@ -259,6 +265,7 @@ rm -Rf /home/.zypp-cache
 %systemd_preun host_targets.service
 %systemd_preun information.service
 %systemd_preun sdk-enginelan.service
+%systemd_preun sdk-proxymanager.service
 %systemd_preun oneshot-root-late-sdk.service
 %systemd_preun sdk-freespace.service
 
@@ -272,6 +279,7 @@ rm -Rf /home/.zypp-cache
 %systemd_post host_targets.service
 %systemd_post information.service
 %systemd_post sdk-enginelan.service
+%systemd_post sdk-proxymanager.service
 %systemd_post sdk-setup-swap.service
 %systemd_post sshd.socket
 %systemd_post oneshot-root-late-sdk.service
@@ -302,6 +310,7 @@ fi
 
 %files -n sdk-vm
 %defattr(-,root,root,-)
+%{_sbindir}/init.container
 %{_bindir}/sdk-version
 %{_bindir}/sdk-info
 %{_bindir}/sdk-setup-enginelan
@@ -309,16 +318,18 @@ fi
 %{_bindir}/dynexecfs
 %{_libexecdir}/%{name}/workspace-autodetect
 %{_libexecdir}/%{name}/sdk-setup-env
+%{_libexecdir}/%{name}/dnat-emulators
+%{_libexecdir}/%{name}/proxymanager
 /home/.zypp-cache
 %{_unitdir}/information.service
 %{_unitdir}/sdk-enginelan.service
+%{_unitdir}/sdk-proxymanager.service
 %{_unitdir}/host_home.service
 %{_unitdir}/host_install.service
 %{_unitdir}/host_targets.service
 %{_unitdir}/workspace.service
 %{_unitdir}/workspace-raw@.service
 %{_unitdir}/workspace-dynexec@.service
-%{_unitdir}/workspace-dynexec-docker@.service
 %{_unitdir}/sdk-setup-env.service
 %{_unitdir}/etc-mersdk-share.service
 %{_unitdir}/etc-ssh-authorized_keys.mount
