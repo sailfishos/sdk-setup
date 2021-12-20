@@ -3111,13 +3111,13 @@ run_deploy() {
             ;;
         --zypper )
             remote_username=root
-            method=(zypper --non-interactive --quiet in --force --allow-unsigned-rpm
+            method=(zypper --non-interactive in --force --allow-unsigned-rpm
                 --details ${dry_run_opt:+--dry-run --download-only} $device_rpms)
             ok_retcodes=(0 106)
             ;;
         --zypper-dup )
             remote_username=root
-            method=(zypper --non-interactive --quiet --no-gpg-checks --plus-repo RPMS
+            method=(zypper --non-interactive --no-gpg-checks --plus-repo RPMS
                 dup --from ~plus-repo-1 --details ${dry_run_opt:+--dry-run --download-only})
             ok_retcodes=(0 106)
             ;;
@@ -3136,7 +3136,7 @@ run_deploy() {
         ssh_as -t "$remote_username" "${method[@]}"
         set_contains ok_retcodes "$?"
         retcode=$?
-        ssh_as -t "$remote_username" rm -f ${device_rpms}
+        ssh_as "$remote_username" rm -f ${device_rpms}
     fi
 
     [[ $retcode -eq 0 ]] || { echo "Deploy failed"; return 1; }
@@ -3273,7 +3273,7 @@ run_undeploy() {
     candidates=$(cut -d' ' -f1 <<<"$candidates")
 
     if [[ $UNDEPLOY_METHOD_OPT != --rsync ]]; then
-        if ! ssh_as -t "$user" rpm --test -e $candidates; then
+        if ! ssh_as "$user" rpm --test -e $candidates; then
             return 1
         fi
     fi
@@ -3297,7 +3297,7 @@ run_undeploy() {
             if [[ $unsafe_to_rm_f ]]; then
                 fatal "Internal error: Refusing to remove '$unsafe_to_rm_f'"
             fi
-            ssh_as -t "$user" rm -rf $candidates
+            ssh_as "$user" rm -rf $candidates
             ;;
         --zypper )
             ssh_as -t "$user" zypper --non-interactive rm $candidates
