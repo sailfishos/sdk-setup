@@ -16,7 +16,7 @@ usage()
 
       If command is present,
          used to execute an arbitrary command from within the SDK chroot
-         environment. The environment variable MERSDK is set to allow
+         environment. The environment variable SAILFISH_SDK is set to allow
          SDK detection.
 
       Options:
@@ -34,7 +34,7 @@ usage()
       system profile entries. It will not execute the host's system
       profile entries.
 
-      The environment variable MERSDK is set to allow .profile to
+      The environment variable SAILFISH_SDK is set to allow .profile to
       detect the SDK.
 
       If the user has a ~/.mersdk.profile then it is sourced after the
@@ -401,6 +401,7 @@ setarch i386 chroot ${sdkroot} /bin/su -s /bin/bash -l $user -- -c "$(cat <<END
 export SSH_AUTH_SOCK='${MY_SSH_AUTH_SOCK}'
 export SSH_AGENT_PID=${SSH_AGENT_PID:-}
 export MERSDK='$sdkroot'
+export SAILFISH_SDK='$sdkroot'
 export GNUPGHOME='${HOMEDIR}/${MY_GNUPGHOME_DIR}'
 
 sudo oneshot
