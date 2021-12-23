@@ -2892,7 +2892,7 @@ run_make_install() {
     ) || return
 
     mkdir -p "$buildroot" # hack for self-test to pass with stubbed sb2
-    touch --reference="$buildroot" "$INSTALL_STAMP"
+    stat -c %Y "$buildroot" > "$INSTALL_STAMP"
 }
 
 run_package__process_args() {
@@ -3071,7 +3071,7 @@ run_deploy() {
             fatal "Nothing to deploy. Maybe you forgot to use the \"make-install\" command."
         fi
 
-        if [[ -e $INSTALL_STAMP && $buildroot -nt $INSTALL_STAMP ]]; then
+        if [[ -e $INSTALL_STAMP && $(stat -c %Y "$buildroot") -ne $(<"$INSTALL_STAMP") ]]; then
             fatal "The content of the RPM \"%buildroot\" directory does not match this build."
         fi
 
