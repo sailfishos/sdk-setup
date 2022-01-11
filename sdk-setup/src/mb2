@@ -3935,7 +3935,7 @@ case $1 in
         mkdir -p "$STATEDIR" || exit
         echo '*' > "$STATEDIR/.gitignore"
         ;;
-    check | run | ssh )
+    check | run | ssh | build-shell )
         # These can deal with STATEDIR missing
         ;;
     *)
