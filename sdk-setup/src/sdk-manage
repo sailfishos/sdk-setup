@@ -672,7 +672,7 @@ refresh_objects() {
     local object=
     for object in "${objects[@]}"; do
         echo >&2 "Refreshing $(print_object "$type:$object")..."
-        object_zypper "$type:$object" clean --all
+        object_zypper "$type:$object" clean --raw-metadata
         object_zypper "$type:$object" refresh -f
         echo >&2
     done
@@ -2009,6 +2009,9 @@ snapshot_target() {
 target_snapshot_needs_reset() {
     local snapshot=$1 original=$2
 
+    ! diff "$MER_TARGETS"/{"$original","$snapshot"}/etc/ssu/ssu.ini &>/dev/null && return
+    ! diff "$MER_TARGETS"/{"$original","$snapshot"}/etc/machine-id &>/dev/null && return
+
     local snapshot_time=
     snapshot_time=$(object_config_get "target:$snapshot" "$SNAPSHOT_TIME_KEY") || return
     # Convert date to unix seconds
@@ -2022,9 +2025,6 @@ target_snapshot_needs_reset() {
         --queryformat '%{installtime}\n' |sort -n |tail -n1) || return
     # Compare values in unix seconds
     (( most_recent_install_time > snapshot_time )) && return
-
-    ! diff "$MER_TARGETS"/{"$original","$snapshot"}/etc/ssu/ssu.ini &>/dev/null && return
-    ! diff "$MER_TARGETS"/{"$original","$snapshot"}/etc/machine-id &>/dev/null && return
 
     # The rpm database does not know about the most recent package removal, so
     # parse the zypper install log. zypp/history looks like this:
