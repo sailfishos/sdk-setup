@@ -672,7 +672,7 @@ refresh_objects() {
     local object=
     for object in "${objects[@]}"; do
         echo >&2 "Refreshing $(print_object "$type:$object")..."
-        object_zypper "$type:$object" clean --all
+        object_zypper "$type:$object" clean --raw-metadata
         object_zypper "$type:$object" refresh -f
         echo >&2
     done
