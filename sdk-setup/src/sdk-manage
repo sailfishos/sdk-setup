@@ -1265,6 +1265,11 @@ prune_object_package_cache() {
 
     assert_object_exists "$type:$object" || return
 
+    # Snapshots are configured to use original target's package cache
+    if [[ $type == target ]] && target_is_snapshot "$object"; then
+        object=$(object_config_get "target:$object" "$SNAPSHOT_OF_KEY") || return
+    fi
+
     local root=$(get_object_root "$type:$object")
     local cache_root=$root/var/cache/zypp/packages
 
@@ -2043,6 +2048,16 @@ snapshot_target() {
             echo >&2 "Preserving outdated snapshot '$snapshot' of '$original' target..."
         fi
     fi
+
+    # Let snapshots use original target's package cache dir, so that possible
+    # cached packages survive snapshot reset.
+    sed -i "$MER_TARGETS/$snapshot/etc/zypp/zypp.conf" \
+        -e "/^\s*packagesdir\s*=/ {
+            s,=.*,= /parentroot$MER_TARGETS/$original/var/cache/zypp/packages,
+            i # Overriden by sdk-manage
+        }"
+    # Unfortunately it's not easy to exclude those from syncing
+    rm -rf "$MER_TARGETS/$snapshot/var/cache/zypp/packages"
 
     if [[ $INSIDE_VBOX ]]; then
         update_df_cache
