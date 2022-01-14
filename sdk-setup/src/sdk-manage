@@ -33,6 +33,7 @@ usage:
     $SELF tooling package-list <name> [-l|--long] [<pattern>...]
     $SELF tooling package-install <name> <package-name>...
     $SELF tooling package-remove <name> <package-name>...
+    $SELF tooling package-cache-prune <name>
     $SELF tooling uuidgen {--all | <name>...}
     $SELF tooling maintain <name> [--no-sync] [<command> [<arg>...]]
 
@@ -56,6 +57,7 @@ usage:
     $SELF target package-list <name> [-l|--long] [<pattern>...]
     $SELF target package-install <name> <package-name>...
     $SELF target package-remove <name> <package-name>...
+    $SELF target package-cache-prune <name>
     $SELF target uuidgen {--all | <name>...}
     $SELF target maintain <name> [--no-sync] [<command> [<arg>...]]
 
@@ -494,6 +496,19 @@ assert_object_exists() {
     local type=${1%:*} object=${1#*:}
 
     assert_${type}_exists "$object"
+}
+
+get_object_root() {
+    local type=${1%:*} object=${1#*:}
+
+    local root=
+    case $type in
+        sdk) root=/;;
+        target) root=$MER_TARGETS/$object;;
+        tooling) root=$MER_TOOLINGS/$object;;
+    esac
+
+    printf '%s\n' "$root"
 }
 
 enter() {
@@ -1091,6 +1106,9 @@ manage_toolings() {
         ?(--)package-remove ) shift
             manage_object_packages remove tooling "$@"
             ;;
+        ?(--)package-cache-prune ) shift
+            prune_object_package_cache tooling "$@"
+            ;;
         ?(--)uuidgen ) shift
             reset_machine_id tooling "$@"
             ;;
@@ -1240,6 +1258,26 @@ manage_object_packages() {
 
     object_zypper "$type:$object" --no-refresh "$action" "${packages[@]}" || return
     maybe_synchronise_object "$type:$object"
+}
+
+prune_object_package_cache() {
+    local type=$1 object=${2:-}
+
+    assert_object_exists "$type:$object" || return
+
+    local root=$(get_object_root "$type:$object")
+    local cache_root=$root/var/cache/zypp/packages
+
+    local dir= dirs=$(find "$cache_root" -type f -name '*.rpm' -printf '%h\n' |sort -u)
+    for dir in $dirs; do
+        find "$dir" -maxdepth 1 -type f -name "*.rpm" \
+            |xargs -I{} rpm -q --queryformat '%{NAME},%{EPOCH},%{VERSION},%{RELEASE},{}\n' -p {} \
+            `# sort by name and e-v-r, latest first` \
+            |sort -t ',' -k 1,1 -k2,2rV -k3,3rV -k4,4rV \
+            `# drop latest from the list, print file paths` \
+            |awk -F ',' 'BEGIN { prev="" }; ($1 == prev) { print $5}; { prev=$1 }' \
+            |xargs --no-run-if-empty rm -f
+    done
 }
 
 maybe_synchronise_object() {
@@ -2304,6 +2342,9 @@ manage_targets() {
             ;;
         ?(--)package-remove ) shift
             manage_object_packages remove target "$@"
+            ;;
+        ?(--)package-cache-prune ) shift
+            prune_object_package_cache target "$@"
             ;;
         ?(--)uuidgen ) shift
             reset_machine_id target "$@"
