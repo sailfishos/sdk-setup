@@ -42,9 +42,10 @@ usage:
     $SELF target install <name> <url> [--tooling <name>
     $____                [--tooling-url <url>]] [--toolchain <name>]
     $____                [--no-snapshot]
-    $SELF target snapshot [-r|--reset[={outdated|force}]] [--no-sync]
+    $SELF target snapshot [-r|--reset[={soft|outdated|force}]] [--no-sync]
     $____                 <original> <snapshot>
-    $SELF target reserve <original> <snapshot-template> <lock-file> <pool-size>
+    $SELF target reserve [--reset-reused={soft|outdated|force}] <original>
+                         <snapshot-template> <lock-file> <pool-size>
     $SELF target remove [--force] [--snapshots-of] <name>
     $SELF target refresh {--all | <name>...}
     $SELF target update <name>
@@ -101,15 +102,16 @@ Usage notes
 
     $SELF target snapshot
         Snapshot targets are like normal targets in most respects.  When the
-        '--reset[={outdated|force}]' option is used, it is not an error when
-        the target named <snapshot> already exists, provided that it is a
+        '--reset[={soft|outdated|force}]' option is used, it is not an error
+        when the target named <snapshot> already exists, provided that it is a
         snapshot target that was taken from the specified <original> target.
         This defaults to the 'outdated' behavior, in which case the snapshot
         will be reset only when the original target was updated (RPM database
-        changed) after the snapshot was taken.  A snapshot can be reset
-        unconditionally by passing 'force' instead.  Resetting a snapshot has
-        the same effect as removing the snapshot and creating it again, except
-        that it preserves it's internal state and is more efficient. When the
+        changed, etc.) after the snapshot was taken.  A snapshot can be reset
+        unconditionally by passing 'force' instead.  When 'soft' is used,
+        existing snapshot will be used as is. Resetting a snapshot has the same
+        effect as removing the snapshot and creating it again, except that it
+        preserves it's internal state and is more efficient. When the
         '--no-sync' option is used during initial snapshot creation, the
         snapshot will not be enabled for synchronization to host.
 
@@ -122,9 +124,11 @@ Usage notes
         locked.  <pool-size> serves also as a limit for the number of
         snapshots that can be reserved. Only snapshots using the given
         <snapshot-template> are considered for this purpose. The
-        least-recently-used approach is applied to choose from pooled
-        snapshots unless a snapshot exists with the same <lock-file> recently
-        used.
+        least-recently-used approach is applied to choose among unused pooled
+        snapshots unless a snapshot exists, which was used with the same
+        <lock-file> recently. Such a snapshot is choosen preferably and reset
+        according to the '--reset-reused' option (defaults to 'outdated').
+        Other existing snapshots are reset forcefully.
 
 Global options
     -m, --mode <mode>
@@ -1888,7 +1892,7 @@ snapshot_target() {
                 ;;
             -r=*|--reset=*)
                 reset=${1#*=}
-                if [[ $reset != outdated && $reset != force ]]; then
+                if [[ $reset != @(soft|outdated|force) ]]; then
                     echo >&2 "unexpected argument to --reset: '$reset'"
                     usage >&2
                     return 1
@@ -1982,7 +1986,8 @@ snapshot_target() {
             return 1
         fi
 
-        if [[ $reset == force ]] || target_snapshot_needs_reset "$snapshot" "$original"; then
+        if [[ $reset == force ]] || [[ $reset == outdated ]] \
+                && target_snapshot_needs_reset "$snapshot" "$original"; then
             echo >&2 "Resetting snapshot '$snapshot' of '$original' target..."
             local config=$(object_config_file "target:$snapshot")
             if [[ -e $config ]]; then
@@ -1996,6 +2001,8 @@ snapshot_target() {
             fi
             object_config_set "target:$snapshot" "$SNAPSHOT_TIME_KEY" "$(date -R)" || return
             maybe_synchronise_object "target:$snapshot" || return
+        elif target_snapshot_needs_reset "$snapshot" "$original"; then
+            echo >&2 "Preserving outdated snapshot '$snapshot' of '$original' target..."
         fi
     fi
 
@@ -2043,9 +2050,20 @@ target_snapshot_needs_reset() {
 }
 
 reserve_target() {
-    local positional_args=()
+    local reset_reused=outdated positional_args=()
     while [[ $# -gt 0 ]]; do
         case $1 in
+            --reset-reused)
+                reset_reused=outdated
+                ;;
+            --reset-reused=*)
+                reset_reused=${1#*=}
+                if [[ $reset_reused != @(soft|outdated|force) ]]; then
+                    echo >&2 "unexpected argument to --reset-reused: '$reset_reused'"
+                    usage >&2
+                    return 1
+                fi
+                ;;
             -*)
                 echo >&2 "unrecognized option '$1'"
                 usage >&2
@@ -2118,7 +2136,7 @@ reserve_target() {
             lru_pooled_target=$target
             lru_time=$lock_time
             lru_same_lock=1
-            reset=outdated
+            reset=$reset_reused
             break
         fi
 

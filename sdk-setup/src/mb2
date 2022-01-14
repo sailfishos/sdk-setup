@@ -619,11 +619,14 @@ GLOBAL OPTIONS
         a pool of the optionally given size <N> (default: 5).  The actual
         suffix will follow the pattern 'pool.XXX'.
 
-        Snapshot state is preserved across mb2 invocations unless the original
-        target was updated meanwhile or it is a temporary snapshot that was
-        previously used with different build tree, in which cases the snapshot
-        will be reset. Snapshot can be reset forcefully using the
-        'build-requires reset' command.
+        Snapshot state is preserved across mb2 invocations unless 1) the
+        original target was updated meanwhile (suppressed by the
+        '--no-pull-build-requires' option) or 2) a temporary snapshot is taken
+        into use with other build tree than it was used with before.
+
+        A snapshot can be reset forcefully using the 'build-requires reset'
+        command.
+
 
     --no-snapshot[=force]
         Use build targets directly. mb2 will refuse to directly use a target
@@ -676,7 +679,7 @@ GLOBAL OPTIONS
 
     -n, --no-pull-build-requires
         Do not update build-time dependencies unless required explicitly with
-        'build-requires pull'.
+        'build-requires {pull|reset}'.
 
     -c, --git-change-log[=<args>]
         Include change log generated from Git history with 'git-change-log'
@@ -1362,8 +1365,8 @@ maybe_verify_target_dependencies() {
             --refresh)
                 opt_refresh=1
                 ;;
-            --reset)
-                opt_reset=1
+            --reset=*)
+                opt_reset=${1#*=}
                 ;;
             *)
                 fatal "Internal error: Unexpected argument to ${BASH_FUNCTION[0]}: '$1'"
@@ -1400,7 +1403,7 @@ maybe_verify_target_dependencies() {
     global_lock_acquire
 
     if [[ $opt_reset ]]; then
-        if ! sdk-manage target snapshot --reset=force "$OPT_ORIGINAL_TARGET" "$OPT_TARGET"; then
+        if ! sdk-manage target snapshot --reset="$opt_reset" "$OPT_ORIGINAL_TARGET" "$OPT_TARGET"; then
             fatal "Failed to reset build target snapshot '$OPT_TARGET' to '$OPT_ORIGINAL_TARGET'"
         fi
     fi
@@ -2252,6 +2255,19 @@ END
 }
 
 switch_to_snapshot() {
+    local opt_reset=outdated
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --reset=*)
+                opt_reset=${1#*=}
+                ;;
+            *)
+                fatal "Internal error: Unexpected argument to switch_to_snapshot: '$1'"
+                ;;
+        esac
+        shift
+    done
+
     if [[ $OPT_SNAPSHOT == *'%{task}'* ]]; then
         notice "Use of '%{task}' to determine snapshot name is deprecated"
         OPT_SNAPSHOT=${OPT_SNAPSHOT//%{task\}/$OPT_TASK}
@@ -2267,11 +2283,11 @@ switch_to_snapshot() {
         if ! flock --nonblock "$lock_fd"; then
             fatal "Failed to flock '$lock'"
         fi
-        OPT_TARGET=$(sdk-manage target reserve "$OPT_ORIGINAL_TARGET" \
+        OPT_TARGET=$(sdk-manage target reserve --reset-reused="$opt_reset" "$OPT_ORIGINAL_TARGET" \
             "$OPT_ORIGINAL_TARGET.pool.XXX" "$lock" "$pool_size") || return
     else
         OPT_TARGET=$OPT_ORIGINAL_TARGET.$OPT_SNAPSHOT
-        sdk-manage target snapshot --reset=outdated "$OPT_ORIGINAL_TARGET" "$OPT_TARGET" || return
+        sdk-manage target snapshot --reset="$opt_reset" "$OPT_ORIGINAL_TARGET" "$OPT_TARGET" || return
     fi
 
     notice "Using the '$OPT_TARGET' snapshot of the build target"
@@ -2438,7 +2454,11 @@ run_build_requires__process_args() {
 
 run_build_requires() {
     local args=()
-    [[ $BUILD_REQUIRES_MODE == reset ]] && args+=(--reset)
+    if [[ $BUILD_REQUIRES_MODE == reset ]]; then
+        args+=(--reset=force)
+    else
+        args+=(--reset=outdated)
+    fi
     [[ $BUILD_REQUIRES_NOREFRESH ]] || args+=(--refresh)
     OPT_PULL_BUILD_REQUIRES=1 maybe_verify_target_dependencies "${args[@]}"
 }
@@ -3989,7 +4009,15 @@ OPT_ORIGINAL_TARGET=$OPT_TARGET
 [[ -d ~/.scratchbox2/$OPT_TARGET ]] || fatal "'$OPT_TARGET' is not a known build target"
 
 if [[ ! $OPT_NO_SNAPSHOT && ! $MB2_SELF_TEST_RUN ]]; then
-    switch_to_snapshot || fatal "Failed to init build target snapshot"
+    reset=soft
+    # Only commands that do pull build-requires should reset.
+    # The 'build-requires' command resets on its own based on its arguments.
+    if [[ $OPT_PULL_BUILD_REQUIRES && $1 = @(prepare|build|qmake|cmake|compiledb)  ]]; then
+        reset=outdated
+    fi
+
+    switch_to_snapshot --reset="$reset" || fatal "Failed to init build target snapshot"
+
 elif [[ $OPT_NO_SNAPSHOT != force && ! $MB2_SELF_TEST_RUN ]]; then
     if [[ $(sdk-manage target list --snapshots-of "$OPT_TARGET") ]]; then
         if [[ $OPT_NEEDTARGET ]]; then
