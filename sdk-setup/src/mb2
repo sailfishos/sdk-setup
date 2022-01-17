@@ -1395,6 +1395,9 @@ maybe_verify_target_dependencies() {
 
     maybe_verify_target_dependencies_cleanup() (
         trap 'echo cleaning up...' INT TERM HUP
+        if [[ ! $OPT_NO_SNAPSHOT ]]; then
+            sb2_maintain bash -c "sed -i -e '/^keeppackages=1 #mb2/d' /etc/zypp/repos.d/*.repo"
+        fi
         global_lock_release
     )
     trap 'maybe_verify_target_dependencies_cleanup; trap - RETURN' RETURN
@@ -1437,6 +1440,14 @@ maybe_verify_target_dependencies() {
         hook_exports+=(SFDK_OUTPUT_DIR_FILTERED)
     fi
 
+    if [[ ! $OPT_NO_SNAPSHOT ]]; then
+        # Enable package caching for build time dependencies under snapshots
+        # to avoid repeated downloading after snapshot is reset.
+        # Note that snapshots are configured to use original target's package
+        # cache directory.
+        sb2_maintain bash -c "sed -i -e '\$a keeppackages=1 #mb2' /etc/zypp/repos.d/*.repo"
+    fi
+
     run_hook pre-pull-build-requires "${hook_exports[*]}" "${deps[@]}" \
         || fatal "The 'pre-pull-build-requires' hook failed"
 
@@ -1460,6 +1471,10 @@ maybe_verify_target_dependencies() {
 
     run_hook post-pull-build-requires "${hook_exports[*]}" "${deps[@]}" \
         || fatal "The 'post-pull-build-requires' hook failed"
+
+    if [[ ! $OPT_NO_SNAPSHOT ]]; then
+        sdk-manage target package-cache-prune "$OPT_TARGET"
+    fi
 
     if inside_build_engine; then
         local newpkgs=$(sb2_maintain rpm -qa)
