@@ -2105,6 +2105,7 @@ target_snapshot_needs_reset() {
         |grep -v '^#' \
         |awk -F'|' '$2 == "remove" { print $1; exit; }'
     ) || return
+    [[ $most_recent_removal_time ]] || return
     most_recent_removal_time=$(date --date "$most_recent_removal_time" +%s) || return
     # Compare values in unix seconds
     (( most_recent_removal_time > snapshot_time )) && return
