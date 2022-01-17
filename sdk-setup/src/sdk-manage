@@ -422,8 +422,14 @@ is_locked() {
     [[ -e $lock_file ]] && ! flock --nonblock 0 <"$lock_file"
 }
 
-content_not_changed_since() {
+rpm_db_not_changed_since() {
     local dir=$1 timestamp=$2
+    # Only consider the primary database files - those with capitalised names
+    content_not_changed_since "$dir" "$timestamp" "[A-Z]*"
+}
+
+content_not_changed_since() {
+    local dir=$1 timestamp=$2 filter=${3:-}
 
     local tmpfile=
     content_not_changed_since_cleanup() (
@@ -438,7 +444,8 @@ content_not_changed_since() {
     tmpfile=$(mktemp) || return
     touch --date "@$timestamp" "$tmpfile" || return
     local newer=
-    newer=$(find "$dir" -mindepth 1 -newer "$tmpfile" -print -quit) || return
+    newer=$(find "$dir" -mindepth 1 ${filter:+-name "$filter"} -newer "$tmpfile" -print -quit) \
+        || return
     [[ ! $newer ]]
 }
 
@@ -1299,7 +1306,7 @@ maybe_synchronise_object() {
     [[ $sync && $sync -ne 0 ]] || return 0
 
     if [[ $timestamp ]]; then
-        content_not_changed_since "$MER_TARGETS/$object/var/lib/rpm" "$timestamp" && return 0
+        rpm_db_not_changed_since "$MER_TARGETS/$object/var/lib/rpm" "$timestamp" && return 0
     fi
 
     local original=
@@ -2078,9 +2085,10 @@ target_snapshot_needs_reset() {
     snapshot_time=$(date --date "$snapshot_time" +%s) || return
 
     # Try to avoid querying RPM database as it takes considerable amount of time
-    content_not_changed_since "$MER_TARGETS/$original/var/lib/rpm" "$snapshot_time" && return 1
+    rpm_db_not_changed_since "$MER_TARGETS/$original/var/lib/rpm" "$snapshot_time" && return 1
 
     local most_recent_install_time=
+    # TODO This has the unwanted side effect of rebuilding/cleaning the RPM database
     most_recent_install_time=$(set -o pipefail; rpm --root="$MER_TARGETS/$original" -qa \
         --queryformat '%{installtime}\n' |sort -n |tail -n1) || return
     # Compare values in unix seconds
@@ -2097,6 +2105,7 @@ target_snapshot_needs_reset() {
         |grep -v '^#' \
         |awk -F'|' '$2 == "remove" { print $1; exit; }'
     ) || return
+    [[ $most_recent_removal_time ]] || return
     most_recent_removal_time=$(date --date "$most_recent_removal_time" +%s) || return
     # Compare values in unix seconds
     (( most_recent_removal_time > snapshot_time )) && return
