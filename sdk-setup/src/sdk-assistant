@@ -61,6 +61,10 @@ Usage:
                               snapshot may be suppressed with the
                               '--no-snapshot' option.
 
+    $(basename $0) [tooling|target] clone <name> <clone-name>
+                            : create a new sb2 tooling or target <clone-name>,
+                              using the <name> object as a template.
+
     $(basename $0) [tooling|target] update <name>
                             : update the given sb2 tooling or target.
                               When updating a target the tooling used
@@ -164,6 +168,7 @@ have() {
 
 OPT_ALL=
 OPT_CREATE=
+OPT_CLONE=
 OPT_COMMAND=()
 OPT_DRY_RUN=
 OPT_LIST=
@@ -261,6 +266,14 @@ case $1 in
         OPT_URL=$3
         shift 3
         [[ $# -eq 0 ]] || fail "create: unexpected argument: '$1'"
+        ;;
+    clone )
+        OPT_CLONE=1
+        [[ $# -ge 3 && $2 && $3 ]] || fail "clone: original and clone names required"
+        OPT_NAME=$2
+        OPT_CLONE_NAME=$3
+        shift 3
+        [[ $# -eq 0 ]] || fail "clone: unexpected argument: '$1'"
         ;;
     update )
         OPT_UPDATE=1
@@ -387,7 +400,7 @@ Using tarball [$OPT_URL]
 EOF
 fi
 
-if [[ $OPT_UPDATE || $OPT_REMOVE || ($OPT_REGISTER && $OPT_NAME) \
+if [[ $OPT_CLONE || $OPT_UPDATE || $OPT_REMOVE || ($OPT_REGISTER && $OPT_NAME) \
         || $OPT_PACKAGE_LIST || $OPT_PACKAGE_INSTALL || $OPT_PACKAGE_REMOVE \
         || $OPT_MAINTAIN ]]; then
     if [[ ! $OPT_TYPE ]]; then
@@ -413,6 +426,16 @@ if [[ $OPT_PACKAGE_LIST ]]; then
     sdk-manage "$OPT_TYPE" package-list "$OPT_NAME" --long \
         ${OPT_PACKAGE_NAME_PATTERNS[@]:+"${OPT_PACKAGE_NAME_PATTERNS[@]}"}
     exit
+fi
+
+if [[ $OPT_CLONE ]]; then
+    if have "$OPT_TYPE" "$OPT_CLONE_NAME"; then
+        fail "$OPT_CLONE_NAME: $OPT_TYPE already exists"
+    fi
+
+    cat <<EOF
+Going to clone the $OPT_TYPE [$OPT_NAME] as [$OPT_CLONE_NAME]
+EOF
 fi
 
 if [[ $OPT_UPDATE ]]; then
@@ -509,6 +532,11 @@ if [[ $OPT_CREATE ]]; then
         _ sdk-manage "$OPT_TYPE" install "$OPT_NAME" "$OPT_URL" \
             ${OPT_NO_SNAPSHOT:+--no-snapshot}
     fi
+    exit
+fi
+
+if [[ $OPT_CLONE ]]; then
+    _ sdk-manage "$OPT_TYPE" clone "$OPT_NAME" "$OPT_CLONE_NAME"
     exit
 fi
 
