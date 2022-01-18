@@ -545,6 +545,13 @@ object_config_get()
     echo "${value:-$default}"
 }
 
+object_config_get_boolean()
+{
+    local value=
+    value=$(object_config_get "$@") || return
+    tr -d '0' <<<$value
+}
+
 object_config_set()
 {
     local type=${1%:*} object=${1#*:} key=$2 value=$3
@@ -1302,8 +1309,8 @@ maybe_synchronise_object() {
     [[ $type == target ]] || return 0
 
     local sync=
-    sync=$(object_config_get "target:$object" "$SYNC_TO_HOST_KEY") || return
-    [[ $sync && $sync -ne 0 ]] || return 0
+    sync=$(object_config_get_boolean "target:$object" "$SYNC_TO_HOST_KEY") || return
+    [[ $sync ]] || return 0
 
     if [[ $timestamp ]]; then
         rpm_db_not_changed_since "$MER_TARGETS/$object/var/lib/rpm" "$timestamp" && return 0
