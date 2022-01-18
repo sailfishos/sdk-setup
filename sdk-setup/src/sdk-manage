@@ -25,6 +25,7 @@ usage:
     $SELF tooling list [-l|--long]
     $SELF tooling upgradable <name>
     $SELF tooling install <name> <url>
+    $SELF tooling clone <original> <clone>
     $SELF tooling remove <name>
     $SELF tooling refresh {--all | <name>...}
     $SELF tooling update <name>
@@ -47,6 +48,7 @@ usage:
     $____                 <original> <snapshot>
     $SELF target reserve [--reset-reused={soft|outdated|force}] <original>
                          <snapshot-template> <lock-file> <pool-size>
+    $SELF target clone <original> <clone>
     $SELF target remove [--force] [--snapshots-of] <name>
     $SELF target refresh {--all | <name>...}
     $SELF target update <name>
@@ -131,6 +133,10 @@ Usage notes
         <lock-file> recently. Such a snapshot is choosen preferably and reset
         according to the '--reset-reused' option (defaults to 'outdated').
         Other existing snapshots are reset forcefully.
+
+    $SELF {tooling|target} clone
+        Compared to taking a snapshot, cloning creates a new standalone tooling
+        or target with no relation to the original.
 
 Global options
     -m, --mode <mode>
@@ -342,22 +348,23 @@ manage_user_targets_repository() {
     $USER_TARGETS_REPOSITORY/manage.sh --repository "$USER_TARGETS_REPOSITORY" "$@"
 }
 
+# sudo is needed to check for reflink under toolings, where the owner is root
 is_reflink_possible() {
     local src_dir=$1 dst_dir=$2
 
     local src_tmpfile= dst_tmpfile=
     is_reflink_possible_cleanup() {
         trap 'echo cleaning up...' INT TERM HUP
-        [[ $src_tmpfile ]] && rm -f "$src_tmpfile"
-        [[ $dst_tmpfile ]] && rm -f "$dst_tmpfile"
+        [[ $src_tmpfile ]] && sudo rm -f "$src_tmpfile"
+        [[ $dst_tmpfile ]] && sudo rm -f "$dst_tmpfile"
     }
     trap 'is_reflink_possible_cleanup; trap - RETURN' RETURN
     trap 'return 1' INT TERM HUP
 
-    src_tmpfile=$(mktemp --tmpdir="$src_dir") || return
-    dst_tmpfile=$(mktemp --tmpdir="$dst_dir") || return
+    src_tmpfile=$(sudo mktemp --tmpdir="$src_dir") || return
+    dst_tmpfile=$(sudo mktemp --tmpdir="$dst_dir") || return
 
-    cp --reflink=always "$src_tmpfile" "$dst_tmpfile" &>/dev/null
+    sudo cp --reflink=always "$src_tmpfile" "$dst_tmpfile" &>/dev/null
 }
 
 sudo_sync_trees() {
@@ -1050,7 +1057,70 @@ install_tooling() {
         update_df_cache
     fi
 
-    echo >&2 "Tooling '$name' now setup"
+    echo >&2 "Tooling '$name' set up"
+    succeeded=1
+}
+
+clone_tooling() {
+    local positional_args=()
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -*)
+                echo >&2 "unrecognized option '$1'"
+                usage >&2
+                return 1
+                ;;
+            *)
+                if [[ ${#positional_args[*]} -eq 2 ]]; then
+                    echo >&2 "unexpected positional argument '$1'"
+                    usage >&2
+                    return 1
+                fi
+                positional_args+=("$1")
+                ;;
+        esac
+        shift
+    done
+
+    local original=${positional_args[0]}
+    local clone=${positional_args[1]}
+
+    if ! tooling_exists "$original"; then
+        echo >&2 "Tooling not found '$original'"
+        return 1
+    fi
+
+    if tooling_exists "$clone"; then
+        echo >&2 "Tooling of this name already exists '$clone'"
+        return 1
+    fi
+
+    local succeeded=
+    clone_tooling_cleanup() (
+        trap 'echo cleaning up...' INT TERM HUP
+        if [[ ! $succeeded ]]; then
+            sudo rm -rf "$MER_TOOLINGS/$clone"
+        fi
+    )
+    trap 'clone_tooling_cleanup; trap - RETURN' RETURN
+    trap 'return 1' INT TERM HUP
+
+    echo >&2 "Taking snapshot '$clone' of '$original' tooling..."
+    sudo_sync_trees "$MER_TOOLINGS/$original" "$MER_TOOLINGS/$clone" || return
+
+    reset_machine_id tooling "$clone" || return
+
+    if [[ $INSIDE_VBOX ]]; then
+        update_df_cache
+    fi
+
+    set_object_mode "tooling:$clone" "$MODE_USER" || return
+    if [[ $INSIDE_VBOX ]]; then
+        local size=$(sudo du --summarize --bytes "$MER_TOOLINGS/$clone" |cut -f1)
+        manage_user_targets_repository touch tooling "$clone" "${size:-0}"
+    fi
+
+    echo >&2 "Tooling '$clone' set up"
     succeeded=1
 }
 
@@ -1098,6 +1168,9 @@ manage_toolings() {
             ;;
         ?(--)install ) shift
             install_tooling "$@"
+            ;;
+        ?(--)clone ) shift
+            clone_tooling "$@"
             ;;
         ?(--)remove ) shift
             remove_tooling "$@"
@@ -1928,7 +2001,7 @@ install_target() {
         update_df_cache
     fi
 
-    echo >&2 "Target '$target' now setup"
+    echo >&2 "Target '$target' set up"
     succeeded=1
 }
 
@@ -1941,7 +2014,7 @@ reinit_target() (
 )
 
 snapshot_target() {
-    local reset= sync=1 positional_args=()
+    local reset= sync=1 detach= positional_args=()
     while [[ $# -gt 0 ]]; do
         case $1 in
             -r|--reset)
@@ -1957,6 +2030,9 @@ snapshot_target() {
                 ;;
             --no-sync)
                 sync=
+                ;;
+            --detach)
+                detach=1
                 ;;
             -*)
                 echo >&2 "unrecognized option '$1'"
@@ -1974,6 +2050,11 @@ snapshot_target() {
         esac
         shift
     done
+
+    if [[ $reset && $detach ]]; then
+        echo >&2 "Cannot combine '--reset' and '--detach'"
+        return 1
+    fi
 
     local original=${positional_args[0]}
     local snapshot=${positional_args[1]}
@@ -2028,9 +2109,12 @@ snapshot_target() {
 
         echo >&2 "Taking snapshot '$snapshot' of '$original' target..."
         sudo_sync_trees "$MER_TARGETS/$original" "$MER_TARGETS/$snapshot" || return
-        object_config_set "target:$snapshot" "$SNAPSHOT_OF_KEY" "$original" || return
+        [[ $detach ]] || object_config_set "target:$snapshot" "$SNAPSHOT_OF_KEY" "$original" \
+            || return
         ( cd "$MER_TARGETS/$snapshot" && eval sb2-init $sb2_init_args ) || return
-        object_config_set "target:$snapshot" "$SNAPSHOT_TIME_KEY" "$(date -R)" || return
+        [[ $detach ]] || object_config_set "target:$snapshot" "$SNAPSHOT_TIME_KEY" "$(date -R)" \
+            || return
+        [[ ! $detach ]] || reset_machine_id target "$snapshot" || return
         object_config_set "target:$snapshot" "$SYNC_TO_HOST_KEY" "${sync:-0}" || return
         # Ensure snapshots can be removed by user
         set_object_mode "target:$snapshot" "$MODE_USER" || return
@@ -2063,15 +2147,17 @@ snapshot_target() {
         fi
     fi
 
-    # Let snapshots use original target's package cache dir, so that possible
-    # cached packages survive snapshot reset.
-    sed -i "$MER_TARGETS/$snapshot/etc/zypp/zypp.conf" \
-        -e "/^\s*packagesdir\s*=/ {
-            s,=.*,= /parentroot$MER_TARGETS/$original/var/cache/zypp/packages,
-            i # Overriden by sdk-manage
-        }"
-    # Unfortunately it's not easy to exclude those from syncing
-    rm -rf "$MER_TARGETS/$snapshot/var/cache/zypp/packages"
+    if [[ ! $detach ]]; then
+        # Let snapshots use original target's package cache dir, so that possible
+        # cached packages survive snapshot reset.
+        sed -i "$MER_TARGETS/$snapshot/etc/zypp/zypp.conf" \
+            -e "/^\s*packagesdir\s*=/ {
+                s,=.*,= /parentroot$MER_TARGETS/$original/var/cache/zypp/packages,
+                i # Overriden by sdk-manage
+            }"
+        # Unfortunately it's not easy to exclude those from syncing
+        rm -rf "$MER_TARGETS/$snapshot/var/cache/zypp/packages"
+    fi
 
     if [[ $INSIDE_VBOX ]]; then
         update_df_cache
@@ -2244,6 +2330,61 @@ reserve_target() {
     echo "$snapshot"
 }
 
+clone_target() {
+    local positional_args=()
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -*)
+                echo >&2 "unrecognized option '$1'"
+                usage >&2
+                return 1
+                ;;
+            *)
+                if [[ ${#positional_args[*]} -eq 2 ]]; then
+                    echo >&2 "unexpected positional argument '$1'"
+                    usage >&2
+                    return 1
+                fi
+                positional_args+=("$1")
+                ;;
+        esac
+        shift
+    done
+
+    local original=${positional_args[0]}
+    local clone=${positional_args[1]}
+
+    if ! target_exists "$original"; then
+        echo >&2 "Target not found '$original'"
+        return 1
+    fi
+
+    if target_is_snapshot "$original"; then
+        echo >&2 "Cannot clone a target which is a snapshot: '$original'"
+        return 1
+    fi
+
+    if target_exists "$clone"; then
+        echo >&2 "Target of this name already exists '$clone'"
+        return 1
+    fi
+
+    # See install_target
+    local no_snapshot=
+    no_snapshot=$(object_config_get_boolean "target:$original" "$SYNC_TO_HOST_KEY") || return
+    if [[ $no_snapshot ]]; then
+        snapshot_target --detach "$original" "$clone" || return
+    else
+        snapshot_target --detach --no-sync "$original" "$clone" || return
+        snapshot_target "$clone"{,."$DEFAULT_SNAPSHOT_SUFFIX"} || return
+    fi
+
+    if [[ $INSIDE_VBOX ]]; then
+        local size=$(sudo du --summarize --bytes "$MER_TARGETS/$clone" |cut -f1)
+        manage_user_targets_repository touch target "$clone" "${size:-0}"
+    fi
+}
+
 remove_target() {
     local force=
     local target= snapshots_of=
@@ -2332,6 +2473,9 @@ manage_targets() {
 	    ;;
         ?(--)snapshot ) shift
             snapshot_target "$@"
+            ;;
+        ?(--)clone ) shift
+            clone_target "$@"
             ;;
         ?(--)reserve ) shift
             reserve_target "$@"
