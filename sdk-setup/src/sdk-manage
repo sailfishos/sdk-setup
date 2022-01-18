@@ -34,6 +34,7 @@ usage:
     $SELF tooling package-list <name> [-l|--long] [<pattern>...]
     $SELF tooling package-install <name> <package-name>...
     $SELF tooling package-remove <name> <package-name>...
+    $SELF tooling package-diff <name> <base-name>
     $SELF tooling package-cache-prune <name>
     $SELF tooling uuidgen {--all | <name>...}
     $SELF tooling maintain <name> [--no-sync] [<command> [<arg>...]]
@@ -59,6 +60,7 @@ usage:
     $SELF target package-list <name> [-l|--long] [<pattern>...]
     $SELF target package-install <name> <package-name>...
     $SELF target package-remove <name> <package-name>...
+    $SELF target package-diff <name> <base-name>
     $SELF target package-cache-prune <name>
     $SELF target uuidgen {--all | <name>...}
     $SELF target maintain <name> [--no-sync] [<command> [<arg>...]]
@@ -1193,6 +1195,9 @@ manage_toolings() {
         ?(--)package-remove ) shift
             manage_object_packages remove tooling "$@"
             ;;
+        ?(--)package-diff ) shift
+            diff_object_packages tooling "$@"
+            ;;
         ?(--)package-cache-prune ) shift
             prune_object_package_cache tooling "$@"
             ;;
@@ -1345,6 +1350,85 @@ manage_object_packages() {
 
     object_zypper "$type:$object" --no-refresh "$action" "${packages[@]}" || return
     maybe_synchronise_object "$type:$object"
+}
+
+diff_object_packages() {
+    local type=$1
+
+    shift
+    local positional_args=()
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -*)
+                echo >&2 "unrecognized option '$1'"
+                usage >&2
+                return 1
+                ;;
+            *)
+                positional_args+=("$1")
+                ;;
+        esac
+        shift
+    done
+
+    set -- ${positional_args[@]:+"${positional_args[@]}"}
+
+    if [[ $# -ne 2 ]]; then
+        echo >&2 "Exactly two $type names expected"
+        return 1
+    fi
+
+    local now_object=$1 old_object=$2
+
+    assert_object_exists "$type:$now_object" || return
+    assert_object_exists "$type:$old_object" || return
+
+    local query_format='%{NAME} %{EVR} %{VENDOR}\n'
+
+    local now_packages= old_packages=
+    now_packages=$(enter "$type:$now_object" rpm -q --queryformat "$query_format" -a) || return
+    old_packages=$(enter "$type:$old_object" rpm -q --queryformat "$query_format" -a) || return
+
+    diff_package_lists "$old_packages" "$now_packages"
+}
+
+diff_package_lists() {
+    local old_packages=$1 now_packages=$2
+
+    old_packages=$(sort -k1,1 -k2,2V -k3,3 <<<$old_packages) || return
+    now_packages=$(sort -k1,1 -k2,2V -k3,3 <<<$now_packages) || return
+
+    local added_packages=$(join -v 1 <(cat <<<"$now_packages") <(cat <<<"$old_packages"))
+    local removed_packages=$(join -v 2 <(cat <<<"$now_packages") <(cat <<<"$old_packages"))
+    local same_packages=$(grep -F --line-regexp -f <(cat <<<"$old_packages") <<<$now_packages)
+    local replacement_packages=$(grep -F --line-regexp -v \
+        -f <(cat <<<"$added_packages"$'\n'"$same_packages") <<<$now_packages)
+    local replaced_packages=$(join <(cat <<<"$old_packages") <(cat <<<"$replacement_packages"))
+
+    added_packages=$(awk -v OFS=, '($1) { print $1, $2 }' <<<$added_packages)
+    removed_packages=$(awk -v OFS=, '($1) { print $1, $2 }' <<<$removed_packages)
+    replaced_packages=$(awk -v OFS=, '
+        ($1) {
+            print $1,
+                ($2 == $4 ? $2 : ($2 " -> " $4)),
+                ($3 == $5 ? "" : "(vendor changed)")
+        }' <<<$replaced_packages)
+
+    {
+        echo "Added:"
+        echo ,
+        printf '%s\n' "${added_packages:-(none)}"
+
+        echo ,
+        echo "Removed:"
+        echo ,
+        printf '%s\n' "${removed_packages:-(none)}"
+
+        echo ,
+        echo "Replaced:"
+        echo ,
+        printf '%s\n' "${replaced_packages:-(none)}"
+    } |column -t --separator , |sed 's/ \+$//'
 }
 
 prune_object_package_cache() {
@@ -2518,6 +2602,9 @@ manage_targets() {
         ?(--)package-remove ) shift
             manage_object_packages remove target "$@"
             ;;
+        ?(--)package-diff ) shift
+            diff_object_packages target "$@"
+            ;;
         ?(--)package-cache-prune ) shift
             prune_object_package_cache target "$@"
             ;;
@@ -2713,6 +2800,10 @@ if ! [[ ${1:-} ]]; then
     exit 1
 fi
 
+################################################################################
+if [[ $1 != --self-test ]]; then  ###  M A I N  EXECUTION BEGINS HERE  #########
+################################################################################
+
 while (( $# > 0)); do
     case $1 in
         -m|--mode)
@@ -2781,3 +2872,101 @@ case $1 in
         exit 1
 	;;
 esac
+
+##############################################################################
+exit; fi ###  S E L F - T E S T  EXECUTION BEGINS HERE #######################
+##############################################################################
+
+some_failed=
+
+expect()
+{
+    desc=$1
+    actual=$2
+    expected=$(cat)
+
+    if [[ $actual != "$expected" ]]; then
+        cat <<EOF
+*** FAIL unexpected output:
+  Test case: $desc
+  Expected: {{{
+$expected
+}}}
+  Actual: {{{
+$actual
+}}}
+  Diff: {{{
+$(diff <(cat <<<$expected) <(cat <<<$actual))
+}}}
+
+EOF
+        some_failed=1
+    fi
+}
+
+##############################################################################
+# diff_package_lists
+
+old_packages="\
+a-removed 1.2-1 meego
+b-unchanged 1.3.4-0 meego
+c-updated 1.3.3-1 meego
+d-updated-vendor-changed 1.2.10-3.1 meego
+e-vendor-changed 1.2.8-2.3 meego
+f-unchanged 3.2.1-5 meego
+g-removed 1.2-1 meego
+h-unchanged 1.2.3-4 meego
+"
+
+now_packages="\
+b-unchanged 1.3.4-0 meego
+c-updated 1.3.4-1 meego
+d-updated-vendor-changed 1.2.10-3.2 (none)
+e-vendor-changed 1.2.8-2.3 (none)
+f-unchanged 3.2.1-5 meego
+h-unchanged 1.2.3-4 meego
+r-added 0.1-1 (none)
+s-added 0.23-2.3 meego
+"
+
+expect diff_package_lists "$(diff_package_lists "$old_packages" "$now_packages")" <<'END'
+Added:
+
+r-added                   0.1-1
+s-added                   0.23-2.3
+
+Removed:
+
+a-removed                 1.2-1
+g-removed                 1.2-1
+
+Replaced:
+
+c-updated                 1.3.3-1 -> 1.3.4-1
+d-updated-vendor-changed  1.2.10-3.1 -> 1.2.10-3.2  (vendor changed)
+e-vendor-changed          1.2.8-2.3                 (vendor changed)
+END
+
+expect diff_package_lists "$(diff_package_lists "$old_packages" "$old_packages")" <<'END'
+Added:
+
+(none)
+
+Removed:
+
+(none)
+
+Replaced:
+
+(none)
+END
+
+##############################################################################
+
+if [[ $some_failed ]]; then
+    echo "*** Some tests failed"
+    exit 1
+else
+    echo "*** All tests passed"
+    exit 0
+fi

@@ -254,7 +254,7 @@ COMMANDS
         be initialized.  Otherwise the current working directory is treated as
         the project directory.
 
-    build-requires [--[no-]refresh] {pull|reset}
+    build-requires [--[no-]refresh] {pull|reset|diff}
         When 'pull' is used, install or update the build-time dependencies as
         is done implicitly by the 'prepare', 'build' and 'qmake' (or 'cmake')
         commands but refresh the package cache first, unless '--no-refresh' is
@@ -265,12 +265,18 @@ COMMANDS
         you know what you are doing. If refresh is needed, refresh (and
         update) the original target instead.
 
-        The 'reset' command is an extended version that also ensures that
+        Commands described below are not available when the '--no-snapshot'
+        global option is used.
+
+        The 'reset' command is an extended version of 'pull'. It ensures that
         nothing else than the current build-time dependencies is pulled in on
         top of the clean build environment. It does it by resetting the target
         snapshot to the (possibly updated) state of the original target first,
-        pulling later. (Not available when the '--no-snapshot' global option
-        is used.)
+        pulling later.
+
+        The 'diff' command tells how the current build environment differs from
+        the clean build environment in terms of package installations, removals
+        and replacements.
 
     prepare
         Run rpmbuild. Execute just the %prep section of the .spec file.
@@ -2456,6 +2462,11 @@ run_build_requires__process_args() {
                 BUILD_REQUIRES_MODE=reset ;;
             pull) shift
                 BUILD_REQUIRES_MODE=pull ;;
+            diff) shift
+                if [[ ! $OPT_SNAPSHOT ]]; then
+                    fatal "The 'diff' command is only available with build target snapshots."
+                fi
+                BUILD_REQUIRES_MODE=diff ;;
             *)
                 short_usage quit
                 ;;
@@ -2468,6 +2479,11 @@ run_build_requires__process_args() {
 }
 
 run_build_requires() {
+    if [[ $BUILD_REQUIRES_MODE == diff ]]; then
+        sdk-manage target package-diff "$OPT_TARGET" "$OPT_ORIGINAL_TARGET"
+        return
+    fi
+
     local args=()
     if [[ $BUILD_REQUIRES_MODE == reset ]]; then
         args+=(--reset=force)
