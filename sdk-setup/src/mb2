@@ -1513,7 +1513,7 @@ maybe_fix_package_version() {
 
     if ! inside_git_worktree; then
         if [[ $OPT_FIX_VERSION || $version_in_spec == 0 ]]; then
-            notice "Not inside a Git working tree, will not fix package version."
+            notice "Not inside a Git working tree or no revision found, will not fix package version."
         fi
         return
     fi
@@ -3593,7 +3593,7 @@ get_shared_dir() {
 }
 
 inside_build_engine() [[ -f /etc/mer-sdk-vbox ]]
-inside_git_worktree() { git_ status &>/dev/null; }
+inside_git_worktree() { git_ log -1 HEAD &>/dev/null; }
 
 behind_qtcreator() {
     # Consider this the default frontend for backward compatibility
