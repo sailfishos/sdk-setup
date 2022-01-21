@@ -292,8 +292,8 @@ prepare_user() {
 
     sudo -u $user mkdir -p --mode 700 "${sdkroot}${HOMEDIR}/${MY_GNUPGHOME_DIR}"
 
-    echo "$user ALL=NOPASSWD: ALL" > ${sdkroot}/etc/sudoers.d/$user
-    chmod 0440 ${sdkroot}/etc/sudoers.d/$user
+    echo "$user ALL=NOPASSWD: ALL" > ${sdkroot}/etc/sudoers.d/sdk
+    chmod 0440 ${sdkroot}/etc/sudoers.d/sdk
 }
 
 prepare_etc() {
