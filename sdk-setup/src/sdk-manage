@@ -1444,6 +1444,8 @@ prune_object_package_cache() {
     local root=$(get_object_root "$type:$object")
     local cache_root=$root/var/cache/zypp/packages
 
+    [[ -d $cache_root ]] || return 0
+
     local dir= dirs=$(find "$cache_root" -type f -name '*.rpm' -printf '%h\n' |sort -u)
     for dir in $dirs; do
         find "$dir" -maxdepth 1 -type f -name "*.rpm" \
