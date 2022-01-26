@@ -167,6 +167,10 @@ cp src/workspace-autodetect %{buildroot}%{_libexecdir}/%{name}/
 cp src/sdk-setup-env %{buildroot}%{_libexecdir}/%{name}/
 cp src/dnat-emulators %{buildroot}%{_libexecdir}/%{name}/
 cp src/proxymanager %{buildroot}%{_libexecdir}/%{name}/
+# hack
+mkdir -p %{buildroot}%{_exec_prefix}/local/bin
+cp src/git %{buildroot}%{_exec_prefix}/local/bin/
+
 # This should really be %%{_unitdir}/default.target but systemd owns that :/
 mkdir -p %{buildroot}/%{_sysconfdir}/systemd/system/
 ln -sf %{_unitdir}/multi-user.target  %{buildroot}/%{_sysconfdir}/systemd/system/default.target
@@ -320,6 +324,7 @@ fi
 %{_libexecdir}/%{name}/sdk-setup-env
 %{_libexecdir}/%{name}/dnat-emulators
 %{_libexecdir}/%{name}/proxymanager
+%{_exec_prefix}/local/bin/git
 /home/.zypp-cache
 %{_unitdir}/information.service
 %{_unitdir}/sdk-enginelan.service
