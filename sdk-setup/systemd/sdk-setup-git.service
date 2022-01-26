@@ -1,0 +1,10 @@
+[Unit]
+Description=Configure Git for proper operation under SDK build engine
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/libexec/sdk-setup/sdk-setup-git
+
+[Install]
+WantedBy=multi-user.target

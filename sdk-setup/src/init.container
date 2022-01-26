@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (C) 2021 Jolla Ltd.
+# Copyright (C) 2021-2022 Jolla Ltd.
 # Contact: http://jolla.com/
 # All rights reserved.
 #
@@ -92,6 +92,8 @@ END
     fi
 
     oneshot --late
+
+    /usr/libexec/sdk-setup/sdk-setup-git
 
     . /etc/ssh/ssh-env.conf
     /usr/sbin/sshd $SSHD_PARAMETERS

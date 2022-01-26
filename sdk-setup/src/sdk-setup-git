@@ -1,0 +1,86 @@
+#!/bin/bash
+#
+# Copyright (C) 2022 Jolla Ltd.
+# Contact: http://jolla.com/
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#
+# - Redistributions of source code must retain the above copyright
+#   notice, this list of conditions and the following disclaimer.
+# - Redistributions in binary form must reproduce the above copyright
+#   notice, this list of conditions and the following disclaimer in
+#   the documentation and/or other materials provided with the
+#   distribution.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+# ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+# LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+# POSSIBILITY OF SUCH DAMAGE.
+
+set -o nounset
+
+usage() {
+    cat <<END
+usage: $0
+
+Configure Git for proper operation under SDK build engine.
+END
+}
+
+fatal() {
+    echo "Fatal: $*" >&2
+}
+
+host_is_windows() [[ -e /dev/fuse ]]
+inside_virtualbox() [[ $(systemd-detect-virt) == oracle ]]
+
+set_defaults() {
+    OPT_HELP=
+}
+
+parse_options() {
+    while (($# > 0)); do
+        case $1 in
+            -h|--help)
+                OPT_HELP=1
+                return
+                ;;
+            *)
+                fatal "Unexpected argument: $1"
+                return 1
+                ;;
+        esac
+        shift
+    done
+}
+
+main() {
+    set_defaults || return
+    parse_options "$@" || return
+
+    if [[ $OPT_HELP ]]; then
+        usage
+        return
+    fi
+
+    # Both vboxsf and dynexecfs have some impact on file stat data and that
+    # would confuse git. The less obious being subsecond part stripped from
+    # times and inode numbers not matching those on host at least.
+    if inside_virtualbox \
+            || host_is_windows && ! [[ -e /etc/mersdk/share/workspace1.no-dynexec ]]; then
+        git config --system --add core.fileMode false
+        git config --system --add core.checkStat minimal
+    fi
+}
+
+main "$@"

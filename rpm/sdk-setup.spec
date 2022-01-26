@@ -165,6 +165,7 @@ cp src/dynexecfs %{buildroot}%{_bindir}/
 mkdir -p %{buildroot}%{_libexecdir}/%{name}
 cp src/workspace-autodetect %{buildroot}%{_libexecdir}/%{name}/
 cp src/sdk-setup-env %{buildroot}%{_libexecdir}/%{name}/
+cp src/sdk-setup-git %{buildroot}%{_libexecdir}/%{name}/
 cp src/dnat-emulators %{buildroot}%{_libexecdir}/%{name}/
 cp src/proxymanager %{buildroot}%{_libexecdir}/%{name}/
 # This should really be %%{_unitdir}/default.target but systemd owns that :/
@@ -258,6 +259,7 @@ rm -Rf /home/.zypp-cache
 %preun -n sdk-vm
 %systemd_preun workspace.service
 %systemd_preun sdk-setup-env.service
+%systemd_preun sdk-setup-git.service
 %systemd_preun etc-mersdk-share.service
 %systemd_preun etc-ssh-authorized_keys.mount
 %systemd_preun host_home.service
@@ -272,6 +274,7 @@ rm -Rf /home/.zypp-cache
 %post -n sdk-vm
 %systemd_post workspace.service
 %systemd_post sdk-setup-env.service
+%systemd_post sdk-setup-git.service
 %systemd_post etc-mersdk-share.service
 %systemd_post etc-ssh-authorized_keys.mount
 %systemd_post host_home.service
@@ -318,6 +321,7 @@ fi
 %{_bindir}/dynexecfs
 %{_libexecdir}/%{name}/workspace-autodetect
 %{_libexecdir}/%{name}/sdk-setup-env
+%{_libexecdir}/%{name}/sdk-setup-git
 %{_libexecdir}/%{name}/dnat-emulators
 %{_libexecdir}/%{name}/proxymanager
 /home/.zypp-cache
@@ -331,6 +335,7 @@ fi
 %{_unitdir}/workspace-raw@.service
 %{_unitdir}/workspace-dynexec@.service
 %{_unitdir}/sdk-setup-env.service
+%{_unitdir}/sdk-setup-git.service
 %{_unitdir}/etc-mersdk-share.service
 %{_unitdir}/etc-ssh-authorized_keys.mount
 %{_unitdir}/sdk-setup-swap.service
