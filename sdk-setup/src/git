@@ -1,6 +1,6 @@
-#!/bin/env python3
+#!/bin/bash
 #
-# Copyright (C) 2021 Jolla Ltd.
+# Copyright (C) 2022 Jolla Ltd.
 # Contact: http://jolla.com/
 # All rights reserved.
 #
@@ -27,24 +27,28 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
+set -o nounset
 
-import dbus
-from dbus.mainloop.glib import DBusGMainLoop
-from gi.repository import GLib
-import json
+host_is_windows() [[ -e /dev/fuse ]]
+inside_virtualbox() [[ $(systemd-detect-virt) == oracle ]]
 
-CONFIG_FILE = '/etc/mersdk/share/proxy.json'
+extra_args=()
 
-DBusGMainLoop(set_as_default=True)
+# Both vboxsf and dynexecfs have some impact on file stat data and that
+# would confuse git. The less obious being subsecond part stripped from
+# times and inode numbers not matching those on host at least.
+if inside_virtualbox \
+        || host_is_windows && ! [[ -e /etc/mersdk/share/workspace1.no-dynexec ]]; then
+    extra_args+=(-c core.fileMode=false)
+    extra_args+=(-c core.checkStat=minimal)
+fi
 
-bus = dbus.SystemBus()
-manager_object = bus.get_object('org.pacrunner', '/org/pacrunner/manager')
-manager = dbus.Interface(manager_object, dbus_interface='org.pacrunner.Manager')
+command=${0##*/}
+path=${0%/*}
+real=$(PATH=${PATH/$path:/} which "$command")
+if [[ ! $real || $real == "$0" ]]; then
+    echo "$0: Cannot find real $command" >&2
+    exit 1
+fi
 
-with open(CONFIG_FILE, 'r') as proxy_json:
-    config = json.load(proxy_json)
-    manager.CreateProxyConfiguration(config)
-
-# The configuration is only preserved for the lifetime of its creator
-loop = GLib.MainLoop()
-loop.run()
+exec "$real" "${extra_args[@]}" "$@"
