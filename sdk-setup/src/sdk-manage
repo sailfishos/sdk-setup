@@ -2213,8 +2213,8 @@ snapshot_target() {
             return 1
         fi
 
-        if [[ $reset == force ]] || [[ $reset == outdated ]] \
-                && target_snapshot_needs_reset "$snapshot" "$original"; then
+        if [[ $reset == force ]] || ([[ $reset == outdated ]] \
+                && target_snapshot_needs_reset "$snapshot" "$original"); then
             echo >&2 "Resetting snapshot '$snapshot' of '$original' target..."
             local config=$(object_config_file "target:$snapshot")
             if [[ -e $config ]]; then
