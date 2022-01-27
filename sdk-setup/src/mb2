@@ -2597,9 +2597,6 @@ run_build__process_args() {
 }
 
 run_build() {
-    # intended to provide mb build behaviour
-    maybe_verify_target_dependencies
-
     maybe_increment_build_number;
     if [[ $BUILD_NOPREP_ARGS ]]; then
         sed -e '/^%patch/d' "$OPT_SPEC" > "$TMP_SPEC"
@@ -2613,6 +2610,8 @@ run_build() {
     sed -i "s/\x0D$//g" "$TMP_SPEC"
 
     maybe_fix_package_version "$TMP_SPEC"
+
+    maybe_verify_target_dependencies
 
     local build_tgt=$(sb2_build gcc -dumpmachine)
     build_tgt=${build_tgt%-gnueabi}
@@ -2657,8 +2656,6 @@ run_build() {
 }
 
 run_prepare() {
-    maybe_verify_target_dependencies
-
     maybe_increment_build_number;
     # TODO maybe add toggle here for disabling patch applying?
     cp "$OPT_SPEC" "$TMP_SPEC"
@@ -2667,6 +2664,8 @@ run_prepare() {
     sed -i "s/\x0D$//g" "$TMP_SPEC"
 
     maybe_fix_package_version "$TMP_SPEC"
+
+    maybe_verify_target_dependencies
 
     local build_tgt=$(sb2_build gcc -dumpmachine)
     build_tgt=${build_tgt%-gnueabi}
