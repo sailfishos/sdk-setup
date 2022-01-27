@@ -36,12 +36,15 @@ extra_args=()
 
 # Both vboxsf and dynexecfs have some impact on file stat data and that
 # would confuse git. The less obious being subsecond part stripped from
-# times and inode numbers not matching those on host at least.
+# times and inode numbers not matching those on host at least. Some
+# differences may be observed even under Docker on Linux where the filesystem
+# is simply bind-mounted. At least 'stat' may report different device ID in
+# that case.
 if inside_virtualbox \
         || host_is_windows && ! [[ -e /etc/mersdk/share/workspace1.no-dynexec ]]; then
     extra_args+=(-c core.fileMode=false)
-    extra_args+=(-c core.checkStat=minimal)
 fi
+extra_args+=(-c core.checkStat=minimal)
 
 command=${0##*/}
 path=${0%/*}
