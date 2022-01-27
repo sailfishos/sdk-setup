@@ -1526,8 +1526,9 @@ maybe_fix_package_version() {
     version=${version#*/}   # allow tags to have a prefix to allow vendor marking
     version=${version#v}    # some people like to prefix versions with a v
 
+    # Git stash is known to fail on git index which was updated on host previously
     local stash=
-    if ! stash=$(git_ stash create); then
+    if ! stash=$(git_ update-index --refresh >/dev/null; git_ stash create); then
         fatal "Cannot save state of Git working tree: git-stash failed."
     fi
     local head=${stash:-$(git_ rev-parse HEAD)}
@@ -1537,7 +1538,7 @@ maybe_fix_package_version() {
         describe_if_modified()
         {
             local stash=
-            stash=$(git stash create) || return
+            stash=$(git update-index --refresh >/dev/null; git stash create) || return
             local head=${stash:-$(git rev-parse HEAD)}
             if [[ $head != $sha1 ]]; then
                 local short=$(git rev-list --max-count=1 --abbrev-commit "$head")
@@ -2596,9 +2597,6 @@ run_build__process_args() {
 }
 
 run_build() {
-    # intended to provide mb build behaviour
-    maybe_verify_target_dependencies
-
     maybe_increment_build_number;
     if [[ $BUILD_NOPREP_ARGS ]]; then
         sed -e '/^%patch/d' "$OPT_SPEC" > "$TMP_SPEC"
@@ -2612,6 +2610,8 @@ run_build() {
     sed -i "s/\x0D$//g" "$TMP_SPEC"
 
     maybe_fix_package_version "$TMP_SPEC"
+
+    maybe_verify_target_dependencies
 
     local build_tgt=$(sb2_build gcc -dumpmachine)
     build_tgt=${build_tgt%-gnueabi}
@@ -2656,8 +2656,6 @@ run_build() {
 }
 
 run_prepare() {
-    maybe_verify_target_dependencies
-
     maybe_increment_build_number;
     # TODO maybe add toggle here for disabling patch applying?
     cp "$OPT_SPEC" "$TMP_SPEC"
@@ -2666,6 +2664,8 @@ run_prepare() {
     sed -i "s/\x0D$//g" "$TMP_SPEC"
 
     maybe_fix_package_version "$TMP_SPEC"
+
+    maybe_verify_target_dependencies
 
     local build_tgt=$(sb2_build gcc -dumpmachine)
     build_tgt=${build_tgt%-gnueabi}
