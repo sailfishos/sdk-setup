@@ -53,7 +53,7 @@ usage:
     $SELF target remove [--force] [--snapshots-of] <name>
     $SELF target refresh {--all | <name>...}
     $SELF target update <name>
-    $SELF target sync <name>
+    $SELF target sync <name> [<timestamp>]
     $SELF target import <name>
     $SELF target register [--user <user> [--password <password>]] [--force]
     $____                 {--all | <name>...}
@@ -139,6 +139,11 @@ Usage notes
     $SELF {tooling|target} clone
         Compared to taking a snapshot, cloning creates a new standalone tooling
         or target with no relation to the original.
+
+    $SELF target sync <name> [<timestamp>]
+        With <timestamp> passed, the target will only be synchronized only if
+        the RPM database inside the target changed since that time. <timestamp>
+        may be specified as seconds since the Epoch only.
 
 Global options
     -m, --mode <mode>
@@ -2576,13 +2581,13 @@ manage_targets() {
             upgrade_object target "$@"
 	    ;;
 	?(--)sync ) shift
-            local target=${1:-}
+            local target=${1:-} timestamp=${2:-}
             assert_name_valid "$target" || return
 	    if [[ ! $INSIDE_VBOX ]]; then
 	        echo >&2 "This operation is only valid for SDK in VirtualBox"
                 return 1
 	    fi
-            maybe_synchronise_object "target:$target"
+            maybe_synchronise_object "target:$target" ${timestamp:+"$timestamp"}
 	    ;;
 	?(--)import ) shift
             assert_name_valid "${1:-}" || return
