@@ -3017,7 +3017,15 @@ run_build_shell() {
     done
 
     if [[ $maintain ]]; then
+        if inside_build_engine; then
+            local session_start=$(date +%s)
+        fi
+
         sb2_maintain "$@"
+
+        if inside_build_engine; then
+            sdk-manage target sync "$OPT_TARGET" "$session_start"
+        fi
     else
         sb2_build "$@"
     fi
