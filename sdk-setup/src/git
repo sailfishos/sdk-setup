@@ -41,7 +41,7 @@ extra_args=()
 # is simply bind-mounted. At least 'stat' may report different device ID in
 # that case.
 if inside_virtualbox \
-        || host_is_windows && ! [[ -e /etc/mersdk/share/workspace1.no-dynexec ]]; then
+        || (host_is_windows && ! [[ -e /etc/mersdk/share/workspace1.no-dynexec ]]); then
     extra_args+=(-c core.fileMode=false)
 fi
 extra_args+=(-c core.checkStat=minimal)
