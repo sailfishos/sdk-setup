@@ -489,12 +489,13 @@ get_all_or_selected_of_type() {
         done
     fi
 
-    # Exclude snapshots
+    # Exclude snapshots unless required explicitly
     if [[ $type == target ]]; then
         local objects_=("${objects[@]}")
         objects=()
         for object in "${objects_[@]}"; do
-            target_is_snapshot "$object" || objects+=("$object")
+            ! target_is_snapshot "$object" || ! [[ $get_all ]] || continue
+            objects+=("$object")
         done
     fi
 
