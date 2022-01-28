@@ -71,6 +71,7 @@ bad_usage()
 }
 
 inside_build_engine() [[ -f /etc/mer-sdk-vbox ]]
+inside_virtualbox() [[ $(systemd-detect-virt) == oracle ]]
 
 journal_show_cursor()
 {
@@ -177,7 +178,7 @@ main()
     subprocess slave "$OPT_OOM_SCORE_ADJ" "${OPT_COMMAND[@]}"
     local rc=$?
 
-    if (( rc != 0 )); then
+    if (( rc != 0 )) && inside_build_engine && inside_virtualbox; then
         local oom_journal=$(sudo journalctl --cursor="$journal_start" |journal_grep_oom_related)
         if [[ $oom_journal ]]; then
             local pretty=$(journal_oom_pretty <<<"$oom_journal")
@@ -187,9 +188,7 @@ main()
             while read line; do
                 notice "    $line"
             done <<<"$pretty"
-            if inside_build_engine; then
-                notice "Consider increasing memory/swap usage limits in build engine options."
-            fi
+            notice "Consider increasing memory/swap usage limits in build engine options."
         fi
     fi
 
