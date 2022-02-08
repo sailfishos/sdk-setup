@@ -374,6 +374,21 @@ is_reflink_possible() {
     sudo cp --reflink=always "$src_tmpfile" "$dst_tmpfile" &>/dev/null
 }
 
+sudo_reflink_trees() {
+    local src=$1 dst=$2
+    local dst_existed=$([[ -e "$dst" ]] && echo 1)
+
+    sudo cp -a --reflink=always --no-target-directory "$src" "$dst" && return
+
+    # If destination existed, then retry, because cp may still fail e.g. when
+    # type of a file changes
+    [[ $dst_existed ]] || return
+
+    echo >&2 "Removing destination and trying again..."
+    sudo rm -rf "$dst"
+    sudo cp -a --reflink=always --no-target-directory "$src" "$dst"
+}
+
 sudo_sync_trees() {
     local src=$1 dst=$2
     local dst_existed=$([[ -e "$dst" ]] && echo 1)
@@ -383,7 +398,10 @@ sudo_sync_trees() {
     local can_reflink=$(is_reflink_possible "$src" "$dst" && echo 1)
 
     if [[ $can_reflink ]]; then
-        sudo cp -a --reflink=always --no-target-directory "$src" "$dst" || return
+        if ! sudo_reflink_trees "$src" "$dst"; then
+            echo >&2 "Reflink failed, trying the hard way..."
+            can_reflink=
+        fi
     fi
     if [[ $dst_existed || ! $can_reflink ]]; then
         sudo rsync -a --delete "$src/" "$dst" || return
