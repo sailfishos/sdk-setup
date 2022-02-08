@@ -376,7 +376,7 @@ is_reflink_possible() {
 
 sudo_sync_trees() {
     local src=$1 dst=$2
-    local dst_existed=$([[ ! -e "$dst" ]] && echo 1)
+    local dst_existed=$([[ -e "$dst" ]] && echo 1)
 
     sudo install -d --owner="$(id -u)" --group="$(id -g)" "$dst" || return
 
