@@ -2262,7 +2262,7 @@ snapshot_target() {
         # cached packages survive snapshot reset.
         sed -i "$MER_TARGETS/$snapshot/etc/zypp/zypp.conf" \
             -e "/^\s*packagesdir\s*=/ {
-                s,=.*,= /parentroot$MER_TARGETS/$original/var/cache/zypp/packages,
+                s,=.*,= /sdkroot$MER_TARGETS/$original/var/cache/zypp/packages,
                 i # Overriden by sdk-manage
             }"
         # Unfortunately it's not easy to exclude those from syncing
