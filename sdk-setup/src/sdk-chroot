@@ -265,12 +265,17 @@ fix_shell() {
     done <<<"$(awk -F: -v OFS=: '{print $7,$1,$2,$3,$4,$5,$6}')"
 }
 
+# Meet the requirements of sudo
+fix_password() {
+    awk -F: -v OFS=: '{$2="!"; print}'
+}
+
 prepare_user() {
     # remove mer user if present
     sed -i -e "/^mer:/d" ${sdkroot}/etc/passwd
     # getent is probably best for user data
     sed -i -e "/^${user}:/d" ${sdkroot}/etc/passwd
-    getent passwd $user |fix_shell >> ${sdkroot}/etc/passwd
+    getent passwd $user |fix_shell |fix_password >> ${sdkroot}/etc/passwd
     group=$(getent passwd $user | cut -f4 -d:)
     sed -i -e "/^[^:]*:[^:]*:${group}:/d" ${sdkroot}/etc/group
     getent group $group >> ${sdkroot}/etc/group
