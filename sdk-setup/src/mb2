@@ -3021,11 +3021,13 @@ run_build_shell() {
             local session_start=$(date +%s)
         fi
 
-        sb2_maintain "$@"
+        sb2_maintain "$@" || return
 
         if inside_build_engine; then
             sdk-manage target sync "$OPT_TARGET" "$session_start"
         fi
+
+        return 0
     else
         sb2_build "$@"
     fi
