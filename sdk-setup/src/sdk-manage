@@ -894,12 +894,13 @@ maintain() {
     fi
 
     local rc=$?
+    [[ $rc -eq 0 ]] || return $rc
 
     if [[ ! $opt_no_sync ]]; then
         maybe_synchronise_object "$type:$object" "$session_start"
     fi
 
-    return $rc
+    return 0
 }
 
 ################################################################'
