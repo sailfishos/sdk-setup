@@ -1318,13 +1318,35 @@ prune_older_rpms()
 {
     local dir=$1 src_dir=$2 spec=$3
 
-    local prune_source_name= latest_evr=
-    read prune_source_name latest_evr < <(rpmspec -q --srpm \
-        --queryformat '%{NAME} %{EVR}\n' \
+    local prune_source_name=$(rpmspec -q --srpm \
+        --queryformat '%{NAME}' \
         --define "_sourcedir $src_dir" \
         "$spec")
+    if [[ ! $prune_source_name ]]; then
+        notice "Cannot prune older packages: Failed to determine source package name"
+        return 1
+    fi
 
-    local pkg=
+    # Find latest EVR from the latest package file
+    local pkg= latest_evr=
+    while read -r pkg; do
+        local source_rpm= evr=
+        read source_rpm evr < <(rpm -q --queryformat '%{SOURCERPM} %{EVR}\n' -p "$pkg")
+        local source_name=${source_rpm%-$evr.src.rpm}
+        if [[ $source_name == $prune_source_name ]]; then
+            latest_evr=$evr
+            break
+        fi
+    done < <(find "$dir" -maxdepth 1 -name '*.rpm' -printf '%T@ %p\n' \
+        |sort --reverse --numeric-sort -k 1,1 \
+        |cut --complement -d ' ' -f 1)
+
+    if [[ ! $latest_evr ]]; then
+        notice "Cannot prune older packages: No package matching the source package name found"
+        return 1
+    fi
+
+    # Prune matching packages with older (other) EVR
     while read -r pkg; do
         local source_rpm= evr=
         read source_rpm evr < <(rpm -q --queryformat '%{SOURCERPM} %{EVR}\n' -p "$pkg")
