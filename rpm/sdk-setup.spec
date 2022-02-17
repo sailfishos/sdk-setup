@@ -224,6 +224,7 @@ ln -sf rpmvalidation %{buildroot}%{_bindir}/rpmvalidation.sh
 cp src/git-lltb %{buildroot}%{_bindir}/
 cp src/sdk-init %{buildroot}%{_bindir}/
 cp src/sdk-make-qmltypes %{buildroot}%{_bindir}/
+cp src/sfdk %{buildroot}%{_bindir}/
 mkdir -p %{buildroot}%{_libexecdir}/%{name}
 cp src/oomadvice %{buildroot}%{_libexecdir}/%{name}/
 cp src/sdk-setup-swap %{buildroot}%{_libexecdir}/%{name}/
@@ -384,6 +385,7 @@ fi
 %{_bindir}/git-lltb
 %{_bindir}/sdk-init
 %{_bindir}/sdk-make-qmltypes
+%{_bindir}/sfdk
 %{_libexecdir}/%{name}/oomadvice
 %{_libexecdir}/%{name}/sdk-setup-swap
 %{_libexecdir}/%{name}/ssh-askpass
