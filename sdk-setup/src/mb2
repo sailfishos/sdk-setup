@@ -1381,6 +1381,9 @@ filter_repo()
 maybe_verify_target_dependencies() {
     [[ $OPT_PULL_BUILD_REQUIRES ]] || return 0
 
+    local spec=$1
+    shift
+
     local opt_refresh= opt_reset=
     while [[ $# -gt 0 ]]; do
         case $1 in
@@ -1441,7 +1444,7 @@ maybe_verify_target_dependencies() {
     local deps=()
     readarray -t deps < <(sb2_build rpmspec --query --buildrequires "${extra_args[@]}" \
         --define "_sourcedir $OPT_PKGDIR" \
-        "$OPT_SPEC" |sed 's/\s*$//')
+        "$spec" |sed 's/\s*$//')
 
     if inside_build_engine; then
         local session_start=$(date +%s)
@@ -1453,7 +1456,7 @@ maybe_verify_target_dependencies() {
 
     if [[ $OPT_SEARCH_OUTPUTDIR ]]; then
         local filtered_outputdir=$STATEDIR/filtered-output-dir
-        local exclude_source_name=$(get_spec_tag "%{name}")
+        local exclude_source_name=$(get_spec_tag "$spec" "%{name}")
         filter_repo "$exclude_source_name" "$OPT_OUTPUTDIR" "$filtered_outputdir"
         args+=(--"$OPT_SEARCH_OUTPUTDIR_VERBOSITY" \
             --plus-repo "$filtered_outputdir" --no-gpg-checks)
@@ -1504,8 +1507,9 @@ maybe_verify_target_dependencies() {
 }
 
 get_spec_tag() {
+    local spec=$1 query=$2
     rpmspec --query --srpm --define "_sourcedir $OPT_PKGDIR" \
-        --queryformat="$1" "$OPT_SPEC"
+        --queryformat="$query" "$spec"
 }
 
 maybe_fix_package_version() {
@@ -1771,19 +1775,21 @@ ssh_as() {
 }
 
 get_spec_setup_subdir() {
+    local spec=$1
     # avoid spawning another process for | cut -s -f2 -d '/'
-    local setup_dir=$(grep -Po '%(auto)?setup.*-n[[:space:]]+[^[:space:]]+' "$OPT_SPEC")
+    local setup_dir=$(grep -Po '%(auto)?setup.*-n[[:space:]]+[^[:space:]]+' "$spec")
     # if setup_dir has '/' return the part after it
     setup_dir=${setup_dir/#*\//}
     # if it did not have a '/' then we got the original match => erase it
     setup_dir=${setup_dir/#%?(auto)setup*/}
 
     # in case we got a spec %{tag} out of this, try to expand it
-    get_spec_tag "$setup_dir"
+    get_spec_tag "$spec" "$setup_dir"
 }
 
 maybe_cd_to_spec_setup_subdir() {
-    local setup_dir=$(get_spec_setup_subdir)
+    local spec=$1
+    local setup_dir=$(get_spec_setup_subdir "$spec")
     if [[ $setup_dir ]]; then
         is_shadow_build && mkdir -p "$setup_dir"
         cd "$setup_dir"
@@ -1802,7 +1808,9 @@ maybe_cd_to_spec_setup_subdir() {
 maybe_increment_build_number() {
     [[ $OPT_INC_BUILD_NUMBER -eq 0 ]] && return
 
-    local release=$(get_spec_tag "%{release}")
+    local spec=$1
+
+    local release=$(get_spec_tag "$spec" "%{release}")
     local x=$(echo $release | cut -f 1 -d .)
     local y=$(echo $release | cut -s -f 2 -d .)
     local z=$(echo $release | cut -s -f 3- -d .)
@@ -1814,7 +1822,7 @@ maybe_increment_build_number() {
         if [[ $y =~ ^-?[0-9]+$ ]]; then
             let new_release=$y+1
             echo "Incrementing release: $x.$y -> $x.$new_release"
-            sed -i "s/^Release:.*/Release: $x.$new_release/" "$OPT_SPEC"
+            sed -i "s/^Release:.*/Release: $x.$new_release/" "$spec"
             return
         else
             # non-numeric after dot => don't touch
@@ -1826,7 +1834,7 @@ maybe_increment_build_number() {
         if [[ $x =~ ^-?[0-9]+$ ]]; then
             let new_release=$x+1
             echo "Incrementing release: $x -> $new_release"
-            sed -i "s/^Release:.*/Release: $new_release/" "$OPT_SPEC"
+            sed -i "s/^Release:.*/Release: $new_release/" "$spec"
             return
         fi
     fi
@@ -2335,8 +2343,9 @@ sign_rpms__prepare() {
 }
 
 sign_rpms() {
-    [[ -e $TMP_SPEC ]] || fatal "No previous build found"
-    local rpms=$(find_rpms $all_opt "$OPT_OUTPUTDIR" "$OPT_PKGDIR" "$TMP_SPEC")
+    local spec=$1
+
+    local rpms=$(find_rpms $all_opt "$OPT_OUTPUTDIR" "$OPT_PKGDIR" "$spec")
     [[ $rpms ]] || fatal "No package found"
 
     local hook_exports=()
@@ -2505,7 +2514,7 @@ run_build_requires() {
         args+=(--reset=outdated)
     fi
     [[ $BUILD_REQUIRES_NOREFRESH ]] || args+=(--refresh)
-    OPT_PULL_BUILD_REQUIRES=1 maybe_verify_target_dependencies "${args[@]}"
+    OPT_PULL_BUILD_REQUIRES=1 maybe_verify_target_dependencies "$OPT_SPEC" "${args[@]}"
 }
 
 run_apply__process_args() {
@@ -2548,7 +2557,7 @@ run_apply() {
     fi
 
     (
-        maybe_cd_to_spec_setup_subdir
+        maybe_cd_to_spec_setup_subdir "$OPT_SPEC"
         for p in $to_apply; do
             if [[ ! $auto_applied ]]; then
                 op="$(sed -n "s/^%patch$p \+\(.*\)/\1/p" "$TMP_SPEC")"
@@ -2618,7 +2627,7 @@ run_build__process_args() {
 }
 
 run_build() {
-    maybe_increment_build_number;
+    maybe_increment_build_number "$OPT_SPEC"
     if [[ $BUILD_NOPREP_ARGS ]]; then
         sed -e '/^%patch/d' "$OPT_SPEC" > "$TMP_SPEC"
     else
@@ -2632,13 +2641,13 @@ run_build() {
 
     maybe_fix_package_version "$TMP_SPEC"
 
-    maybe_verify_target_dependencies
+    maybe_verify_target_dependencies "$OPT_SPEC"
 
     local build_tgt=$(sb2_build gcc -dumpmachine)
     build_tgt=${build_tgt%-gnueabi}
 
     if is_shadow_build; then
-        local subdir=$(get_spec_setup_subdir)
+        local subdir=$(get_spec_setup_subdir "$OPT_SPEC")
         : ${subdir:=.}
         local src_dir=$OPT_SRC_DIR/$subdir
 
@@ -2651,7 +2660,7 @@ run_build() {
     fi
 
     (
-        maybe_cd_to_spec_setup_subdir
+        maybe_cd_to_spec_setup_subdir "$OPT_SPEC"
         sb2_build env PATH="$WRAPPERSDIR:$USERWRAPPERSDIR:$PATH" rpmbuild \
             --build-in-place --target=$build_tgt \
             "${BUILD_DEBUG_ARGS[@]}" \
@@ -2669,7 +2678,7 @@ run_build() {
     ) || return
 
     [[ $OPT_PACKAGE_TIMELINE ]] || prune_older_rpms "$OPT_OUTPUTDIR" "$OPT_PKGDIR" "$TMP_SPEC"
-    [[ ! $BUILD_SIGN ]] || sign_rpms || return
+    [[ ! $BUILD_SIGN ]] || sign_rpms "$TMP_SPEC" || return
 
     local hook_exports=()
     local rpms=$(find_rpms "$OPT_OUTPUTDIR" "$OPT_PKGDIR" "$TMP_SPEC")
@@ -2684,7 +2693,7 @@ run_build() {
 }
 
 run_prepare() {
-    maybe_increment_build_number;
+    maybe_increment_build_number "$OPT_SPEC"
     # TODO maybe add toggle here for disabling patch applying?
     cp "$OPT_SPEC" "$TMP_SPEC"
 
@@ -2693,12 +2702,12 @@ run_prepare() {
 
     maybe_fix_package_version "$TMP_SPEC"
 
-    maybe_verify_target_dependencies
+    maybe_verify_target_dependencies "$OPT_SPEC"
 
     local build_tgt=$(sb2_build gcc -dumpmachine)
     build_tgt=${build_tgt%-gnueabi}
     (
-        maybe_cd_to_spec_setup_subdir
+        maybe_cd_to_spec_setup_subdir "$OPT_SPEC"
         sb2_build rpmbuild --build-in-place --target=$build_tgt \
             --define "_smp_mflags -j$BUILD_JOBS" \
             --define "_sourcedir $OPT_PKGDIR" \
@@ -2781,7 +2790,7 @@ run_cmake() {
 
     case $CMAKE_MODE in
         configure)
-            maybe_verify_target_dependencies
+            maybe_verify_target_dependencies "$OPT_SPEC"
             init_cmake_wrapper $WRAPPERSDIR/cmake
             init_noop_wrapper $WRAPPERSDIR/make
             ;;
@@ -2796,7 +2805,7 @@ run_cmake() {
     esac
 
     (
-        maybe_cd_to_spec_setup_subdir
+        maybe_cd_to_spec_setup_subdir "$OPT_SPEC"
         sb2_build env PATH="${WRAPPERSDIR}:${USERWRAPPERSDIR}:${PATH}" rpmbuild \
             --build-in-place --target=$build_tgt \
             --define "noecho 1" \
@@ -2840,13 +2849,13 @@ run_qmake() {
     maybe_fix_package_version "$TMP_SPEC"
 
     # This is a good time to verify the target dependencies as per mb
-    maybe_verify_target_dependencies
+    maybe_verify_target_dependencies "$OPT_SPEC"
 
     init_qmake_wrapper $WRAPPERSDIR/qmake "${QMAKE_EXTRA_ARGS[@]}"
     init_noop_wrapper $WRAPPERSDIR/make
 
     (
-        maybe_cd_to_spec_setup_subdir
+        maybe_cd_to_spec_setup_subdir "$OPT_SPEC"
         sb2_build env PATH="$WRAPPERSDIR:$USERWRAPPERSDIR:$PATH" rpmbuild \
             --build-in-place --target=$build_tgt \
             --define "noecho 1" \
@@ -2866,13 +2875,13 @@ run_compiledb() {
     maybe_fix_package_version "$TMP_SPEC"
 
     # This is a good time to verify the target dependencies as per mb
-    maybe_verify_target_dependencies
+    maybe_verify_target_dependencies "$OPT_SPEC"
 
     local build_tgt=$(sb2_build gcc -dumpmachine)
     build_tgt=${build_tgt%-gnueabi}
 
     if is_shadow_build; then
-        local subdir=$(get_spec_setup_subdir)
+        local subdir=$(get_spec_setup_subdir "$OPT_SPEC")
         : ${subdir:=.}
         local src_dir=$OPT_SRC_DIR/$subdir
 
@@ -2887,7 +2896,7 @@ run_compiledb() {
     init_make_compiledb_wrapper $WRAPPERSDIR/make "$@"
 
     (
-        maybe_cd_to_spec_setup_subdir
+        maybe_cd_to_spec_setup_subdir "$OPT_SPEC"
         sb2_build env PATH="$WRAPPERSDIR:$USERWRAPPERSDIR:$PATH" rpmbuild \
             --build-in-place --target=$build_tgt \
             --define "noecho 1" \
@@ -2921,7 +2930,7 @@ run_make() {
     init_simple_wrapper $WRAPPERSDIR/make "$@"
 
     (
-        maybe_cd_to_spec_setup_subdir
+        maybe_cd_to_spec_setup_subdir "$OPT_SPEC"
         sb2_build env PATH="$WRAPPERSDIR:$USERWRAPPERSDIR:$PATH" rpmbuild \
             --build-in-place --target=$build_tgt \
             --define "noecho 1" \
@@ -2952,7 +2961,7 @@ run_make_install() {
 
     # Install to buildroot which should be rsync'ed to /opt/sdk/$package on device
     (
-        maybe_cd_to_spec_setup_subdir
+        maybe_cd_to_spec_setup_subdir "$OPT_SPEC"
         sb2_build rpmbuild --build-in-place --target=$build_tgt \
             --define "noecho 1" \
             --define "_sourcedir $OPT_PKGDIR" \
@@ -3004,8 +3013,8 @@ run_package() {
     maybe_fix_package_version "$TMP_SPEC"
 
     (
-        maybe_increment_build_number
-        maybe_cd_to_spec_setup_subdir
+        maybe_increment_build_number "$OPT_SPEC"
+        maybe_cd_to_spec_setup_subdir "$OPT_SPEC"
         sb2_build rpmbuild --build-in-place --target=$build_tgt \
             --define "noecho 1" \
             --define "_rpmdir $OPT_OUTPUTDIR" \
@@ -3019,7 +3028,7 @@ run_package() {
     ) || return
 
     [[ $OPT_PACKAGE_TIMELINE ]] || prune_older_rpms "$OPT_OUTPUTDIR" "$OPT_PKGDIR" "$TMP_SPEC"
-    [[ ! $PACKAGE_SIGN ]] || sign_rpms
+    [[ ! $PACKAGE_SIGN ]] || sign_rpms "$TMP_SPEC"
 
     local hook_exports=()
     local rpms=$(find_rpms "$OPT_OUTPUTDIR" "$OPT_PKGDIR" "$TMP_SPEC")
@@ -3143,7 +3152,7 @@ run_deploy() {
 
     # rsync method is special
     if [[ $method_opt == --rsync ]]; then
-        local name=$(get_spec_tag "%{name}")
+        local name=$(get_spec_tag "$OPT_SPEC" "%{name}")
 
         if [[ $dry_run_opt ]]; then
             echo "The RPM \"%buildroot\" directory would be copied to the device as \"/opt/sdk/$name\""
@@ -3320,7 +3329,7 @@ run_undeploy() {
     else
         candidates=$(
             [[ $candidates ]] || exit 0
-            local wanted_src_name=$(get_spec_tag "%{name}")
+            local wanted_src_name=$(get_spec_tag "$OPT_SPEC" "%{name}")
             while read src_name rest; do
                 [[ $src_name =~ ^"$wanted_src_name"(-[0-9].*)?$ ]] && printf '%s\n' "$rest"
             done <<<"$candidates"
