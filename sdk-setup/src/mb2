@@ -2544,7 +2544,12 @@ run_build_requires() {
         args+=(--reset=outdated)
     fi
     [[ $BUILD_REQUIRES_NOREFRESH ]] || args+=(--refresh)
-    OPT_PULL_BUILD_REQUIRES=1 maybe_verify_target_dependencies "$OPT_SPEC" "${args[@]}"
+
+    flatten_spec "$OPT_SPEC" >"$TMP_SPEC"
+    drop_windows_linefeeds "$TMP_SPEC"
+    maybe_fix_package_version "$TMP_SPEC"
+
+    OPT_PULL_BUILD_REQUIRES=1 maybe_verify_target_dependencies "$TMP_SPEC" "${args[@]}"
 }
 
 run_apply__process_args() {
