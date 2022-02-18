@@ -2555,7 +2555,7 @@ run_apply() {
             fi
             patch_file="$(sed -n "s/^Patch$p: \+\(.*\)/\1/p" "$TMP_SPEC")"
             echo "$message $patch_file" >&2
-            patch "${common_op[@]}" $op < "$(dirname "$OPT_SPEC")/$patch_file" >&2 \
+            patch "${common_op[@]}" $op < "$OPT_PKGDIR/$patch_file" >&2 \
                 || fatal "$message $patch_file failed, exiting"
         done
     )
@@ -2657,7 +2657,7 @@ run_build() {
             "${BUILD_DEBUG_ARGS[@]}" \
             --define "_smp_mflags -j$(rpm_quote "$BUILD_JOBS")" \
             --define "_rpmdir $OPT_OUTPUTDIR" \
-            --define "_sourcedir $(dirname $OPT_SPEC)" \
+            --define "_sourcedir $OPT_PKGDIR" \
             --define "_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm" \
             --define "_buildhost $(get_hostname)" \
             "${EXTENDED_PRE_INSTALL_LOCK_ARGS[@]}" \
@@ -2701,7 +2701,7 @@ run_prepare() {
         maybe_cd_to_spec_setup_subdir
         sb2_build rpmbuild --build-in-place --target=$build_tgt \
             --define "_smp_mflags -j$BUILD_JOBS" \
-            --define "_sourcedir $(dirname $OPT_SPEC)" \
+            --define "_sourcedir $OPT_PKGDIR" \
             --define "_buildhost $(get_hostname)" \
             -bp --short-circuit \
             "$TMP_SPEC"
@@ -2800,7 +2800,7 @@ run_cmake() {
         sb2_build env PATH="${WRAPPERSDIR}:${USERWRAPPERSDIR}:${PATH}" rpmbuild \
             --build-in-place --target=$build_tgt \
             --define "noecho 1" \
-            --define "_sourcedir $(dirname $OPT_SPEC)" \
+            --define "_sourcedir $OPT_PKGDIR" \
             --define "_buildhost $(get_hostname)" \
             -bc --short-circuit \
             "$TMP_SPEC"
@@ -2850,7 +2850,7 @@ run_qmake() {
         sb2_build env PATH="$WRAPPERSDIR:$USERWRAPPERSDIR:$PATH" rpmbuild \
             --build-in-place --target=$build_tgt \
             --define "noecho 1" \
-            --define "_sourcedir $(dirname $OPT_SPEC)" \
+            --define "_sourcedir $OPT_PKGDIR" \
             --define "_buildhost $(get_hostname)" \
             -bc --short-circuit \
             "$TMP_SPEC"
@@ -2891,7 +2891,7 @@ run_compiledb() {
         sb2_build env PATH="$WRAPPERSDIR:$USERWRAPPERSDIR:$PATH" rpmbuild \
             --build-in-place --target=$build_tgt \
             --define "noecho 1" \
-            --define "_sourcedir $(dirname $OPT_SPEC)" \
+            --define "_sourcedir $OPT_PKGDIR" \
             --define "_buildhost $(get_hostname)" \
             -bc --short-circuit \
             "$TMP_SPEC" \
@@ -2925,7 +2925,7 @@ run_make() {
         sb2_build env PATH="$WRAPPERSDIR:$USERWRAPPERSDIR:$PATH" rpmbuild \
             --build-in-place --target=$build_tgt \
             --define "noecho 1" \
-            --define "_sourcedir $(dirname $OPT_SPEC)" \
+            --define "_sourcedir $OPT_PKGDIR" \
             --define "_buildhost $(get_hostname)" \
             -bc --short-circuit \
             "$TMP_SPEC"
@@ -2955,7 +2955,7 @@ run_make_install() {
         maybe_cd_to_spec_setup_subdir
         sb2_build rpmbuild --build-in-place --target=$build_tgt \
             --define "noecho 1" \
-            --define "_sourcedir $(dirname $OPT_SPEC)" \
+            --define "_sourcedir $OPT_PKGDIR" \
             --define "_buildhost $(get_hostname)" \
             --define "_skip_install_processing 1" \
             "${EXTENDED_PRE_INSTALL_LOCK_ARGS[@]}" \
@@ -3009,7 +3009,7 @@ run_package() {
         sb2_build rpmbuild --build-in-place --target=$build_tgt \
             --define "noecho 1" \
             --define "_rpmdir $OPT_OUTPUTDIR" \
-            --define "_sourcedir $(dirname $OPT_SPEC)" \
+            --define "_sourcedir $OPT_PKGDIR" \
             --define "_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm" \
             --define "_buildhost $(get_hostname)" \
             "${EXTENDED_PRE_INSTALL_LOCK_ARGS[@]}" \
@@ -3686,7 +3686,7 @@ OPT_PACKAGE_TIMELINE=
 OPT_SEARCH_OUTPUTDIR=
 OPT_SEARCH_OUTPUTDIR_VERBOSITY=verbose
 OPT_OUTPUT_PREFIX=
-OPT_PKGDIR="./rpm"
+OPT_PKGDIR=$PWD/rpm
 OPT_PRO_FILE_OR_DIR=
 OPT_SRC_DIR=
 OPT_NEEDSPEC=
