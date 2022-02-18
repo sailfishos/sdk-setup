@@ -1512,6 +1512,16 @@ get_spec_tag() {
         --queryformat="$query" "$spec"
 }
 
+has_windows_linefeeds() {
+    local file=$1
+    grep -q -F -e $'\r' "$file"
+}
+
+drop_windows_linefeeds() {
+    local file=$1
+    sed -i "s/\x0D$//g" "$file"
+}
+
 maybe_fix_package_version() {
     local spec_file=$1
 
@@ -2538,8 +2548,10 @@ run_apply() {
         common_op+=(-R)
     fi
 
-    tr -d '\r' < "$OPT_SPEC" > "$TMP_SPEC"
-    cmp -s "$OPT_SPEC" "$TMP_SPEC" || common_op+=(--binary)
+    has_windows_linefeeds "$OPT_SPEC" && common_op+=(--binary)
+
+    cp -a "$OPT_SPEC" "$TMP_SPEC"
+    drop_windows_linefeeds "$TMP_SPEC"
 
     local to_apply=
     local auto_applied=$(grep -q "^%autosetup" "$TMP_SPEC" \
@@ -2636,8 +2648,7 @@ run_build() {
 
     try_to_make_changelog >> "$TMP_SPEC"
 
-    # get rid of potential windows linefeeds
-    sed -i "s/\x0D$//g" "$TMP_SPEC"
+    drop_windows_linefeeds "$TMP_SPEC"
 
     maybe_fix_package_version "$TMP_SPEC"
 
@@ -2697,8 +2708,7 @@ run_prepare() {
     # TODO maybe add toggle here for disabling patch applying?
     cp "$OPT_SPEC" "$TMP_SPEC"
 
-    # get rid of potential windows linefeeds
-    sed -i "s/\x0D$//g" "$TMP_SPEC"
+    drop_windows_linefeeds "$TMP_SPEC"
 
     maybe_fix_package_version "$TMP_SPEC"
 
@@ -2783,8 +2793,7 @@ run_cmake() {
 
     cp -a "$OPT_SPEC" "$TMP_SPEC"
 
-    # get rid of potential windows linefeeds
-    sed -i "s/\x0D$//g" "$TMP_SPEC"
+    drop_windows_linefeeds "$TMP_SPEC"
 
     maybe_fix_package_version "$TMP_SPEC"
 
@@ -2843,8 +2852,7 @@ run_qmake() {
 
     cp -a "$OPT_SPEC" "$TMP_SPEC"
 
-    # get rid of potential windows linefeeds
-    sed -i "s/\x0D$//g" "$TMP_SPEC"
+    drop_windows_linefeeds "$TMP_SPEC"
 
     maybe_fix_package_version "$TMP_SPEC"
 
@@ -2869,8 +2877,7 @@ run_qmake() {
 run_compiledb() {
     cp -a "$OPT_SPEC" "$TMP_SPEC"
 
-    # get rid of potential windows linefeeds
-    sed -i "s/\x0D$//g" "$TMP_SPEC"
+    drop_windows_linefeeds "$TMP_SPEC"
 
     maybe_fix_package_version "$TMP_SPEC"
 
@@ -2915,8 +2922,7 @@ run_compiledb() {
 run_make() {
     cp -a "$OPT_SPEC" "$TMP_SPEC"
 
-    # get rid of potential windows linefeeds
-    sed -i "s/\x0D$//g" "$TMP_SPEC"
+    drop_windows_linefeeds "$TMP_SPEC"
 
     maybe_fix_package_version "$TMP_SPEC"
 
@@ -2954,8 +2960,7 @@ run_make_install() {
 
     cp -a "$OPT_SPEC" "$TMP_SPEC"
 
-    # get rid of potential windows linefeeds
-    sed -i "s/\x0D$//g" "$TMP_SPEC"
+    drop_windows_linefeeds "$TMP_SPEC"
 
     maybe_fix_package_version "$TMP_SPEC"
 
@@ -3007,8 +3012,7 @@ run_package() {
 
     try_to_make_changelog >> "$TMP_SPEC"
 
-    # get rid of potential windows linefeeds
-    sed -i "s/\x0D$//g" "$TMP_SPEC"
+    drop_windows_linefeeds "$TMP_SPEC"
 
     maybe_fix_package_version "$TMP_SPEC"
 
