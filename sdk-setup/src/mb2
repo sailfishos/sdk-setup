@@ -1512,6 +1512,26 @@ get_spec_tag() {
         --queryformat="$query" "$spec"
 }
 
+# Do a simple, one level expansion of %include directions. Failure to process
+# an %include directive is not considered fatal and as such is copied
+# unchanged to the output.
+flatten_spec() {
+    local spec_file=$1
+
+    local line=
+    while IFS= read -r line; do
+        if [[ $line == "%include "* ]]; then
+            local path=${line#%include }
+            path=${path// /}
+            if [[ $path != *%* && -f "$path" ]]; then
+                cat "$path"
+                continue
+            fi
+        fi
+        printf '%s\n' "$line"
+    done <"$spec_file"
+}
+
 has_windows_linefeeds() {
     local file=$1
     grep -q -F -e $'\r' "$file"
@@ -2550,7 +2570,7 @@ run_apply() {
 
     has_windows_linefeeds "$OPT_SPEC" && common_op+=(--binary)
 
-    cp -a "$OPT_SPEC" "$TMP_SPEC"
+    flatten_spec "$OPT_SPEC" > "$TMP_SPEC"
     drop_windows_linefeeds "$TMP_SPEC"
 
     local to_apply=
@@ -2640,10 +2660,11 @@ run_build__process_args() {
 
 run_build() {
     maybe_increment_build_number "$OPT_SPEC"
+
+    flatten_spec "$OPT_SPEC" >"$TMP_SPEC"
+
     if [[ $BUILD_NOPREP_ARGS ]]; then
-        sed -e '/^%patch/d' "$OPT_SPEC" > "$TMP_SPEC"
-    else
-        cp "$OPT_SPEC" "$TMP_SPEC"
+        sed -i -e '/^%patch/d' "$TMP_SPEC"
     fi
 
     try_to_make_changelog >> "$TMP_SPEC"
@@ -2706,7 +2727,7 @@ run_build() {
 run_prepare() {
     maybe_increment_build_number "$OPT_SPEC"
     # TODO maybe add toggle here for disabling patch applying?
-    cp "$OPT_SPEC" "$TMP_SPEC"
+    flatten_spec "$OPT_SPEC" >"$TMP_SPEC"
 
     drop_windows_linefeeds "$TMP_SPEC"
 
@@ -2791,7 +2812,7 @@ run_cmake() {
     local build_tgt=$(sb2_build gcc -dumpmachine)
     build_tgt=${build_tgt%-gnueabi}
 
-    cp -a "$OPT_SPEC" "$TMP_SPEC"
+    flatten_spec "$OPT_SPEC" >"$TMP_SPEC"
 
     drop_windows_linefeeds "$TMP_SPEC"
 
@@ -2850,7 +2871,7 @@ run_qmake() {
     local build_tgt=$(sb2_build gcc -dumpmachine)
     build_tgt=${build_tgt%-gnueabi}
 
-    cp -a "$OPT_SPEC" "$TMP_SPEC"
+    flatten_spec "$OPT_SPEC" >"$TMP_SPEC"
 
     drop_windows_linefeeds "$TMP_SPEC"
 
@@ -2875,7 +2896,7 @@ run_qmake() {
 }
 
 run_compiledb() {
-    cp -a "$OPT_SPEC" "$TMP_SPEC"
+    flatten_spec "$OPT_SPEC" >"$TMP_SPEC"
 
     drop_windows_linefeeds "$TMP_SPEC"
 
@@ -2920,7 +2941,7 @@ run_compiledb() {
 }
 
 run_make() {
-    cp -a "$OPT_SPEC" "$TMP_SPEC"
+    flatten_spec "$OPT_SPEC" >"$TMP_SPEC"
 
     drop_windows_linefeeds "$TMP_SPEC"
 
@@ -2958,7 +2979,7 @@ run_make_install() {
     local build_tgt=$(sb2_build gcc -dumpmachine)
     build_tgt=${build_tgt%-gnueabi}
 
-    cp -a "$OPT_SPEC" "$TMP_SPEC"
+    flatten_spec "$OPT_SPEC" >"$TMP_SPEC"
 
     drop_windows_linefeeds "$TMP_SPEC"
 
@@ -3008,7 +3029,7 @@ run_package() {
     local build_tgt=$(sb2_build gcc -dumpmachine)
     build_tgt=${build_tgt%-gnueabi}
 
-    cp -a "$OPT_SPEC" "$TMP_SPEC"
+    flatten_spec "$OPT_SPEC" >"$TMP_SPEC"
 
     try_to_make_changelog >> "$TMP_SPEC"
 
