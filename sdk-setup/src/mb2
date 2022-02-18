@@ -297,7 +297,7 @@ COMMANDS
         selection is done by qmake call inside the .spec file.)
 
         --prepare         Run %prep section as well
-        --no-check        Skip the %check section
+        --no-check        Skip the %check section and rpmlint
         --enable-debug    Enable debug build
         -j <n>            Run up to <n> jobs simultaneously
         --sign            Sign packages
@@ -2566,6 +2566,7 @@ run_build__process_args() {
     BUILD_JOBS=
     BUILD_NOPREP_ARGS=(--noprep)
     BUILD_NOCHECK_ARGS=()
+    BUILD_NORPMLINT=${SAILFISH_SDK_FRONTEND:+1}
     BUILD_EXTRA_ARGS=()
     BUILD_SIGN=
     while [[ "$1" ]]; do
@@ -2594,6 +2595,7 @@ run_build__process_args() {
                 ;;
             --no-check) shift
                 BUILD_NOCHECK_ARGS=(--nocheck)
+                BUILD_NORPMLINT=1
                 ;;
             --) shift
                 break
@@ -2672,6 +2674,13 @@ run_build() {
     local hook_exports=()
     local rpms=$(find_rpms "$OPT_OUTPUTDIR" "$OPT_PKGDIR" "$STATEDIR/spec")
     run_hook post-package "${hook_exports[*]}" ${rpms} || fatal "The 'post-package' hook failed"
+
+    if [[ ! $BUILD_NORPMLINT ]]; then
+        local check_suites=$CHECK_RPMLINT
+        run_check__process_args_helper "" "$check_suites" ""
+        run_check --already-locked
+    fi
+    return 0
 }
 
 run_prepare() {
@@ -3506,6 +3515,11 @@ run_check__process_args_helper() {
 }
 
 run_check() {
+    local no_lock=
+    if [[ $1 == --already-locked ]]; then
+        no_lock=1
+        shift
+    fi
     if [[ $CHECK_LIST_SUITES ]]; then
         local US=$'\x1F'
         print_suite() ( IFS=$US; printf '%s\n' "$*"; )
@@ -3534,12 +3548,12 @@ run_check() {
 
     run_check_cleanup() (
         trap 'echo cleaning up...' INT TERM HUP
-        global_lock_release
+        [[ $no_lock ]] || global_lock_release
     )
     trap 'run_check_cleanup; trap - RETURN' RETURN
     trap 'return 1' INT TERM HUP
 
-    global_lock_acquire
+    [[ $no_lock ]] || global_lock_acquire
     local EXTENDED_PRE_INSTALL_LOCK_ARGS=()
 
     local rc=0 done_count=0
