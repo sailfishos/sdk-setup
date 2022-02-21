@@ -2375,7 +2375,7 @@ sign_rpms__prepare() {
 sign_rpms() {
     local spec=$1
 
-    local rpms=$(find_rpms $all_opt "$OPT_OUTPUTDIR" "$OPT_PKGDIR" "$spec")
+    local rpms=$(find_rpms "$OPT_OUTPUTDIR" "$OPT_PKGDIR" "$spec")
     [[ $rpms ]] || fatal "No package found"
 
     local hook_exports=()
