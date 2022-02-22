@@ -147,8 +147,8 @@ fi
 targetsdir=$(readlink -f ${sdkroot}/../../targets)
 if [[ ! -d ${targetsdir} ]] ; then
     echo "SDK targets location '$targetsdir' does not exist - about to create it."
-    read -p "Continue, abort? [c/a] (c)" reply
-    if ! [[ $reply =~ ^[cC]?$ ]]; then
+    read -p "Continue? [y/n] (y)" reply
+    if ! [[ $reply =~ ^[cCyY]?$ ]]; then
         echo "User aborted"
         exit 1
     fi
@@ -159,8 +159,8 @@ fi
 toolingsdir=$(readlink -f ${sdkroot}/../../toolings)
 if [[ ! -d ${toolingsdir} ]] ; then
     echo "SDK toolings location '$toolingsdir' does not exist - about to create it."
-    read -p "Continue, abort? [c/a] (c)" reply
-    if ! [[ $reply =~ ^[cC]?$ ]]; then
+    read -p "Continue? [y/n] (y)" reply
+    if ! [[ $reply =~ ^[cCyY]?$ ]]; then
         echo "User aborted"
         exit 1
     fi
