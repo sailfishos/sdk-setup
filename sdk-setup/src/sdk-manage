@@ -651,6 +651,11 @@ object_zypper() {
     return $rc
 }
 
+object_which() {
+    local object=$1 tool=$2
+    enter "$object" bash -c 'PATH=/usr/libexec/sdk-setup:$PATH which '"$tool"
+}
+
 register_object() {
     local type=$1
     shift
@@ -681,14 +686,15 @@ register_object() {
     local object= domain=
     for object in "${objects[@]}"; do
         object=$type:$object
-        domain=$(enter "$object" sdk-register -d) || return
+        sdk_register=$(object_which "$object" sdk-register)
+        domain=$(enter "$object" "$sdk_register" -d) || return
         if [[ $domain != jolla && ! $force ]]; then
             echo >&2 "Registration not needed for $(print_object "$object") (domain: ${domain:-empty})"
             continue
         fi
 
         echo >&2 -n "$(print_object "$object"): "
-        enter "$object" sdk-register -u "$username" -p "$password" || return
+        enter "$object" "$sdk_register" -u "$username" -p "$password" || return
     done
 }
 
