@@ -2529,11 +2529,31 @@ run_build_requires__process_args() {
         notice "Omitting 'pull' is deprecated. Pass 'pull' explicitly."
         BUILD_REQUIRES_MODE=pull
     fi
+    if [[ $BUILD_REQUIRES_MODE == pull ]]; then
+        OPT_NEEDSPEC=1
+    fi
 }
 
 run_build_requires() {
+    local locked=
+    run_build_requires_cleanup() (
+        trap 'echo cleaning up...' INT TERM HUP
+        [[ $locked ]] && global_lock_release
+    )
+    trap 'run_build_requires_cleanup; trap - RETURN' RETURN
+    trap 'return 1' INT TERM HUP
+
     if [[ $BUILD_REQUIRES_MODE == diff ]]; then
         sdk-manage target package-diff "$OPT_TARGET" "$OPT_ORIGINAL_TARGET"
+        return
+    fi
+
+    if [[ $BUILD_REQUIRES_MODE == reset && ! $OPT_SPEC ]]; then
+        locked=1
+        global_lock_acquire
+        if ! sdk-manage target snapshot --reset=force "$OPT_ORIGINAL_TARGET" "$OPT_TARGET"; then
+            fatal "Failed to reset build target snapshot '$OPT_TARGET' to '$OPT_ORIGINAL_TARGET'"
+        fi
         return
     fi
 
@@ -4023,7 +4043,7 @@ while [[ "$1" ]]; do
             ;;
         # Note that OPT_NEEDSPEC and OPT_NEEDTARGET may be additionaly set later
         # during command options parsing!
-        build | build-requires | cmake | compiledb | deploy | install | installdeps \
+        build | cmake | compiledb | deploy | install | installdeps \
             | make | make-install | package | prep | prepare | qmake | rpm )
             OPT_NEEDSPEC=1
             OPT_NEEDTARGET=1
@@ -4037,7 +4057,7 @@ while [[ "$1" ]]; do
             OPT_NEEDTARGET=1
             break;
             ;;
-        run | ssh | undeploy )
+        run | ssh | undeploy | build-requires )
             break
             ;;
         --version )
@@ -4199,7 +4219,7 @@ fi
 #  if there is a rpm/*.spec then that is used
 #  if there is a rpm/*.yaml then a spec is made and used
 
-if [[ $OPT_NEEDSPEC && ! $OPT_SPEC ]]; then
+if [[ ! $OPT_SPEC ]]; then
     # set nullglob on so that the shell glob expansions will return
     # empty if files are not found
     shopt -s nullglob
@@ -4218,7 +4238,7 @@ if [[ $OPT_NEEDSPEC && ! $OPT_SPEC ]]; then
             try_to_make_spec_from_yaml "${theyaml[0]}"
             spec_files=("$OPT_PKGDIR"/*.spec)
             OPT_SPEC="${spec_files[0]?}"
-        else
+        elif [[ $OPT_NEEDSPEC ]]; then
             fatal "No spec or yaml file found in '$OPT_PKGDIR/'"
         fi
     fi
