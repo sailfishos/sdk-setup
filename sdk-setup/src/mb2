@@ -58,6 +58,34 @@ one it must be provided.  $ME is aware of spectacle and will update the spec
 file if there is an obvious yaml file which is newer.
 
 
+WORKING ON MULTIPLE PACKAGES
+
+With shared output directory, it is possible to deploy all required packages
+built from different sources more conveniently. This can be achieved with the
+'--output-dir' option or even better with the combination of '--output-prefix'
+and '--task' options.  Consider enabling '--output-prefix' and '--task' by
+default by creating an alias in your '~/.mersdk.profile' to get build results
+grouped by the tasks they are related to.  By default, the task will be
+determined based on the current Git branch - check the '--task' option
+description for more details:
+
+    alias mb2='mb2 --output-prefix ~/RPMS --task'
+
+    cd packageA
+    git checkout -b bugXXXXX
+    mb2 -t target build
+    cd ../packageB
+    git checkout -b bugXXXXX
+    mb2 -t target build
+
+    ls -1 ~/RPMS/bugXXXXX/my-target/
+    mb2 -t target -d device deploy --sdk --all
+
+With these options the output directory is also searched for build-time
+dependencies by default, so if packageB requires packageA at build time, you
+do not need to install packageA manually to the build target.
+
+
 SHADOW BUILDS
 
 CWD is used as a base dir for installroot/ and RPMS/ to allow for shadow
@@ -89,34 +117,6 @@ Limitations related to shadow builds:
     4. GNU Automake, Autoconf and related tools, in case of packages that
        invoke these at build time, still store their outputs (Makefile.in,
        configure, etc.) under the source tree.
-
-
-SHARED OUTPUT DIRECTORY
-
-With shared output directory, it is possible to deploy all required packages
-built from different sources more conveniently. This can be achieved with the
-'--output-dir' option or even better with the combination of '--output-prefix'
-and '--task' options.  Consider enabling '--output-prefix' and '--task' by
-default by creating an alias in your '~/.mersdk.profile' to get build results
-grouped by the tasks they are related to.  By default, the task will be
-determined based on the current Git branch - check the '--task' option
-description for more details:
-
-    alias mb2='mb2 --output-prefix ~/RPMS --task'
-
-    cd packageA
-    git checkout -b bugXXXXX
-    mb2 -t target build
-    cd ../packageB
-    git checkout -b bugXXXXX
-    mb2 -t target build
-
-    ls -1 ~/RPMS/bugXXXXX/my-target/
-    mb2 -t target -d device deploy --sdk --all
-
-With these options the output directory is also searched for build-time
-dependencies by default, so if packageB requires packageA at build time, you
-do not need to install packageA manually to the build target.
 
 
 DEPLOYING PLATFORM PACKAGES
