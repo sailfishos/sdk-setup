@@ -181,6 +181,14 @@ fi
 # unconditional, so that eventual issues are discovered ASAP.
 sb2() ( cd; command sb2 "$@" )
 
+curl() {
+    local netrc=$HOST_HOME/_netrc
+    [[ -e $netrc ]] || netrc=$HOST_HOME/.netrc
+    [[ -e $netrc ]] || netrc=
+
+    command curl --netrc-optional ${netrc:+--netrc-file "$netrc"} "$@"
+}
+
 print_array() {
     local array=("$@")
     declare -p array |sed 's/^[^=]*=//'
@@ -2779,6 +2787,7 @@ fi
 MER_TARGETS=/srv/mer/targets
 MER_TOOLINGS=/srv/mer/toolings
 HOST_TARGETS=/host_targets
+HOST_HOME=/host_home
 SBOX2DIR=${HOME}/.scratchbox2
 TARGETS_XML=${HOST_TARGETS}/targets.xml
 USER_TARGETS_REPOSITORY=${HOST_TARGETS}/targets.repository
