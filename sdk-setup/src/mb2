@@ -86,6 +86,35 @@ dependencies by default, so if packageB requires packageA at build time, you
 do not need to install packageA manually to the build target.
 
 
+CLEAN BUILDS
+
+Build time requirements of one package may interfere with those of another
+one.  In order to avoid polluting build targets with dependencies of a
+particular package, mb2 uses build targets through writable snapshots. See
+the description of the '--snapshot' option for details on how a snapshot is
+chosen.
+
+It is possible to return to the clean state where just the current build-time
+dependencies are pulled in with the 'build-requires reset' command. Compared to
+the 'build-requires pull' command, this starts with a freshly re-created
+snapshot.
+
+The 'build-requires reset' command is implied whenever the original build
+target is updated, so if a locally built package is needed as a build-time
+dependency, you should not install it manually under the snapshot. Instead,
+rely on the above mentioned fact that a shared output directory can be used to
+supply build-time dependencies, and get locally built dependencies installed
+automatically that way.
+
+For similar reasons, when mb2 fails to install build-time dependencies due to
+errors like "file not found on the server", .i.e., because the local
+repository cache got outdated, it is the original target that should be
+updated, not the snapshot.
+
+Existing snapshots can be listed and removed using the standalone
+'sdk-assistant' command.
+
+
 SHADOW BUILDS
 
 CWD is used as a base dir for installroot/ and RPMS/ to allow for shadow
@@ -135,35 +164,6 @@ deployment method:
     mb2 -t target -d device deploy --zypper-dup --all
 
 Pass '--dry-run' to preview the effect before actually applying it.
-
-
-CLEAN BUILDS
-
-Build time requirements of one package may interfere with those of another
-one.  In order to avoid polluting build targets with dependencies of a
-particular package, mb2 uses build targets through writable snapshots. See
-the description of the '--snapshot' option for details on how a snapshot is
-chosen.
-
-It is possible to return to the clean state where just the current build-time
-dependencies are pulled in with the 'build-requires reset' command. Compared to
-the 'build-requires pull' command, this starts with a freshly re-created
-snapshot.
-
-The 'build-requires reset' command is implied whenever the original build
-target is updated, so if a locally built package is needed as a build-time
-dependency, you should not install it manually under the snapshot. Instead,
-rely on the above mentioned fact that a shared output directory can be used to
-supply build-time dependencies, and get locally built dependencies installed
-automatically that way.
-
-For similar reasons, when mb2 fails to install build-time dependencies due to
-errors like "file not found on the server", .i.e., because the local
-repository cache got outdated, it is the original target that should be
-updated, not the snapshot.
-
-Existing snapshots can be listed and removed using the standalone
-'sdk-assistant' command.
 
 
 QUALITY ASSURANCE
