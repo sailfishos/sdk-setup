@@ -69,17 +69,17 @@ grouped by the tasks they are related to.  By default, the task will be
 determined based on the current Git branch - check the '--task' option
 description for more details:
 
-    alias mb2='mb2 --output-prefix ~/RPMS --task'
+    $ alias mb2='mb2 --output-prefix ~/RPMS --task --target my-target'
 
-    cd packageA
-    git checkout -b bugXXXXX
-    mb2 -t target build
-    cd ../packageB
-    git checkout -b bugXXXXX
-    mb2 -t target build
+    $ cd packageA
+    $ git checkout -b bugXXXXX
+    $ mb2 build
+    $ cd ../packageB
+    $ git checkout -b bugXXXXX
+    $ mb2 build
 
-    ls -1 ~/RPMS/bugXXXXX/my-target/
-    mb2 -t target -d device deploy --sdk --all
+    $ ls -1 ~/RPMS/bugXXXXX/my-target/
+    $ mb2 -t target -d device deploy --sdk --all
 
 With these options the output directory is also searched for build-time
 dependencies by default, so if packageB requires packageA at build time, you
