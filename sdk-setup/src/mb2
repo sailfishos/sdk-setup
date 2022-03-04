@@ -51,7 +51,32 @@ usage() {
     less --quit-if-one-screen <<EOF
 $(synopsis)
 
-Executes all or a subset of build commands in the context of an rpmbuild.
+mb2 provides convenient interface to Scratchbox 2, rpmbuild and more.
+
+COMMANDS OVERVIEW
+   Building software
+
+   build-init  Initialize build directory
+   build-requires  Update build time dependencies
+   prepare  Prepare sources using the recipe from spec file
+   apply  Apply patches listed in the spec file
+   build  Execute all build steps at once
+   qmake  Execute qmake build step
+   cmake  Execute cmake build step
+   make  Execute make build step
+   make-install  Execute make-install build step
+   package  Execute package creation build step
+   build-shell  Execute custom build steps
+
+   Testing software
+
+   deploy  Deploy to a device
+   undeploy  Undeploy from a device
+   check  Perform quality checks
+
+   IDE support
+
+   compiledb  Generate compilation database
 
 
 BASIC BUILDING
