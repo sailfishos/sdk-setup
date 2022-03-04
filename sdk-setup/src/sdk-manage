@@ -269,7 +269,7 @@ download() {
     trap 'return 1' INT TERM HUP
 
     echo >&2 "Downloading '${url##*/}'"
-    curl "$url" -o "$orig_downloaded_file"
+    curl --fail "$url" -o "$orig_downloaded_file"
     curl_status=$?
 
     if [[ $curl_status -eq 0 ]] ; then
