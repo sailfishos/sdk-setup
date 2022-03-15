@@ -1477,10 +1477,11 @@ prune_object_package_cache() {
 
     [[ -d $cache_root ]] || return 0
 
+    local queryformat='%{NAME},%{EPOCH},%{VERSION},%{RELEASE},{}\n'
     local dir= dirs=$(find "$cache_root" -type f -name '*.rpm' -printf '%h\n' |sort -u)
     for dir in $dirs; do
         find "$dir" -maxdepth 1 -type f -name "*.rpm" \
-            |xargs -I{} rpm -q --queryformat '%{NAME},%{EPOCH},%{VERSION},%{RELEASE},{}\n' -p {} \
+            |xargs -I{} rpm -q --nosignature --queryformat "$queryformat" -p {} \
             `# sort by name and e-v-r, latest first` \
             |sort -t ',' -k 1,1 -k2,2rV -k3,3rV -k4,4rV \
             `# drop latest from the list, print file paths` \
