@@ -1870,6 +1870,51 @@ generate_qml_bundle() {
 EOF
 }
 
+tooling_matches_target()
+{
+    if [[ $1 == --quiet ]]; then
+        exec 3>/dev/null
+        shift
+    fi
+
+    local target_release=$1
+    local tooling=$2
+
+    local tooling_release=
+    tooling_release=$(ssu --root "$MER_TOOLINGS/$tooling" status |grep ^Release) || return
+    if [[ $tooling_release != $target_release ]]; then
+        echo >&3 "WARNING: Tooling release '$tooling_release' does not match target release '$target_release'"
+        return 1
+    fi
+} 3>&2
+
+find_suitable_tooling_or()
+{
+    local target_release=$1
+    local tooling=${2:-}
+
+    if [[ $tooling ]]; then
+        tooling_matches_target "$target_release" "$tooling" || :
+    else
+        local available_tooling=
+        for available_tooling in $(get_all_of_type_tooling); do
+            if tooling_matches_target --quiet "$target_release" "$available_tooling"; then
+                tooling=$available_tooling
+                break
+            fi
+        done
+
+        if [[ ! $tooling ]]; then
+            echo >&2 "No suitable tooling found for this target"
+            return 1
+        fi
+
+        echo >&2 "Using '$tooling' tooling for this target"
+    fi
+
+    printf '%s\n' "$tooling"
+}
+
 # Download and install a rootfs
 install_target() {
     local skip_toolchain_check= tooling= tooling_url= toolchain= positional_args=()
@@ -2012,31 +2057,10 @@ install_target() {
         return 1
     fi
 
-    local target_release= tooling_release=
+    local target_release=
     target_release=$(ssu --root "$MER_TARGETS/$target" status |grep ^Release) || return
 
-    if [[ $tooling ]]; then
-        tooling_release=$(ssu --root "$MER_TOOLINGS/$tooling" status |grep ^Release) || return
-        if [[ $tooling_release != $target_release ]]; then
-            echo >&2 "WARNING: Tooling release '$tooling_release' does not match target release '$target_release'"
-        fi
-    else
-        local available_tooling=
-        for available_tooling in $(get_all_of_type_tooling); do
-            tooling_release=$(ssu --root "$MER_TOOLINGS/$available_tooling" status |grep ^Release) || return
-            if [[ $tooling_release == $target_release ]]; then
-                tooling=$available_tooling
-                break
-            fi
-        done
-
-        if [[ ! $tooling ]]; then
-            echo >&2 "No suitable tooling found for this target"
-            return 1
-        fi
-
-        echo >&2 "Using '$tooling' tooling for this target"
-    fi
+    tooling=$(find_suitable_tooling_or "$target_release" "$tooling") || return
 
     local target_arch=
     target_arch=$(ssu --root "$MER_TARGETS/$target" arch) || return
