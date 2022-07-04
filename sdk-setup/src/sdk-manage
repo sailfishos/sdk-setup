@@ -337,6 +337,12 @@ maybe_decompress_tarball() {
 }
 
 get_object_ssu_config() {
+    local optional=
+    if [[ $1 == --optional ]]; then
+        optional=1
+        shift
+    fi
+
     local object=$1
     local key=$2
 
@@ -345,7 +351,7 @@ get_object_ssu_config() {
 
     local value=
     value=$(sed -n -e "s/^$key=//p" "$ssu_ini") || return
-    [[ $value ]] || { echo >&2 "Empty or no '$key' in SSU config"; return 1; }
+    [[ $optional || $value ]] || { echo >&2 "Empty or no '$key' in SSU config"; return 1; }
 
     printf '%s\n' "$value"
 }
@@ -353,19 +359,25 @@ get_object_ssu_config() {
 get_object_ssu_release() {
     local object=$1
 
+    local brand=
+    brand=$(get_object_ssu_config --optional "$object" brand) || return
+    : ${brand:=-} # Older releases do not have brand set
+
     local release=
     release=$(get_object_ssu_config "$object" release) || return
 
-    printf '%s\n' "$release"
+    printf '%s/%s\n' "$brand" "$release"
 }
 
 get_object_ssu_release_from_tarball_meta_data() {
     local meta=$1
 
+    local brand=
+    brand=$(parse_tarball_meta_data "$meta" brand) || return
     local release=
     release=$(parse_tarball_meta_data "$meta" release) || return
 
-    printf '%s\n' "$release"
+    printf '%s/%s\n' "$brand" "$release"
 }
 
 disk_full() [[ $(stat --file-system --format '%a*%s/1024' "$1") -lt 10000 ]]
