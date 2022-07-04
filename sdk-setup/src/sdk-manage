@@ -316,28 +316,28 @@ maybe_decompress_tarball() {
     fi
 }
 
-# Extends standard ssu CLI with '--root <dir>' option and 'arch' command
-ssu() (
-    while [[ $# -gt 0 ]]; do
-        case $1 in
-            --root)
-                shift
-                export SSU_SANDBOX_DIR=$1
-                export LD_PRELOAD=/usr/lib/ssu/libsandboxhook.so
-                ;;
-            arch)
-                sed -n 's/^arch=//; T; p' ${SSU_SANDBOX_DIR:-}/etc/ssu/ssu.ini
-                return
-                ;;
-            *)
-                break
-                ;;
-        esac
-        shift
-    done
+get_object_ssu_config() {
+    local object=$1
+    local key=$2
 
-    silent command ssu "$@"
-)
+    local root=$(get_object_root "$object")
+    local ssu_ini=$root/etc/ssu/ssu.ini
+
+    local value=
+    value=$(sed -n -e "s/^$key=//p" "$ssu_ini") || return
+    [[ $value ]] || { echo >&2 "Empty or no '$key' in SSU config"; return 1; }
+
+    printf '%s\n' "$value"
+}
+
+get_object_ssu_release() {
+    local object=$1
+
+    local release=
+    release=$(get_object_ssu_config "$object" release) || return
+
+    printf '%s\n' "$release"
+}
 
 disk_full() [[ $(stat --file-system --format '%a*%s/1024' "$1") -lt 10000 ]]
 
@@ -1881,7 +1881,7 @@ tooling_matches_target()
     local tooling=$2
 
     local tooling_release=
-    tooling_release=$(ssu --root "$MER_TOOLINGS/$tooling" status |grep ^Release) || return
+    tooling_release=$(get_object_ssu_release "tooling:$tooling") || return
     if [[ $tooling_release != $target_release ]]; then
         echo >&3 "WARNING: Tooling release '$tooling_release' does not match target release '$target_release'"
         return 1
@@ -2058,12 +2058,12 @@ install_target() {
     fi
 
     local target_release=
-    target_release=$(ssu --root "$MER_TARGETS/$target" status |grep ^Release) || return
+    target_release=$(get_object_ssu_release "target:$target") || return
 
     tooling=$(find_suitable_tooling_or "$target_release" "$tooling") || return
 
     local target_arch=
-    target_arch=$(ssu --root "$MER_TARGETS/$target" arch) || return
+    target_arch=$(get_object_ssu_config "target:$target" arch) || return
     if ! [[ $toolchain ]]; then
         toolchain="patterns-sailfish-sb2-$target_arch"
     fi
