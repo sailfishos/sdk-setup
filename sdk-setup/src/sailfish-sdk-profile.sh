@@ -1,20 +1,27 @@
-# This emulates normal bash login behaviour
-[[ -e /etc/profile ]] && . /etc/profile
+sudo oneshot
 
-if [[ -e ~/.bash_profile ]] ; then
-   . ~/.bash_profile
-elif [[ -e ~/.bash_login ]] ; then
-   . ~/.bash_login
-elif [[ -e ~/.profile ]] ; then
-   . ~/.profile
+# Exported by sdk-chroot
+[[ -d "$SAILFISH_SDK_CWD" ]] && cd "$SAILFISH_SDK_CWD"
+unset SAILFISH_SDK_CWD
+
+if [[ -e ~/.mersdk.profile ]]; then
+    cat >&2 <<'END'
+WARNING: Deprecated ~/.mersdk.profile found!
+   Use the SAILFISH_SDK environment variable inside your
+   regular ~/.bashrc and/or ~/.bash_profile to branch to
+   your SDK-specific configuration bits.
+
+   if [[ $SAILFISH_SDK ]]; then
+       ...
+   fi
+END
+    . ~/.mersdk.profile
 fi
-
-[[ -e ~/.mersdk.profile ]] && . ~/.mersdk.profile
 
 for mer_check_locale in LC_COLLATE LC_NUMERIC; do
     if [[ $(locale |sed -n "s/^$mer_check_locale=\"\(.*\)\"$/\1/p") != POSIX ]]; then
         echo "${BASH_SOURCE[0]}: Warning: It is not recommended to change $mer_check_locale from\
- the default value \"POSIX\". Check your ~/.mersdk.profile."
+ the default value \"POSIX\". Check your shell profile."
     fi
 done
 unset mer_check_locale

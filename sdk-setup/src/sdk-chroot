@@ -16,8 +16,7 @@ usage()
 
       If command is present,
          used to execute an arbitrary command from within the SDK chroot
-         environment. The environment variable SAILFISH_SDK is set to allow
-         SDK detection.
+         environment. See below for .profile handling
 
       Options:
 
@@ -36,10 +35,6 @@ usage()
 
       The environment variable SAILFISH_SDK is set to allow .profile to
       detect the SDK.
-
-      If the user has a ~/.mersdk.profile then it is sourced after the
-      normal .profile handling (this allows the common use case of
-      setting a profile to be handled).
 
       Hooks
 
@@ -338,6 +333,27 @@ run_user_hook() {
 }
 ################
 
+bash_command() {
+    cmd=("$@")
+    setarch i386 chroot ${sdkroot} /bin/su -s /bin/bash -l $user \
+       "${common_whitelist_environment[@]/#/--whitelist-environment=}" \
+       -- -c "
+[[ -d ${cwd@Q} ]] && cd ${cwd@Q}
+
+sudo oneshot
+
+exec ${cmd[*]@Q}
+"
+}
+
+bash_interactive_shell() {
+    echo "Entering chroot as $user"
+    export SAILFISH_SDK_CWD=$cwd
+
+    setarch i386 chroot ${sdkroot} /bin/su -s /bin/bash -l $user \
+       "${common_whitelist_environment[@]/#/--whitelist-environment=}" \
+       --whitelist-environment=SAILFISH_SDK_CWD
+}
 
 ################################################################
 
@@ -394,23 +410,19 @@ EOF
 	fi
 fi
 
-if [[ $# -gt 0 ]]; then
-	cmd=("$@")
-else
-	cmd=(bash --init-file /mer-bash-setup -i)
-	echo "Entering chroot as $user"
-fi
-
-setarch i386 chroot ${sdkroot} /bin/su -s /bin/bash -l $user -- -c "$(cat <<END
-[[ -d "$cwd" ]] && cd "$cwd"
-export SSH_AUTH_SOCK='${MY_SSH_AUTH_SOCK}'
+export SSH_AUTH_SOCK=${MY_SSH_AUTH_SOCK}
 export SSH_AGENT_PID=${SSH_AGENT_PID:-}
-export MERSDK='$sdkroot'
-export SAILFISH_SDK='$sdkroot'
-export GNUPGHOME='${HOMEDIR}/${MY_GNUPGHOME_DIR}'
+export MERSDK=$sdkroot
+export SAILFISH_SDK=$sdkroot
+export GNUPGHOME=${HOMEDIR}/${MY_GNUPGHOME_DIR}
+common_whitelist_environment=(
+    SSH_AUTH_SOCK SSH_AGENT_PID
+    MERSDK SAILFISH_SDK
+    GNUPGHOME
+)
 
-sudo oneshot
-
-exec $(printf "%q " "${cmd[@]}")
-END
-)"
+if [[ $# -gt 0 ]]; then
+    bash_command "$@"
+else
+    bash_interactive_shell
+fi
