@@ -305,6 +305,26 @@ download() {
     succeeded=1
 }
 
+maybe_get_tarball_meta_data() {
+    local file=$1
+    local mime=
+    mime=$(file --brief --mime-type "$file")
+    if [[ $mime == application/x-7z-compressed ]]; then
+        7z x -so "$file" '*.meta'
+    fi
+}
+
+parse_tarball_meta_data() {
+    local meta=$1
+    local key=$2
+
+    local value=
+    value=$(sed -n "s/^$key=//p" <<<"$meta") || return
+    [[ $value ]] || { echo >&2 "Empty or no '$key' in tarball meta data"; return 1; }
+
+    printf '%s\n' "$value"
+}
+
 maybe_decompress_tarball() {
     local file=$1
     local mime=
@@ -312,32 +332,53 @@ maybe_decompress_tarball() {
     if [[ $mime == application/x-tar ]]; then
         cat "$file"
     else
-        7z x -so "$file"
+        7z x -so "$file" '*.tar'
     fi
 }
 
-# Extends standard ssu CLI with '--root <dir>' option and 'arch' command
-ssu() (
-    while [[ $# -gt 0 ]]; do
-        case $1 in
-            --root)
-                shift
-                export SSU_SANDBOX_DIR=$1
-                export LD_PRELOAD=/usr/lib/ssu/libsandboxhook.so
-                ;;
-            arch)
-                sed -n 's/^arch=//; T; p' ${SSU_SANDBOX_DIR:-}/etc/ssu/ssu.ini
-                return
-                ;;
-            *)
-                break
-                ;;
-        esac
+get_object_ssu_config() {
+    local optional=
+    if [[ $1 == --optional ]]; then
+        optional=1
         shift
-    done
+    fi
 
-    silent command ssu "$@"
-)
+    local object=$1
+    local key=$2
+
+    local root=$(get_object_root "$object")
+    local ssu_ini=$root/etc/ssu/ssu.ini
+
+    local value=
+    value=$(sed -n -e "s/^$key=//p" "$ssu_ini") || return
+    [[ $optional || $value ]] || { echo >&2 "Empty or no '$key' in SSU config"; return 1; }
+
+    printf '%s\n' "$value"
+}
+
+get_object_ssu_release() {
+    local object=$1
+
+    local brand=
+    brand=$(get_object_ssu_config --optional "$object" brand) || return
+    : ${brand:=-} # Older releases do not have brand set
+
+    local release=
+    release=$(get_object_ssu_config "$object" release) || return
+
+    printf '%s/%s\n' "$brand" "$release"
+}
+
+get_object_ssu_release_from_tarball_meta_data() {
+    local meta=$1
+
+    local brand=
+    brand=$(parse_tarball_meta_data "$meta" brand) || return
+    local release=
+    release=$(parse_tarball_meta_data "$meta" release) || return
+
+    printf '%s/%s\n' "$brand" "$release"
+}
 
 disk_full() [[ $(stat --file-system --format '%a*%s/1024' "$1") -lt 10000 ]]
 
@@ -1870,6 +1911,67 @@ generate_qml_bundle() {
 EOF
 }
 
+tooling_matches_target()
+{
+    if [[ $1 == --quiet ]]; then
+        exec 3>/dev/null
+        shift
+    fi
+
+    local target_release=$1
+    local tooling=$2
+
+    local tooling_release=
+    tooling_release=$(get_object_ssu_release "tooling:$tooling") || return
+    if [[ $tooling_release != $target_release ]]; then
+        echo >&3 "WARNING: Tooling release '$tooling_release' does not match target release '$target_release'"
+        return 1
+    fi
+} 3>&2
+
+find_suitable_tooling_or()
+{
+    local target_release=$1
+    local tooling=${2:-}
+
+    if [[ $tooling ]]; then
+        tooling_matches_target "$target_release" "$tooling" || :
+    else
+        local available_tooling=
+        for available_tooling in $(get_all_of_type_tooling); do
+            if tooling_matches_target --quiet "$target_release" "$available_tooling"; then
+                tooling=$available_tooling
+                break
+            fi
+        done
+
+        if [[ ! $tooling ]]; then
+            echo >&2 "No suitable tooling found for this target"
+            return 1
+        fi
+
+        echo >&2 "Using '$tooling' tooling for this target"
+    fi
+
+    printf '%s\n' "$tooling"
+}
+
+unpack_target() {
+    local target=$1
+    local tarball=$2
+
+    echo >&2
+    echo >&2 "Unpacking target ..."
+    if ! maybe_decompress_tarball "$tarball" | sudo tar -C "$MER_TARGETS/$target" -x; then
+        if disk_full "$MER_TARGETS"; then
+            echo >&2 "Not enough disk space to unpack target image"
+        else
+            echo >&2 "Could not unpack target image"
+        fi
+        return 1
+    fi
+}
+
 # Download and install a rootfs
 install_target() {
     local skip_toolchain_check= tooling= tooling_url= toolchain= positional_args=()
@@ -2001,45 +2103,26 @@ install_target() {
     sudo rm -rf "$MER_TARGETS/$target" || return
     sudo mkdir -p "$MER_TARGETS/$target" || return
 
-    echo >&2
-    echo >&2 "Unpacking target ..."
-    if ! maybe_decompress_tarball "$local_file" | sudo tar -C "$MER_TARGETS/$target" -x; then
-        if disk_full "$MER_TARGETS"; then
-	    echo >&2 "Not enough disk space to unpack target image"
-	else
-	    echo >&2 "Could not unpack target image"
-	fi
-        return 1
+    local target_unpacked=
+    local target_release=
+
+    local meta=$(maybe_get_tarball_meta_data "$local_file")
+    if [[ $meta ]]; then
+        target_release=$(get_object_ssu_release_from_tarball_meta_data "$meta")
     fi
 
-    local target_release= tooling_release=
-    target_release=$(ssu --root "$MER_TARGETS/$target" status |grep ^Release) || return
-
-    if [[ $tooling ]]; then
-        tooling_release=$(ssu --root "$MER_TOOLINGS/$tooling" status |grep ^Release) || return
-        if [[ $tooling_release != $target_release ]]; then
-            echo >&2 "WARNING: Tooling release '$tooling_release' does not match target release '$target_release'"
-        fi
-    else
-        local available_tooling=
-        for available_tooling in $(get_all_of_type_tooling); do
-            tooling_release=$(ssu --root "$MER_TOOLINGS/$available_tooling" status |grep ^Release) || return
-            if [[ $tooling_release == $target_release ]]; then
-                tooling=$available_tooling
-                break
-            fi
-        done
-
-        if [[ ! $tooling ]]; then
-            echo >&2 "No suitable tooling found for this target"
-            return 1
-        fi
-
-        echo >&2 "Using '$tooling' tooling for this target"
+    if [[ ! $target_release ]]; then
+        unpack_target "$target" "$local_file" || return
+        target_unpacked=1
+        target_release=$(get_object_ssu_release "target:$target") || return
     fi
+
+    tooling=$(find_suitable_tooling_or "$target_release" "$tooling") || return
+
+    [[ $target_unpacked ]] || unpack_target "$target" "$local_file" || return
 
     local target_arch=
-    target_arch=$(ssu --root "$MER_TARGETS/$target" arch) || return
+    target_arch=$(get_object_ssu_config "target:$target" arch) || return
     if ! [[ $toolchain ]]; then
         toolchain="patterns-sailfish-sb2-$target_arch"
     fi
