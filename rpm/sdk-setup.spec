@@ -240,8 +240,6 @@ sed -i "s/VERSION_FROM_SPEC/%{version}/" %{buildroot}%{_bindir}/sdk-manage
 
 mkdir -p %{buildroot}/%{_sysconfdir}/ssh/
 cp etc/ssh_config.sdk %{buildroot}/%{_sysconfdir}/ssh/
-install -D -m 644 src/mb2.bash %{buildroot}/%{_sysconfdir}/bash_completion.d/mb2.bash
-install -D -m 644 src/sdk-assistant.bash %{buildroot}/%{_sysconfdir}/bash_completion.d/sdk-assistant.bash
 
 # sdk-mer-branding
 install -D -m 644 branding/mer-splash.png %{buildroot}%{_datadir}/plymouth/splash.png
@@ -394,8 +392,6 @@ fi
 %{_libexecdir}/%{name}/sdk-setup-swap
 %{_libexecdir}/%{name}/ssh-askpass
 %config %{_sysconfdir}/ssh/ssh_config.sdk
-%config %{_sysconfdir}/bash_completion.d/mb2.bash
-%config %{_sysconfdir}/bash_completion.d/sdk-assistant.bash
 %{_datadir}/%{name}/README.tips.wiki
 
 %files -n sdk-mer-branding
