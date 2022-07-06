@@ -145,6 +145,7 @@ cp src/sdk-chroot %{buildroot}/
 ln -s sdk-chroot %{buildroot}/mer-sdk-chroot
 mkdir -p %{buildroot}/%{_sysconfdir}/profile.d
 cp etc/sailfish-sdk-profile.sh %{buildroot}%{_sysconfdir}/profile.d/
+cp etc/bash-completion.sh %{buildroot}%{_sysconfdir}/profile.d/
 echo "This file serves for detection that this is a chroot SDK installation" > %{buildroot}/%{_sysconfdir}/mer-sdk-chroot
 mkdir -p %{buildroot}/srv/mer/targets
 mkdir -p %{buildroot}/srv/mer/toolings
@@ -307,6 +308,7 @@ fi
 /mer-sdk-chroot
 /sdk-chroot
 %config %{_sysconfdir}/profile.d/sailfish-sdk-profile.sh
+%config %{_sysconfdir}/profile.d/bash-completion.sh
 %{_bindir}/sdk-version
 /home/.zypp-cache
 %{_sysconfdir}/mer-sdk-chroot
@@ -350,6 +352,7 @@ fi
 %config %{_sysconfdir}/ssh/sshd_config_engine
 %config %{_sysconfdir}/mersdk.env.systemd
 %config %{_sysconfdir}/profile.d/sdk-vm.sh
+%config %{_sysconfdir}/profile.d/bash-completion.sh
 %config %{_sysconfdir}/dbus-1/system.d/sdk.conf
 %dir /home/deploy
 %{_sysconfdir}/mer-sdk-vbox
