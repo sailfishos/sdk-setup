@@ -144,7 +144,7 @@ mkdir -p %{buildroot}/%{_sysconfdir}
 cp src/sdk-chroot %{buildroot}/
 ln -s sdk-chroot %{buildroot}/mer-sdk-chroot
 mkdir -p %{buildroot}/%{_sysconfdir}/profile.d
-cp src/sailfish-sdk-profile.sh %{buildroot}%{_sysconfdir}/profile.d/
+cp etc/sailfish-sdk-profile.sh %{buildroot}%{_sysconfdir}/profile.d/
 echo "This file serves for detection that this is a chroot SDK installation" > %{buildroot}/%{_sysconfdir}/mer-sdk-chroot
 mkdir -p %{buildroot}/srv/mer/targets
 mkdir -p %{buildroot}/srv/mer/toolings
@@ -306,7 +306,7 @@ fi
 %defattr(-,root,root,-)
 /mer-sdk-chroot
 /sdk-chroot
-%{_sysconfdir}/profile.d/sailfish-sdk-profile.sh
+%config %{_sysconfdir}/profile.d/sailfish-sdk-profile.sh
 %{_bindir}/sdk-version
 /home/.zypp-cache
 %{_sysconfdir}/mer-sdk-chroot
