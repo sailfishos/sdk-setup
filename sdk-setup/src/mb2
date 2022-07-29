@@ -980,6 +980,8 @@ GLOBAL OPTIONS
     --hooks-dir <dir>
         The directory where to look for hooks. See HOOKS below.
 
+    -L --sb2-loglevel <level>
+        Enable logging when running sb2. See man 1 sb2.
 
 HOOKS
     $ME allows altering its behavior with hooks in form of executable files
@@ -3365,6 +3367,10 @@ sb2_build() {
         read -a sb2_args <<<$OPT_BUILD_SHELL_ARGS || return
     fi
 
+    if [[ -n $SB2_LOGLEVEL ]] ; then
+        sb2_args+=(-L $SB2_LOGLEVEL)
+    fi
+
     if [[ $# -gt 0 ]]; then
         oomadvice sb2 -t $OPT_TARGET "${sb2_args[@]}" -- "$@"
     else
@@ -3375,6 +3381,10 @@ sb2_build() {
 
 sb2_maintain() {
     local sb2_args=(-m sdk-install -R)
+
+    if [[ -n $SB2_LOGLEVEL ]] ; then
+        sb2_args+=(-L $SB2_LOGLEVEL)
+    fi
     if [[ $OPT_BUILD_SHELL_MAINTENANCE_ARGS ]]; then
         read -a sb2_args <<<$OPT_BUILD_SHELL_MAINTENANCE_ARGS || return
     fi
@@ -4275,6 +4285,10 @@ while [[ "$1" ]]; do
         "--hooks-dir" )
             [[ $2 ]] || fatal "The '$1' option requires an argument"
             OPT_HOOKS_DIR=$2
+            shift 2
+            ;;
+        "-L" | "--sb2-loglevel" )
+            SB2_LOGLEVEL=$2
             shift 2
             ;;
         # Note that OPT_NEEDSPEC and OPT_NEEDTARGET may be additionaly set later
