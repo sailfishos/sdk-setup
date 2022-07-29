@@ -387,9 +387,6 @@ stderr.close()
         NO_PATCH_OPT='--quiet'
     fi
 
-    feature HAS_GIT_MERGED_OPT \
-        $(! git for-each-ref --merged master refs/heads/ &>/dev/null || echo 1)
-
     feature HAS_GIT_SHORT_LOCAL \
         $(! git for-each-ref --format="%(authordate:short-local)" refs/heads/ &>/dev/null \
             || echo 1)
@@ -469,14 +466,6 @@ create_tag_info()
         { python_version_sort_reverse $TI_REFNAME |sort -k $TI_COMMIT,$TI_COMMIT --stable; }
     fi
 
-    if [[ $HAS_GIT_MERGED_OPT ]]; then
-        local merged_opt="--merged $OPT_HEAD"
-        merged_filt() { cat; }
-    else
-        local merged_opt=
-        merged_filt() { join <(git rev-list $OPT_HEAD |sort) <(cat); }
-    fi
-
     if [[ $HAS_GIT_SHORT_LOCAL ]]; then
         local date_format='short-local'
         local date_postformat=
@@ -506,8 +495,8 @@ create_tag_info()
         '$date_postformat'
         write $commit %(refname) %(objecttype) "$date" "$name" "$email"
     '
-    eval=$(TZ=UTC git for-each-ref --shell --format="$format" $merged_opt "$OPT_TAGS")
-    TZ=UTC eval "$eval" |sort_tag_info |merged_filt
+    eval=$(TZ=UTC git for-each-ref --shell --format="$format" --merged "$OPT_HEAD" "$OPT_TAGS")
+    TZ=UTC eval "$eval" |sort_tag_info
 }
 
 # Reads input produced by list_objects and outputs change log entries, each line
