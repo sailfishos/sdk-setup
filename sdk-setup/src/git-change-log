@@ -474,6 +474,13 @@ create_tag_info()
         local date_postformat='date=$(date --date="$date" +%F)'
     fi
 
+    limit_to_first_parent()
+    {
+        join <(cat) \
+            <(git rev-list --first-parent --simplify-by-decoration "$OPT_HEAD" \
+                |sort)
+    }
+
     local format='
         if [[ %(objecttype) = tag ]]; then
             commit=%(*objectname)
@@ -496,7 +503,7 @@ create_tag_info()
         write $commit %(refname) %(objecttype) "$date" "$name" "$email"
     '
     eval=$(TZ=UTC git for-each-ref --shell --format="$format" --merged "$OPT_HEAD" "$OPT_TAGS")
-    TZ=UTC eval "$eval" |sort_tag_info
+    TZ=UTC eval "$eval" |sort_tag_info |limit_to_first_parent
 }
 
 # Reads input produced by list_objects and outputs change log entries, each line
@@ -2114,19 +2121,9 @@ verify <<EOF
 * Sat Sep 02 2000 John Author <john.author@example.net> - 0.1.2
 - [FooBar] Commit 2000-09
 
-* Wed Aug 02 2000 John Author <john.author@example.net> - 0.1.0.3
-- [FooBar] Commit 2000-08
-
 * Sun Jul 02 2000 John Author <john.author@example.net> - 0.1.1
 - [FooBar] Commit 2000-07
 - [FooBar] Commit 2000-03
-
-* Fri Jun 02 2000 John Author <john.author@example.net> - 0.1.0.2
-- [FooBar] Commit 2000-06
-
-* Tue May 02 2000 John Author <john.author@example.net> - 0.1.0.1
-- [FooBar] Commit 2000-05
-- [FooBar] Commit 2000-04
 
 * Wed Feb 02 2000 John Author <john.author@example.net> - 0.1
 - [FooBar] Commit 2000-02
