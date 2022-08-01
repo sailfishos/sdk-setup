@@ -456,6 +456,7 @@ TI_TYPE=3 # 'commit' or 'tag'
 TI_DATE=4
 TI_NAME=5
 TI_EMAIL=6
+TI_ORDER=7
 create_tag_info()
 {
     if [[ $HAS_VERSION_SORT_OPT || ! $HAS_PYTHON_VERSION_SORT ]]; then
@@ -474,11 +475,12 @@ create_tag_info()
         local date_postformat='date=$(date --date="$date" +%F)'
     fi
 
-    limit_to_first_parent()
+    limit_to_first_parent_and_add_ordering()
     {
         join <(cat) \
             <(git rev-list --first-parent --simplify-by-decoration "$OPT_HEAD" \
-                |sort)
+                |awk -v OFS=';' '{print $1, NR}' \
+                |sort -k 1,1)
     }
 
     local format='
@@ -503,7 +505,7 @@ create_tag_info()
         write $commit %(refname) %(objecttype) "$date" "$name" "$email"
     '
     eval=$(TZ=UTC git for-each-ref --shell --format="$format" --merged "$OPT_HEAD" "$OPT_TAGS")
-    TZ=UTC eval "$eval" |sort_tag_info |limit_to_first_parent
+    TZ=UTC eval "$eval" |sort_tag_info |limit_to_first_parent_and_add_ordering
 }
 
 # Reads input produced by list_objects and outputs change log entries, each line
@@ -650,32 +652,23 @@ write_headline()
     local pretty_revision=$2
 
     local tag_info=$(look $(git rev-parse $tag^{}) $TAG_INFO)
-    local commit tag_ objecttype date name email
-    read commit tag_ objecttype date name email <<<"$tag_info"
+    local commit tag_ objecttype date name email order
+    read commit tag_ objecttype date name email order <<<"$tag_info"
 
     date=$(date --date=$date '+%a %b %d %Y')
 
     printf "* %s %s %s - %s\n" "$date" "$name" "$email" $pretty_revision
 }
 
-# Outputs rows with tag-date pairs, version-sorted by tag name, most recent
-# first
+# Outputs rows with tag-date pairs, most recent first
 list_tags_with_date()
 {
-    sort_tags()
-    {
-        if [[ $HAS_VERSION_SORT_OPT || ! $HAS_PYTHON_VERSION_SORT ]]; then
-            sort -k 1,1r${VERSION_SORT_OPT}
-        else
-            python_version_sort_reverse 1
-        fi
-    }
-
-    uniq -w$SHA1_WIDTH $TAG_INFO |cut -f $TI_REFNAME,$TI_DATE |sort_tags
+    uniq -w$SHA1_WIDTH $TAG_INFO \
+        |sort --numeric-sort -k $TI_ORDER,$TI_ORDER \
+        |cut -f $TI_REFNAME,$TI_DATE
 }
 
-# Outputs rows with tag-date-range tripples, sorted by date, then version-sorted
-# by tag name, most recent first
+# Outputs rows with tag-date-range tripples, most recent first
 list_tags_dates_ranges()
 {
     local current_tag=
@@ -696,7 +689,7 @@ list_tags_dates_ranges()
         if [[ $current_tag ]]; then
             write $current_tag $current_date $current_tag
         fi
-    } < <(list_tags_with_date) > >(sort -k 2,2r --stable)
+    } < <(list_tags_with_date)
 }
 
 VALID_APPEND_FROM_OPTS=" noindent notail notrim stick "
@@ -2575,6 +2568,30 @@ verify --tags 'refs/tags/our/*' --descendants-of "$start_of_our_devel" master <<
 
 * Thu Mar 02 2000 John Author <john.author@example.net> - 0.1+git1
 - [FooBar] Commit 2000-03
+- [FooBar] Commit 2000-02
+EOF
+# ============================================================
+
+# Case: Mixing tags with and w/o prefix
+git init .
+git commit -m 'Commit 2000-01'
+git commit -m '[FooBar] Commit 2000-02'
+git tag prefix/0.1
+git commit -m 'Commit 2000-03'
+git commit -m '[FooBar] Commit 2000-04'
+git tag 0.2
+git commit -m '[FooBar] Commit 2000-05'
+git commit -m 'Commit 2000-06'
+git tag 0.3
+# ------------------------------------------------------------
+verify --tags 'refs/tags/**' <<EOF
+* Fri Jun 02 2000 John Author <john.author@example.net> - 0.3
+- [FooBar] Commit 2000-05
+
+* Sun Apr 02 2000 John Author <john.author@example.net> - 0.2
+- [FooBar] Commit 2000-04
+
+* Wed Feb 02 2000 John Author <john.author@example.net> - 0.1
 - [FooBar] Commit 2000-02
 EOF
 # ============================================================
