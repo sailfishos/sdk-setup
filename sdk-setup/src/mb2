@@ -3102,6 +3102,7 @@ run_cmake() {
             --define "noecho 1" \
             --define "_sourcedir $OPT_PKGDIR" \
             --define "_buildhost $(get_hostname)" \
+            --define "__make make" \
             -bc --short-circuit \
             "$TMP_SPEC"
     )
@@ -3151,6 +3152,7 @@ run_qmake() {
             --define "noecho 1" \
             --define "_sourcedir $OPT_PKGDIR" \
             --define "_buildhost $(get_hostname)" \
+            --define "__make make" \
             -bc --short-circuit \
             "$TMP_SPEC"
     )
@@ -3191,6 +3193,7 @@ run_compiledb() {
             --define "noecho 1" \
             --define "_sourcedir $OPT_PKGDIR" \
             --define "_buildhost $(get_hostname)" \
+            --define "__make make" \
             -bc --short-circuit \
             "$TMP_SPEC" \
             || return
@@ -3224,6 +3227,7 @@ run_make() {
             --define "noecho 1" \
             --define "_sourcedir $OPT_PKGDIR" \
             --define "_buildhost $(get_hostname)" \
+            --define "__make make" \
             -bc --short-circuit \
             "$TMP_SPEC"
     )
