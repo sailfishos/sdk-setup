@@ -522,6 +522,13 @@ content_not_changed_since() {
     [[ ! $newer ]]
 }
 
+original_updated() {
+    local original_file=$1 snapshot_file=$2
+
+    [[ $original_file -nt $snapshot_file ]] \
+        && ! diff --brief "$original_file" "$snapshot_file" &>/dev/null
+}
+
 ################################################################'
 # Polymorphic utilities for common operations on targets, toolings and the SDK itself.
 #
@@ -2370,8 +2377,8 @@ snapshot_target() {
 target_snapshot_needs_reset() {
     local snapshot=$1 original=$2
 
-    ! diff "$MER_TARGETS"/{"$original","$snapshot"}/etc/ssu/ssu.ini &>/dev/null && return
-    ! diff "$MER_TARGETS"/{"$original","$snapshot"}/etc/machine-id &>/dev/null && return
+    original_updated "$MER_TARGETS"/{"$original","$snapshot"}/etc/ssu/ssu.ini && return
+    original_updated "$MER_TARGETS"/{"$original","$snapshot"}/etc/machine-id && return
 
     local snapshot_time=
     snapshot_time=$(object_config_get "target:$snapshot" "$SNAPSHOT_TIME_KEY") || return
