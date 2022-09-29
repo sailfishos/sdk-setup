@@ -91,12 +91,6 @@ maintains between invocations.
 
    $ mkdir test && cd test
    $ mb2 build-init
-   NOTICE: Using the 'SailfishOS-4.2.0.21-aarch64.default' snapshot
-   of the build target
-
-At this point you can disregard the informal message which is regularly issued
-by the 'build-init' and later commands. It will be explained later in the
-CLEAN BUILDS section.
 
 Now you can open a build shell and cross-compile programs for the configured
 target. mb2’s build shell allows you to run arbitrary build commands as easily
@@ -292,10 +286,7 @@ under the build environment are persisted under build targets. In order to
 avoid polluting build targets the abovementioned way, mb2 uses a working copy
 of a build target to set up the build environment.  These working copies are
 called snapshots and the '--snapshot' option controls how a snapshot is
-chosen. You are informed which snapshot is used with a message like:
-
-   NOTICE: Using the 'SailfishOS-4.2.0.21-aarch64.default' snapshot
-   of the build target
+chosen.
 
 The original build target defines the clean state of the build environment.
 The 'build-requires reset' command is implied whenever the original build
@@ -2594,12 +2585,12 @@ switch_to_snapshot() {
         fi
         OPT_TARGET=$(sdk-manage target reserve --reset-reused="$opt_reset" "$OPT_ORIGINAL_TARGET" \
             "$OPT_ORIGINAL_TARGET.pool.XXX" "$lock" "$pool_size") || return
+
+        notice "Using the '$OPT_TARGET' snapshot of the build target"
     else
         OPT_TARGET=$OPT_ORIGINAL_TARGET.$OPT_SNAPSHOT
         sdk-manage target snapshot --reset="$opt_reset" "$OPT_ORIGINAL_TARGET" "$OPT_TARGET" || return
     fi
-
-    notice "Using the '$OPT_TARGET' snapshot of the build target"
 }
 
 sign_rpms__prepare() {
