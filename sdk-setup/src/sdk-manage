@@ -40,7 +40,7 @@ usage:
     $SELF tooling maintain <name> [--no-sync] [<command> [<arg>...]]
 
     $SELF target list [-l|--long] [--tooling <name>] [--snapshots-of <name>]
-    $____             [--check-snapshots]
+    $____             [--no-snapshots] [--check-snapshots]
     $SELF target upgradable <name>
     $SELF target install <name> <url> [--tooling <name>
     $____                [--tooling-url <url>]] [--toolchain <name>]
@@ -1665,7 +1665,7 @@ get_snapshots_of_target() {
 }
 
 list_targets() {
-    local long= tooling= check_snapshots= snapshots_of=
+    local long= tooling= no_snapshots= check_snapshots= snapshots_of=
     while [[ $# -gt 0 ]]; do
         case $1 in
             -l|--long)
@@ -1673,6 +1673,9 @@ list_targets() {
                 ;;
             --check-snapshots)
                 check_snapshots=1
+                ;;
+            --no-snapshots)
+                no_snapshots=1
                 ;;
             --snapshots-of)
                 snapshots_of=${2:-}
@@ -1707,6 +1710,12 @@ list_targets() {
         return 1
     fi
 
+    if [[ $snapshots_of && $no_snapshots ]]; then
+        echo >&2 "Cannot combine '--snapshots-of' with '--no-snapshots'"
+        usage >&2
+        return 1
+    fi
+
     if [[ $check_snapshots && ! $long ]]; then
         echo >&2 "Cannot use '--check-snapshots' without '--long'"
         usage >&2
@@ -1722,16 +1731,20 @@ list_targets() {
         targets=$(get_all_of_type_target) || return
     fi
 
-    if [[ ! $long ]]; then
-        cat <<<"$targets"
-        return
-    fi
-
     local target= mode= snapshot_of= needs_reset=
     for target in $targets; do
+        snapshot_of=$(object_config_get "target:$target" "$SNAPSHOT_OF_KEY")
+        if [[ $no_snapshots && $snapshot_of ]]; then
+            continue
+        fi
+
+        if [[ ! $long ]]; then
+            echo "$target"
+            continue
+        fi
+
         tooling=$(get_tooling_used_by_target "$target") # may fail
         mode=$(get_object_mode "target:$target")
-        snapshot_of=$(object_config_get "target:$target" "$SNAPSHOT_OF_KEY")
         needs_reset=
         if [[ $snapshot_of && $check_snapshots ]]; then
             if target_snapshot_needs_reset "$target" "$snapshot_of"; then

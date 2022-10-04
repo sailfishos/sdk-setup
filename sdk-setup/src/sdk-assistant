@@ -81,11 +81,13 @@ Usage:
                               '--snaphosts-of' remove just snapshots of
                               a target.
 
-    $(basename $0) [tooling|target] list [--slow]
+    $(basename $0) [tooling|target] list [-s|--snapshots] [--slow]
                             : list available sb2 toolings and/or targets.
                               In the combined listing targets are grouped
-                              by toolings they use. With '--slow' the state
-                              is checked more thoroughly.
+                              by toolings they use. With '--snapshots' build
+                              targets are listed together with their snapshots.
+                              With '--slow' the state is checked more
+                              thoroughly.
 
     $(basename $0) [tooling|target] package-search <name> [<pattern>...]
                             : search packages inside the sb2 tooling or target
@@ -133,12 +135,17 @@ guess_type() (
 
 list() {
     local type=${1:-}
-    if [[ $type ]]; then
-        sdk-manage "$type" list
+    local no_snapshots=$([[ ! $OPT_SNAPSHOTS ]] && echo 1)
+    local check_snapshots$([[ $OPT_SNAPSHOTS && $OPT_SLOW ]] && echo 1)
+    if [[ $type == tooling ]]; then
+        sdk-manage tooling list
+    elif [[ $type == target ]]; then
+        sdk-manage target list ${no_snapshots:+--no-snapshots}
     else
         {
             sdk-manage tooling list |awk -v OFS=: '{print $1, "", $1}'
-            sdk-manage target list --long ${OPT_SLOW:+--check-snapshots} |awk -v OFS=: '
+            sdk-manage target list --long ${no_snapshots:+--no-snapshots} \
+                ${check_snapshots:+--check-snapshots} |awk -v OFS=: '
                 $4 != "-" {
                     note = sub(/\*$/, "", $4) ? "(snapshot, outdated)" : "(snapshot)"
                     print $1, $4, $1 "  " note
@@ -184,6 +191,7 @@ OPT_PASSWORD=
 OPT_REGISTER=
 OPT_REMOVE=
 OPT_SLOW=
+OPT_SNAPSHOTS=
 OPT_SNAPSHOTS_OF=
 OPT_TOOLING_NAME=
 OPT_TYPE=
@@ -216,6 +224,9 @@ while [[ ${1:-} ]]; do
             ;;
         --no-snapshot )
             OPT_NO_SNAPSHOT=1
+            ;;
+        -s | --snapshots )
+            OPT_SNAPSHOTS=1
             ;;
         --snapshots-of )
             OPT_SNAPSHOTS_OF=1
@@ -361,6 +372,10 @@ if [[ $OPT_NO_SNAPSHOT && ! $OPT_CREATE ]]; then
     fail "The '--no-snapshot' option can only be used with the 'create' command"
 fi
 
+if [[ $OPT_SNAPSHOTS && ! $OPT_LIST ]]; then
+    fail "The '--snapshots' option can only be used with the 'list' command"
+fi
+
 if [[ $OPT_SNAPSHOTS_OF && ! $OPT_REMOVE ]]; then
     fail "The '--snapshots-of' option can only be used with the 'remove' command"
 fi
@@ -370,6 +385,9 @@ if [[ $EUID -eq 0 ]]; then
 fi
 
 if [[ $OPT_LIST ]]; then
+    if [[ $OPT_SNAPSHOTS && $OPT_TYPE == tooling ]]; then
+        fail "The '--snapshots' option cannot be used with toolings"
+    fi
     # list requested, just do it
     list "$OPT_TYPE"
     exit
