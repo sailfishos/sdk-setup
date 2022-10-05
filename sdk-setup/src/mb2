@@ -308,7 +308,7 @@ build target and using the clone to persist the redefined clean state.
 
    $ sdk-assistant clone SailfishOS-4.2.0.21-{aarch64,MyDevice}
    $ sdk-assistant maintain SailfishOS-4.2.0.21-MyDevice
-   ... add/rm packages etc. ...
+   ... add/rm repositories, packages etc. ...
    $ alias mb2='mb2 ... --target=SailfishOS-4.2.0.21-MyDevice'
 
 When you are using live repositories and mb2 fails to install
