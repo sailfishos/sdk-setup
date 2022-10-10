@@ -289,10 +289,16 @@ called snapshots and the '--snapshot' option controls how a snapshot is
 chosen.
 
 The original build target defines the clean state of the build environment.
-The 'build-requires reset' command is implied whenever the original build
-target is updated, keeping your build environment ahead the clean state
-without any action required from you. See the '--snapshot' option for more
-details.
+The modified state is preserved across mb2 invocations unless the clean state
+was updated meanwhile, in which case the next time mb2 is checking for
+build-time dependencies it also resets the build environment to the updated
+clean state, keeping it ahead the clean state without any action required from
+you. This has the same effect as issuing the 'build-requires reset' command,
+which is also the way to reset to the (possibly updated) clean state
+forcefully at any time. See also the '--no-pull-build-requires' option.
+
+If a temporary snapshot is used (see the '--snapshot' option), it will be also
+reset whenever it is taken into use with other build tree.
 
 In most respects, build target snapshots are much like regular build targets.
 Most of the subcommands of the standalone 'sdk-assistant' command may be used
@@ -302,7 +308,7 @@ build target and using the clone to persist the redefined clean state.
 
    $ sdk-assistant clone SailfishOS-4.2.0.21-{aarch64,MyDevice}
    $ sdk-assistant maintain SailfishOS-4.2.0.21-MyDevice
-   ... add/rm packages etc. ...
+   ... add/rm repositories, packages etc. ...
    $ alias mb2='mb2 ... --target=SailfishOS-4.2.0.21-MyDevice'
 
 When you are using live repositories and mb2 fails to install
@@ -850,16 +856,11 @@ GLOBAL OPTIONS
 
         When <suffix> is '%pool[,<N>]', a temporary snapshot will be used from
         a pool of the optionally given size <N> (default: 5).  The actual
-        suffix will follow the pattern 'pool.XXX'.
+        suffix will follow the pattern 'pool.XXX'.  Each temporary snapshot is
+        used exclusively with single build tree at a time and it is reset
+        automatically whenever it is taken into use with another build tree.
 
-        Snapshot state is preserved across mb2 invocations unless 1) the
-        original target was updated meanwhile (suppressed by the
-        '--no-pull-build-requires' option) or 2) a temporary snapshot is taken
-        into use with other build tree than it was used with before.
-
-        A snapshot can be reset forcefully using the 'build-requires reset'
-        command.
-
+        See the CLEAN BUILDS section above for more information.
 
     --no-snapshot[=force]
         Use build targets directly. mb2 will refuse to directly use a target
