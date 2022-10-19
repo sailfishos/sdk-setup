@@ -487,6 +487,10 @@ COMMANDS
         be initialized.  Otherwise the current working directory is treated as
         the project directory.
 
+        Initializing a build directory creates a hidden directory called
+        '.mb2'. Removing this directory stops mb2 treating the containing
+        directory as a build directory.
+
     build-requires [--[no-]refresh] {pull|reset|diff}
         When 'pull' is used, install or update the build-time dependencies as
         is done implicitly by the 'prepare', 'build' and 'qmake' (or 'cmake')
@@ -4322,7 +4326,8 @@ case $1 in
     *)
         if [[ ! -d $STATEDIR ]]; then
             if ancestor=$(find_upwards "$PWD" ".$WE"); then
-                fatal "The command needs to be used from the top of the build tree ($ancestor)"
+                fatal "The command needs to be used from the top of the build tree ($ancestor)." \
+                      "See the 'build-init' command."
             else
                 fatal "The command needs to be used from the top of a build tree." \
                     "See the 'build-init' command."
