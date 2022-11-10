@@ -4293,7 +4293,11 @@ while [[ "$1" ]]; do
             OPT_NEEDTARGET=1
             break;
             ;;
-        run | ssh | undeploy | build-requires )
+        build-requires )
+            OPT_NEEDSPEC=soft
+            break;
+            ;;
+        run | ssh | undeploy )
             break
             ;;
         --version )
@@ -4463,7 +4467,9 @@ if [[ ! $OPT_SPEC ]]; then
     spec_files=("$OPT_PKGDIR"/*.spec)
     numspec=${#spec_files[@]}
     if [[ $numspec -gt 1 ]]; then
-        fatal "Multiple spec files found - please select one."
+        if [[ $OPT_NEEDSPEC ]]; then
+            fatal "Multiple spec files found - please select one."
+        fi
     elif [[ $numspec -eq 1 ]]; then
         OPT_SPEC="${spec_files[0]?}"
     else
@@ -4475,7 +4481,7 @@ if [[ ! $OPT_SPEC ]]; then
             try_to_make_spec_from_yaml "${theyaml[0]}"
             spec_files=("$OPT_PKGDIR"/*.spec)
             OPT_SPEC="${spec_files[0]?}"
-        elif [[ $OPT_NEEDSPEC ]]; then
+        elif [[ $OPT_NEEDSPEC && $OPT_NEEDSPEC != soft ]]; then
             fatal "No spec or yaml file found in '$OPT_PKGDIR/'"
         fi
     fi
