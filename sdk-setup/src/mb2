@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (C) 2013 - 2021 Jolla Ltd.
+# Copyright (C) 2013 - 2022 Jolla Ltd.
 # Copyright (C) 2019 - 2020 Open Mobile Platform LLC.
 # Contact: http://jolla.com/
 # All rights reserved.
@@ -58,8 +58,8 @@ COMMANDS OVERVIEW
 
    build-init  Initialize build directory
    build-requires  Update build time dependencies
-   prepare  Prepare sources using the recipe from spec file
-   apply  Apply patches listed in the spec file
+   prepare  Prepare sources using the recipe from RPM SPEC file
+   apply  Apply patches listed in the RPM SPEC file
    build  Execute all build steps at once
    qmake  Execute qmake build step
    cmake  Execute cmake build step
@@ -272,8 +272,8 @@ differs from the clean build environment in terms of package installations,
 removals and replacements.
 
 Use the 'build-requires reset' command to ensure that nothing else than the
-build-time dependencies currently recorded at RPM SPEC level is pulled in on
-top of the clean build environment.
+build-time dependencies currently recorded at RPM SPEC file level is pulled in
+on top of the clean build environment.
 
 Use a shared output directory to supply locally built build-time dependencies
 without disturbance by (possibly implied) 'build-requires reset'. See WORKING
@@ -340,7 +340,7 @@ Limitations related to shadow builds:
     1. Shadow build is only available for packages that use qmake (or CMake or
        GNU Automake).  Additionally, their build and install procedure must be
        fully realized using qmake (or CMake or GNU Automake) with no
-       additional steps implemented at .spec level.
+       additional steps implemented at the SPEC file level.
     2. The "--prepare" option to the "build" command cannot be used with shadow
        builds.
     3. If "prepare" or "apply" is needed, it must be used directly on the
@@ -389,7 +389,7 @@ testing on one or more of the four recognized test levels:
 
        Testing at this level is only supported with the built-in suite
        'rpmspec', that executes the steps defined by the '%check' section of
-       the RPM .spec file if present.
+       the RPM SPEC file if present.
 
        Testing at this level is normally performed by the 'build' and
        'package' commands (unless used with the '--no-check' option) and so it
@@ -413,8 +413,8 @@ levels, suites and artefacts.
 MAINTAINING CHANGELOGS
 
 If a file exists with '.changes' extension, otherwise matching the
-spec file name, the effect will be the same as having a %changelog
-section in the spec file.  If a file with '.changes.run' extension is
+RPM SPEC file name, the effect will be the same as having a %changelog
+section in the SPEC file.  If a file with '.changes.run' extension is
 found instead, this file will be executed and its output treated as
 the actual changelog. If both kind of files are found, '.changes.run'
 takes precedence.
@@ -516,22 +516,22 @@ COMMANDS
         and replacements.
 
     prepare
-        Run rpmbuild. Execute just the %prep section of the .spec file.
+        Run rpmbuild. Execute just the %prep section of the RPM SPEC file.
 
     apply [-R]
-        Apply all patches defined in the .spec file to the source tree.
+        Apply all patches defined in the RPM SPEC file to the source tree.
 
         -R    reverse apply patches (patch -R)
 
     build [-p|--prepare] [--no-check] [-d|--enable-debug] [-j <n>] [-s|--sign] 
           [<project-dir-or-file>] [--] [<rpmbuild-extra-arg>...]
-        Run rpmbuild. Execute all sections of the .spec file except for %prep
-        unless told otherwise.
+        Run rpmbuild. Execute all sections of the RPM SPEC file except for
+        %prep unless told otherwise.
 
         If path to a <project-dir-or-file> is passed, shadow build will be
         done. Otherwise the current working directory is treated as the
         project directory. (The file name part is ignored - project file
-        selection is done by qmake call inside the .spec file.)
+        selection is done by qmake call inside the SPEC file.)
 
         --prepare         Run %prep section as well
         --no-check        Skip the %check section and rpmlint
@@ -540,17 +540,17 @@ COMMANDS
         --sign            Sign packages
 
     qmake [<project-dir-or-file>] [--] [<qmake-extra-arg>...]
-        Run rpmbuild. Execute just the %build section of the .spec file,
+        Run rpmbuild. Execute just the %build section of the RPM SPEC file,
         suppressing any 'make' invocation figuring in that section.
 
         If path to a <project-dir-or-file> is passed, shadow build will be
         done. Otherwise the current working directory is treated as the
         project directory. (The file name part is ignored - project file
-        selection is done by qmake call inside the .spec file.)
+        selection is done by qmake call inside the SPEC file.)
 
     cmake [<project-dir>] [--] [<cmake-extra-arg>...]
     cmake --build . [<cmake-extra-arg>...] [-- <build-tool-extra-arg>...]
-        Run rpmbuild. Execute just the %build section of the .spec file,
+        Run rpmbuild. Execute just the %build section of the RPM SPEC file,
         suppressing any 'cmake' invocation figuring in that section, that does
         not match the execution form used here, i.e., does not trigger the
         desired action, namely 1) generate a project buildsystem or
@@ -567,7 +567,7 @@ COMMANDS
         directory.
 
     make [<make-extra-arg>...]
-        Run rpmbuild. Execute just the %build section of the .spec file,
+        Run rpmbuild. Execute just the %build section of the RPM SPEC file,
         suppressing any command figuring in that section, that is recognized
         as a command to generate project buildsystem. The following is a
         complete list of such commands:
@@ -580,13 +580,13 @@ COMMANDS
         'make' is the build tool used by the project).
 
     make-install
-        Run rpmbuild. Execute just the %install section of the .spec file in
+        Run rpmbuild. Execute just the %install section of the RPM SPEC file in
         order to populate the RPM "buildroot".
 
     package [--no-check] [-s|--sign]
-        Run rpmbuild. Execute just the %install section of the .spec file, then
-        build binary packages and optionally sign those. Unless '--no-check'
-        is passed, execute also the %check section if present.
+        Run rpmbuild. Execute just the %install section of the RPM SPEC file,
+        then build binary packages and optionally sign those. Unless
+        '--no-check' is passed, execute also the %check section if present.
 
     build-shell [--maintain] [--] [<command> [<arg>...]]
         Execute an arbitrary <command> in the build environment.  If no
@@ -609,7 +609,7 @@ COMMANDS
         option.
 
     compiledb [<make-extra-arg>...]
-        Run rpmbuild. Execute just the %build section of the .spec file,
+        Run rpmbuild. Execute just the %build section of the RPM SPEC file,
         modifying any 'make' invocation figuring in that section in order to
         generate Clang's JSON Compilation Database file
         'compile_commands.json' as described below.
@@ -818,7 +818,7 @@ GLOBAL OPTIONS
     the earlier options.
 
     -i, --increment
-        Increment release number in .spec file
+        Increment release number in the RPM SPEC file
 
     -t, --target <name>
         Specify the sb2 target to use
@@ -845,7 +845,7 @@ GLOBAL OPTIONS
         Override '--search-output-dir' option
 
     -s, --specfile <file>
-        Specify the .spec file
+        Specify the RPM SPEC file
 
     -S, --snapshot[=<suffix>]
         Use a particular snapshot of the build target. The snapshot name is
@@ -896,9 +896,9 @@ GLOBAL OPTIONS
     -x, --fix-version[=<tag>]
         This option is implied when used inside a Git working tree (use -X to
         override). When used via Qt Creator, it is only implied if the version
-        recorded in the .spec file is exactly "0".
+        recorded in the RPM SPEC file is exactly "0".
 
-        With this option the version recorded in the .spec file will be
+        With this option the version recorded in the SPEC file will be
         ignored.  Instead, package version will be derived from the name of the
         latest tag in the current git branch or the selected tag <tag>.
 
@@ -908,7 +908,7 @@ GLOBAL OPTIONS
         package version. If git-state is not clean a git-stash will be created
         and its SHA1 will be used.
 
-        It is recommended to store 'Version: 0' and 'Release: 1' in the .spec
+        It is recommended to store 'Version: 0' and 'Release: 1' in the SPEC
         file when this option is to be used; as a sign that the version
         recorded there is not relevant.
 
@@ -922,9 +922,9 @@ GLOBAL OPTIONS
     -c, --git-change-log[=<args>]
         Include change log generated from Git history with 'git-change-log'
         command, forwarding any <args>.  This option is not intended for
-        regular use - create a script file named after the .spec file but with
-        '.changes.run' extension to instruct $ME to generate changelog with
-        'git-change-log <args>' instead.
+        regular use - create a script file named after the RPM SPEC file but 
+        with '.changes.run' extension to instruct $ME to generate changelog
+        with 'git-change-log <args>' instead.
 
     --build-shell-args <args>
         Arguments to pass to sb2 when used to run build commands. Defaults to no
@@ -998,7 +998,7 @@ HOOKS
         dependencies. This hook fully overrides the default procedure of
         updating build time dependencies.
 
-        Any <dependency> determined by querying the RPM spec file will be
+        Any <dependency> determined by querying the RPM SPEC file will be
         passed as an argument to this hook.
 
         The following environment variables provide additional information to
@@ -1022,7 +1022,7 @@ HOOKS
             See 'SFDK_TARGET'.
 
         SFDK_SPEC_FILE
-            The .spec file used for this build.
+            The RPM SPEC file used for this build.
 
     post-pull-build-requires [<dependency>...]
         This hook is invoked by commands that take care of updating build time
@@ -1363,7 +1363,8 @@ try_to_make_spec() { # Tries to create a missing spec
     [[ -f "$1" ]] && return # It's not missing
     local yaml="${1%.spec}.yaml"
     [[ -f "$yaml" ]] || return # No yaml
-    ANSI_COLORS_DISABLED=1 specify -n -N "$yaml" || fatal "Failed to convert .yaml to .spec"
+    ANSI_COLORS_DISABLED=1 specify -n -N "$yaml" \
+        || fatal "Failed to convert YAML to RPM SPEC file"
 }
 
 try_to_make_spec_from_yaml() {
@@ -1398,7 +1399,7 @@ try_to_make_changelog() {
         $runner $changes_run_file |sanitize_changelog
         [[ ${PIPESTATUS[0]} -eq 0 ]] || fatal "Failed to generate changelog entries"
     elif [[ -f $changes_file ]]; then
-        notice "Appending changelog entries to the .spec file…"
+        notice "Appending changelog entries to the RPM SPEC file…"
         echo "%changelog"
         cat $changes_file |sanitize_changelog
     fi
@@ -1407,7 +1408,8 @@ try_to_make_changelog() {
 ensure_spec_newer_than_yaml() {
     local yaml="${OPT_SPEC%.spec}.yaml"
     if [[ -f "$yaml" ]] && [[ "$yaml" -nt "$OPT_SPEC" ]]; then # -nt is newer than
-        ANSI_COLORS_DISABLED=1 specify -n -N "$yaml" || fatal "Failed to convert .yaml to .spec"
+        ANSI_COLORS_DISABLED=1 specify -n -N "$yaml" \
+            || fatal "Failed to convert YAML to RPM SPEC file"
     fi
 
     # it's ok also not to have a yaml
@@ -2252,7 +2254,7 @@ init_cmake_wrapper() (
             case $1 in
                 --build)
                     if [[ $2 != . ]]; then
-                        echo "$self: The argument to '--build' passed in .spec must be '.' (literally)" >&2
+                        echo "$self: The argument to '--build' passed in RPM SPEC file must be '.' (literally)" >&2
                         exit 1
                     fi
                     args+=("$1" "$2")
@@ -2260,7 +2262,7 @@ init_cmake_wrapper() (
                     ;;
                 --target)
                     if [[ $MAKE_TARGET && $2 != "$MAKE_TARGET" ]]; then
-                        echo "$self: The argument to '--target' passed in .spec differs from that on command line" >&2
+                        echo "$self: The argument to '--target' passed in RPM SPEC file differs from that on command line" >&2
                         exit 1
                     fi
                     args+=("$1" "$2")
@@ -3824,7 +3826,7 @@ run_check() {
             print_suite NAME ESSENTIAL LEVELS URL DESCRIPTION
             {
                 print_suite "$CHECK_RPMSPEC" "$CHECK_ESSENTIAL" "$CHECK_LEVEL_UNIT" "-" \
-                    "Execute the %check section of the .spec file"
+                    "Execute the %check section of the RPM SPEC file"
 
                 print_suite "$CHECK_RPMLINT" "$CHECK_ESSENTIAL" "$CHECK_LEVEL_PACKAGE" "-" \
                     "Check for common packaging problems with rpmlint"
@@ -4468,7 +4470,7 @@ if [[ ! $OPT_SPEC ]]; then
     numspec=${#spec_files[@]}
     if [[ $numspec -gt 1 ]]; then
         if [[ $OPT_NEEDSPEC ]]; then
-            fatal "Multiple spec files found - please select one."
+            fatal "Multiple RPM SPEC files found - please select one."
         fi
     elif [[ $numspec -eq 1 ]]; then
         OPT_SPEC="${spec_files[0]?}"
@@ -4482,7 +4484,7 @@ if [[ ! $OPT_SPEC ]]; then
             spec_files=("$OPT_PKGDIR"/*.spec)
             OPT_SPEC="${spec_files[0]?}"
         elif [[ $OPT_NEEDSPEC && $OPT_NEEDSPEC != soft ]]; then
-            fatal "No spec or yaml file found in '$OPT_PKGDIR/'"
+            fatal "No RPM SPEC or YAML file found in '$OPT_PKGDIR/'"
         fi
     fi
 
