@@ -518,8 +518,17 @@ COMMANDS
     prepare
         Run rpmbuild. Execute just the %prep section of the RPM SPEC file.
 
+        If the %prep section applies any patches and a supported version
+        control system (VCS) is used to manage the source tree, patches are
+        applied with the help of the VCS unless the '--no-vcs-apply' global
+        option is used. Speaking the language of Git, the only supported VCS at
+        the moment, a new commit will be created for each applied patch.
+
     apply [-R]
         Apply all patches defined in the RPM SPEC file to the source tree.
+
+        Changes introduced this way are not automatically recorded in a
+        version control system as is normally done by the 'prepare' command.
 
         -R    reverse apply patches (patch -R)
 
@@ -533,7 +542,8 @@ COMMANDS
         project directory. (The file name part is ignored - project file
         selection is done by qmake call inside the SPEC file.)
 
-        --prepare         Run %prep section as well
+        --prepare         Run %prep section as well. This has the same effect
+                          as using the 'prepare' command first
         --no-check        Skip the %check section and rpmlint
         --enable-debug    Enable debug build
         -j <n>            Run up to <n> jobs simultaneously
@@ -926,6 +936,10 @@ GLOBAL OPTIONS
         with '.changes.run' extension to instruct $ME to generate changelog
         with 'git-change-log <args>' instead.
 
+    --no-vcs-apply
+        Do not record applied patches in the version control system, ignore
+        safety checks. See the 'prepare' command for more information.
+
     --build-shell-args <args>
         Arguments to pass to sb2 when used to run build commands. Defaults to no
         arguments.
@@ -1191,8 +1205,8 @@ git_() (
     # variables compared to passing options with '-c' works also for subprocesses invoked via
     # `git-submodule foreach`
     if inside_build_engine; then
-        export GIT_AUTHOR_NAME='mersdk' GIT_AUTHOR_EMAIL='mersdk@mersdk'
-        export GIT_COMMITTER_NAME='mersdk' GIT_COMMITTER_EMAIL='mersdk@mersdk'
+        export GIT_AUTHOR_NAME=$FAKE_GIT_AUTHOR GIT_AUTHOR_EMAIL=$FAKE_GIT_EMAIL
+        export GIT_COMMITTER_NAME=$FAKE_GIT_AUTHOR GIT_COMMITTER_EMAIL=$FAKE_GIT_EMAIL
     fi
 
     git "${args[@]}"
@@ -2512,6 +2526,132 @@ END
     chmod +x "$wrapper"
 )
 
+init_patch_wrapper() (
+    local wrapper=$1
+
+    # Use git from host
+    git() { SBOX_DISABLE_MAPPING=1 /usr/bin/git "$@"; }
+
+    # We cannot simply use git-am as it does not accept all the patch
+    # options we may get passed. So we need to parse the possible info
+    # from the patch, apply using plain patch and then commit.
+    parse_info() {
+        local -n out_author=$1
+        local -n out_author_email=$2
+        local -n out_subject=$3
+        local -n out_date=$4
+        local -n out_message=$5
+
+        local tmpdir=
+        parse_info_cleanup() (
+            trap 'echo cleaning up...' INT TERM HUP
+            if [[ $tmpdir ]]; then
+                rm -rf "$tmpdir"
+            fi
+        )
+        trap 'parse_info_cleanup; trap - RETURN' RETURN
+        trap 'return 1' INT TERM HUP
+
+        # git runs from host with mapping disabled, so a path needs to be used
+        # which does not require mapping.
+        tmpdir=$(mktemp -d --tmpdir="$STATEDIR") || return
+        local message_file=$tmpdir/message
+
+        local info=
+        # Reads patch from stdin
+        info=$(git mailinfo "$message_file" /dev/null) || return
+
+        out_author=$(sed -n 's/^Author: //p' <<<$info)
+        out_author_email=$(sed -n 's/^Email: //p' <<<$info)
+        out_subject=$(sed -n 's/^Subject: //p' <<<$info)
+        out_date=$(sed -n 's/^Date: //p' <<<$info)
+        out_message=$(<"$message_file")
+    }
+
+    main() {
+        local self=${0#$PWD/}
+        local command=${0##*/}
+
+        local path=${0%/*}
+        PATH=${PATH/$path:/}
+
+        local real=$(which "$command")
+        if [[ ! $real || $real == "$0" ]]; then
+            echo "$self: Cannot find real $command" >&2
+            return 1
+        fi
+
+        if ! git --help &>/dev/null; then
+            echo "$self: The 'git' command is not available under the build environment. " \
+                "Resorting to plain 'patch'." >&2
+            
+            "$real" "$@"
+            return
+        fi
+
+        if [[ $(git status --porcelain --untracked-files=no) ]]; then
+            echo "$self: Refusing to patch dirty work tree - commit or reset your changes first." >&2
+            return 1
+        fi
+
+        local patch=$(cat)
+
+        local author=
+        local author_email=
+        local subject=
+        local date=
+        local message=
+        if ! parse_info author author_email subject date message <<<$patch; then
+            echo "$self: Failed to parse patch info - resorting to plain 'patch'." >&2
+        fi
+
+        : ${subject:="(no subject)"}
+        local stamp="*$WE-prepare*"
+        local full_message=$stamp' '$subject$'\n\n'$message
+
+        local untracked_old=$(git status --porcelain |sed -n 's/^?? //p' |sort -u)
+
+        "$real" "$@" <<<$patch || return
+
+        local untracked_now=$(git status --porcelain |sed -n 's/^?? //p' |sort -u)
+        local untracked_added=()
+        readarray -t untracked_added < <(join -v 2 \
+            <(printf '%s' "$untracked_old") <(printf '%s' "$untracked_now"))
+        if [[ $untracked_added ]]; then
+            if ! git add "${untracked_added[@]}"; then
+                echo "$self: Failed to git-add some of the newly added files" >&2
+            fi
+        fi
+
+        export GIT_AUTHOR_NAME=${author:-$FAKE_GIT_AUTHOR}
+        export GIT_AUTHOR_EMAIL=${author_email:-$FAKE_GIT_EMAIL}
+        export GIT_AUTHOR_DATE=$date
+        export GIT_COMMITTER_NAME=$FAKE_GIT_AUTHOR
+        export GIT_COMMITTER_EMAIL=$FAKE_GIT_EMAIL
+
+        if ! git commit --all --allow-empty --message "$full_message"; then
+            echo "$self: Failed to git-commit applied changes" >&2
+        fi
+    }
+
+    init_wrappers_dir
+    cat <<END >"$wrapper"
+#!/bin/bash
+
+STATEDIR=$(quote "$STATEDIR")
+FAKE_GIT_AUTHOR=$(quote "$FAKE_GIT_AUTHOR")
+FAKE_GIT_EMAIL=$(quote "$FAKE_GIT_EMAIL")
+WE=$(quote "$WE")
+
+$(declare -f git)
+$(declare -f parse_info)
+$(declare -f main)
+
+main "\$@"
+END
+    chmod +x "$wrapper"
+)
+
 init_simple_wrapper() {
     local wrapper=$1
     local extra_args=("${@:2}")
@@ -2950,6 +3090,10 @@ run_build() {
         fi
     fi
 
+    if [[ ! $BUILD_NOPREP_ARGS && ! $OPT_NO_VCS_APPLY ]] && inside_git_worktree; then
+        init_patch_wrapper $WRAPPERSDIR/patch
+    fi
+
     (
         maybe_cd_to_spec_setup_subdir "$TMP_SPEC"
         sb2_build env PATH="$WRAPPERSDIR:$USERWRAPPERSDIR:$PATH" rpmbuild \
@@ -2960,6 +3104,7 @@ run_build() {
             --define "_sourcedir $OPT_PKGDIR" \
             --define "_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm" \
             --define "_buildhost $(get_hostname)" \
+            --define "__patch patch" \
             "${EXTENDED_PRE_INSTALL_LOCK_ARGS[@]}" \
             --buildroot="$buildroot" \
             "${BUILD_NOPREP_ARGS[@]}" "${BUILD_NOCHECK_ARGS[@]}" \
@@ -2996,12 +3141,19 @@ run_prepare() {
 
     local build_tgt=$(sb2_build gcc -dumpmachine)
     build_tgt=${build_tgt%-gnueabi}
+
+    if [[ ! $OPT_NO_VCS_APPLY ]] && inside_git_worktree; then
+        init_patch_wrapper $WRAPPERSDIR/patch
+    fi
+
     (
         maybe_cd_to_spec_setup_subdir "$TMP_SPEC"
-        sb2_build rpmbuild --build-in-place --target=$build_tgt \
+        sb2_build env PATH="$WRAPPERSDIR:$USERWRAPPERSDIR:$PATH" rpmbuild \
+            --build-in-place --target=$build_tgt \
             --define "_smp_mflags -j$BUILD_JOBS" \
             --define "_sourcedir $OPT_PKGDIR" \
             --define "_buildhost $(get_hostname)" \
+            --define "__patch patch" \
             -bp --short-circuit \
             "$TMP_SPEC"
     )
@@ -4007,6 +4159,7 @@ OPT_PACKAGE_SIGN_PASSPHRASE=
 OPT_PACKAGE_SIGN_PASSPHRASE_FILE=
 OPT_CHECK_SUITES=
 OPT_HOOKS_DIR=
+OPT_NO_VCS_APPLY=
 
 STATEDIR=$PWD/.$WE
 TMP_SPEC=$STATEDIR/spec
@@ -4048,6 +4201,9 @@ if inside_build_engine; then
 else
     buildroot="$PWD/installroot"
 fi
+
+FAKE_GIT_AUTHOR=$WE
+FAKE_GIT_EMAIL="<$WE>"
 
 ################################################################################
 if [[ $1 != --self-test ]]; then  ###  M A I N  EXECUTION BEGINS HERE  #########
@@ -4278,6 +4434,9 @@ while [[ "$1" ]]; do
             [[ $2 ]] || fatal "The '$1' option requires an argument"
             OPT_HOOKS_DIR=$2
             shift 2
+            ;;
+        "--no-vcs-apply" ) shift
+            OPT_NO_VCS_APPLY=1
             ;;
         # Note that OPT_NEEDSPEC and OPT_NEEDTARGET may be additionaly set later
         # during command options parsing!
