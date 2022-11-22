@@ -2626,6 +2626,15 @@ init_patch_wrapper() (
             fi
         fi
 
+        # No submodule handling here - patches spanning multiple submodules are
+        # clearly a bad practice and as such completely unsupported!
+        local changes_in_submodules=$(git submodule foreach --quiet \
+            git status --untracked-files=no --porcelain)
+        if [[ $changes_in_submodules ]]; then
+            echo "$self: Unsupported: Patch spans across git submodules" >&2
+            return 1
+        fi
+
         export GIT_AUTHOR_NAME=${author:-$FAKE_GIT_AUTHOR}
         export GIT_AUTHOR_EMAIL=${author_email:-$FAKE_GIT_EMAIL}
         export GIT_AUTHOR_DATE=$date
