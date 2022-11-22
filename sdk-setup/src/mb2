@@ -527,6 +527,10 @@ COMMANDS
         new commits will be created - one for each applied patch and a final
         one for changes introduced other way than by applying patches.
 
+        Changes applied this way are ignored by the '--fix-version' global
+        option. If you have no other changes, it will not indicate any change
+        since the last tagged version.
+
         The above described behavior may be suppressed by the '--no-vcs-apply'
         global option.
 
@@ -1808,6 +1812,48 @@ git_commit_brief() {
     return 0
 }
 
+create_patchset_id() {
+    local patchset_id=
+    if [[ ! $(git_ status --porcelain --untracked-files=no "$OPT_PKGDIR") ]]; then
+        patchset_id=$(git_ rev-parse HEAD)
+    else
+        patchset_id=$(git_ update-index --refresh >/dev/null; git_ stash create) \
+            || notice "Cannot save state of Git working tree: git-stash failed."
+    fi
+    : ${patchset_id:=$NULL_ID}
+
+    printf '%s\n' "$patchset_id"
+}
+
+recent_patches() {
+    local prune=$([[ $1 == --prune ]] && echo 1)
+
+    if [[ $prune ]]; then
+        git_ notes --ref "$PATCHSET_ID_REF" prune
+        git_ submodule foreach --quiet --recursive "git notes --ref '$PATCHSET_ID_REF' prune"
+    fi
+
+    local reasonable_limit=20
+    local args=(--notes="$PATCHSET_ID_REF" --format=%N --max-count="$reasonable_limit")
+    {
+        # git log warns if notes ref does not exist - suppress stderr
+        git_ log "${args[@]}" 2>/dev/null
+        git_ submodule foreach --quiet --recursive "git log ${args[*]@Q} 2>/dev/null"
+    } |sed '/^$/d'
+}
+
+skip_patches() {
+    local head=$1
+    local patchset_id=$2
+
+    while [[ $(git_ notes --ref "$PATCHSET_ID_REF" show "$head" 2>/dev/null) \
+            == "$patchset_id" ]]; do
+        head=$(git_ rev-parse "$head"^)
+    done
+
+    printf '%s\n' "$head"
+}
+
 maybe_fix_package_version() {
     local spec_file=$1
 
@@ -1848,20 +1894,36 @@ maybe_fix_package_version() {
     local tag_sha1=$(git_ rev-parse "$tag^{}")
     [[ $tag_sha1 ]] || fatal "Failed to rev-parse tag '$tag'"
 
+    local prepared=$([[ -r $PREPARE_STAMP && $(<"$PREPARE_STAMP") == "$tag_sha1" ]] && echo 1)
+
     # Git stash is known to fail on git index which was updated on host previously
     local stash=
     if ! stash=$(git_ update-index --refresh >/dev/null; git_ stash create); then
         fatal "Cannot save state of Git working tree: git-stash failed."
     fi
+
     local head=${stash:-$(git_ rev-parse HEAD)}
+
+    # Do not consider commits that were created by successful %prep execution as changes
+    if [[ $prepared ]]; then
+        head=$(skip_patches "$head" "$tag_sha1")
+    fi
 
     local modified_submodules=
     modified_submodules=$(
         describe_if_modified()
         {
+            git_() { git "$@"; } # restore default behavior - we are in a submodule
+
             local stash=
             stash=$(git update-index --refresh >/dev/null; git stash create) || return
+
             local head=${stash:-$(git rev-parse HEAD)}
+
+            if [[ $prepared ]]; then
+                head=$(skip_patches "$head" "$tag_sha1")
+            fi
+
             if [[ $head != $sha1 ]]; then
                 local short=$(git rev-list --max-count=1 --abbrev-commit "$head")
                 local time=$(git log --max-count=1 --pretty=%ct "$head")
@@ -1869,7 +1931,10 @@ maybe_fix_package_version() {
             fi
         }
         git_ submodule --quiet foreach --recursive \
-            "$(declare -f describe_if_modified); describe_if_modified")
+            "$(declare -p prepared tag_sha1 PATCHSET_ID_REF)
+             $(declare -f describe_if_modified skip_patches)
+             describe_if_modified"
+    )
     if [[ $? -ne 0 ]]; then
         fatal "Cannot save state of Git submodules: git-stash failed for some."
     fi
@@ -2549,6 +2614,7 @@ END
 
 init_patch_wrapper() (
     local wrapper=$1
+    local patchset_id=$2
 
     # Use git from host
     git() { SBOX_DISABLE_MAPPING=1 /usr/bin/git "$@"; }
@@ -2662,6 +2728,8 @@ init_patch_wrapper() (
             echo "$self: Failed to git-commit applied changes" >&2
             return 1
         fi
+
+        git notes --ref "$PATCHSET_ID_REF" add --message "$PATCHSET_ID"
     }
 
     init_wrappers_dir
@@ -2672,6 +2740,8 @@ STATEDIR=$(quote "$STATEDIR")
 FAKE_GIT_AUTHOR=$(quote "$FAKE_GIT_AUTHOR")
 FAKE_GIT_EMAIL=$(quote "$FAKE_GIT_EMAIL")
 PREPARE_LEADER=$(quote "$PREPARE_LEADER")
+PATCHSET_ID_REF=$(quote "$PATCHSET_ID_REF")
+PATCHSET_ID=$(quote "$patchset_id")
 WE=$(quote "$WE")
 
 $(declare -f git)
@@ -2776,6 +2846,7 @@ switch_to_snapshot() {
 # used from %prep and that is not allowed to run on shadow build side.
 init_commit_prep_changes_hook() {
     local hook=$1
+    local patchset_id=$2
 
     # Use git from host
     git() { SBOX_DISABLE_MAPPING=1 /usr/bin/git "$@"; }
@@ -2798,6 +2869,8 @@ init_commit_prep_changes_hook() {
                 echo "$self: Failed to git-commit changes done by the %prep section" >&2
                 return 1
             fi
+
+            git notes --ref "$PATCHSET_ID_REF" add --message "$PATCHSET_ID"
         fi
     }
 
@@ -2825,6 +2898,8 @@ init_commit_prep_changes_hook() {
 FAKE_GIT_AUTHOR=$(quote "$FAKE_GIT_AUTHOR")
 FAKE_GIT_EMAIL=$(quote "$FAKE_GIT_EMAIL")
 PREPARE_LEADER=$(quote "$PREPARE_LEADER")
+PATCHSET_ID_REF=$(quote "$PATCHSET_ID_REF")
+PATCHSET_ID=$(quote "$patchset_id")
 
 $(declare -f git)
 $(declare -f git_commit_brief)
@@ -3195,14 +3270,21 @@ run_build() {
         fi
     fi
 
+    local patchset_id=
     if [[ ! $BUILD_NOPREP_ARGS && ! $OPT_NO_VCS_APPLY ]] && inside_git_worktree; then
+        if [[ $(recent_patches --prune) ]]; then
+            fatal "Refusing to prepare repeatedly - reset previous changes first."
+        fi
         if [[ $(git_ status --porcelain --untracked-files=no) ]]; then
             fatal "Refusing to prepare dirty work tree - commit or reset your changes first."
         fi
-        init_patch_wrapper $WRAPPERSDIR/patch
-        init_commit_prep_changes_hook "$WRAPPERSDIR/$WE-commit-prep-changes"
+        patchset_id=$(create_patchset_id)
+        init_patch_wrapper "$WRAPPERSDIR/patch" "$patchset_id"
+        init_commit_prep_changes_hook "$WRAPPERSDIR/$WE-commit-prep-changes" "$patchset_id"
         extra_args+=(--define "__spec_prep_post $WE-commit-prep-changes; %{___build_post}")
     fi
+
+    [[ $BUILD_NOPREP_ARGS ]] || rm -f "$PREPARE_STAMP"
 
     (
         maybe_cd_to_spec_setup_subdir "$TMP_SPEC"
@@ -3224,6 +3306,8 @@ run_build() {
             "${BUILD_EXTRA_ARGS[@]}"
     ) || return
 
+    [[ $patchset_id ]] && printf '%s\n' "$patchset_id" >"$PREPARE_STAMP"
+
     [[ $OPT_PACKAGE_TIMELINE ]] || prune_older_rpms "$OPT_OUTPUTDIR" "$OPT_PKGDIR" "$TMP_SPEC"
     [[ ! $BUILD_SIGN ]] || sign_rpms "$TMP_SPEC" || return
 
@@ -3236,6 +3320,7 @@ run_build() {
         run_check__process_args_helper "" "$check_suites" ""
         run_check --already-locked
     fi
+
     return 0
 }
 
@@ -3257,14 +3342,21 @@ run_prepare() {
     local build_tgt=$(sb2_build gcc -dumpmachine)
     build_tgt=${build_tgt%-gnueabi}
 
+    local patchset_id=
     if [[ ! $OPT_NO_VCS_APPLY ]] && inside_git_worktree; then
+        if [[ $(recent_patches --prune) ]]; then
+            fatal "Refusing to prepare repeatedly - reset previous changes first."
+        fi
         if [[ $(git_ status --porcelain --untracked-files=no) ]]; then
             fatal "Refusing to prepare dirty work tree - commit or reset your changes first."
         fi
-        init_patch_wrapper $WRAPPERSDIR/patch
-        init_commit_prep_changes_hook "$WRAPPERSDIR/$WE-commit-prep-changes"
+        patchset_id=$(create_patchset_id)
+        init_patch_wrapper "$WRAPPERSDIR/patch" "$patchset_id"
+        init_commit_prep_changes_hook "$WRAPPERSDIR/$WE-commit-prep-changes" "$patchset_id"
         extra_args+=(--define "__spec_prep_post $WE-commit-prep-changes; %{___build_post}")
     fi
+
+    rm -f "$PREPARE_STAMP"
 
     (
         maybe_cd_to_spec_setup_subdir "$TMP_SPEC"
@@ -3277,7 +3369,11 @@ run_prepare() {
             "${extra_args[@]}" \
             -bp --short-circuit \
             "$TMP_SPEC"
-    )
+    ) || return
+
+    [[ $patchset_id ]] && printf '%s\n' "$patchset_id" >"$PREPARE_STAMP"
+
+    return 0
 }
 
 run_cmake__process_args() {
@@ -4285,6 +4381,7 @@ OPT_NO_VCS_APPLY=
 STATEDIR=$PWD/.$WE
 TMP_SPEC=$STATEDIR/spec
 COMPILEDB_INPUT=$STATEDIR/compiledb-input.txt
+PREPARE_STAMP=$STATEDIR/prepared
 INSTALL_STAMP=$STATEDIR/installed
 
 SDK_RPMSIGN=/usr/libexec/sdk-setup/sdk-rpmsign
@@ -4327,6 +4424,8 @@ FAKE_GIT_AUTHOR=$WE
 FAKE_GIT_EMAIL="<$WE>"
 
 PREPARE_LEADER="*$WE-prepare* "
+PATCHSET_ID_REF=$WE/patchset
+NULL_ID=0000000000000000000000000000000000000000
 
 ################################################################################
 if [[ $1 != --self-test ]]; then  ###  M A I N  EXECUTION BEGINS HERE  #########
