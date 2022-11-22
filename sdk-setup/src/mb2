@@ -2987,6 +2987,7 @@ run_apply() {
 
     local to_apply=
     local auto_applied=$(grep -q "^%autosetup" "$TMP_SPEC" \
+        && ! grep -q "^%autopatch" "$TMP_SPEC" \
         && ! grep -q "^%patch[0-9]" "$TMP_SPEC" \
         && echo 1)
     if [[ $auto_applied ]]; then
@@ -3076,7 +3077,7 @@ run_build() {
     flatten_spec "$OPT_SPEC" >"$TMP_SPEC"
 
     if [[ $BUILD_NOPREP_ARGS ]]; then
-        sed -i -e '/^%patch/d' "$TMP_SPEC"
+        sed -i -e '/^%\(auto\)\?patch/d' "$TMP_SPEC"
     fi
 
     try_to_make_changelog >> "$TMP_SPEC"
