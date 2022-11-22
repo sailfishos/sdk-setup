@@ -1827,6 +1827,9 @@ maybe_fix_package_version() {
     version=${version#*/}   # allow tags to have a prefix to allow vendor marking
     version=${version#v}    # some people like to prefix versions with a v
 
+    local tag_sha1=$(git_ rev-parse "$tag^{}")
+    [[ $tag_sha1 ]] || fatal "Failed to rev-parse tag '$tag'"
+
     # Git stash is known to fail on git index which was updated on host previously
     local stash=
     if ! stash=$(git_ update-index --refresh >/dev/null; git_ stash create); then
@@ -1853,7 +1856,7 @@ maybe_fix_package_version() {
         fatal "Cannot save state of Git submodules: git-stash failed for some."
     fi
 
-    if [[ $(git_ rev-parse "$tag^{}") != "$head" || $modified_submodules ]]; then
+    if [[ $head != "$tag_sha1" || $modified_submodules ]]; then
         local branch=$(git_ rev-parse --abbrev-ref HEAD)
 
         local time=$(git_ log --max-count=1 --pretty=%ct "$head")
