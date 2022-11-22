@@ -2631,6 +2631,7 @@ init_patch_wrapper() (
 
         if ! git commit --all --allow-empty --message "$full_message"; then
             echo "$self: Failed to git-commit applied changes" >&2
+            return 1
         fi
     }
 
