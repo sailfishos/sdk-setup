@@ -1790,6 +1790,18 @@ drop_windows_linefeeds() {
     sed -i "s/\x0D$//g" "$file"
 }
 
+# Omit some information usually printed by git-commit in the summary.
+#
+# Intentionally uses git directly (does not use git_). It is only meant to be
+# used from %prep and that is not allowed to run on shadow build side.
+git_commit_brief() {
+    local args=("$@")
+
+    git commit --quiet "${args[@]}" || return
+    git log -1 --pretty=format:"[%h] %s" --shortstat
+    return 0
+}
+
 maybe_fix_package_version() {
     local spec_file=$1
 
@@ -2641,7 +2653,7 @@ init_patch_wrapper() (
         export GIT_COMMITTER_NAME=$FAKE_GIT_AUTHOR
         export GIT_COMMITTER_EMAIL=$FAKE_GIT_EMAIL
 
-        if ! git commit --all --allow-empty --message "$full_message"; then
+        if ! git_commit_brief --all --allow-empty --message "$full_message"; then
             echo "$self: Failed to git-commit applied changes" >&2
             return 1
         fi
@@ -2657,6 +2669,7 @@ FAKE_GIT_EMAIL=$(quote "$FAKE_GIT_EMAIL")
 WE=$(quote "$WE")
 
 $(declare -f git)
+$(declare -f git_commit_brief)
 $(declare -f parse_info)
 $(declare -f main)
 
