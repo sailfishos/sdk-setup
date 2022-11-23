@@ -5078,6 +5078,7 @@ run_tc sb2_arg_pass "qmake" \
         --define 'noecho 1' \
         --define '_sourcedir /tmp/@TMPDIR@/rpm' \
         --define "_buildhost $BUILDHOST" \
+        --define "__make make" \
         -bc --short-circuit \
         /tmp/@TMPDIR@/.mb2/spec)" \
     qmake "a b" "c  d" e f
@@ -5089,6 +5090,7 @@ run_tc sb2_arg_pass "cmake" \
         --define 'noecho 1' \
         --define '_sourcedir /tmp/@TMPDIR@/rpm' \
         --define "_buildhost $BUILDHOST" \
+        --define "__make make" \
         -bc --short-circuit \
         /tmp/@TMPDIR@/.mb2/spec)" \
     cmake . "a b" "c  d" e f
@@ -5100,6 +5102,7 @@ run_tc sb2_arg_pass "make" \
         --define 'noecho 1' \
         --define '_sourcedir /tmp/@TMPDIR@/rpm' \
         --define "_buildhost $BUILDHOST" \
+        --define "__make make" \
         -bc --short-circuit \
         /tmp/@TMPDIR@/.mb2/spec)" \
     make "a b" "c  d" e f
