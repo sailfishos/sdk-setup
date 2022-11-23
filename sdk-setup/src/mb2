@@ -3079,6 +3079,12 @@ run_build__process_args() {
     done
     BUILD_EXTRA_ARGS=("$@")
     handle_pro_file_or_dir_option
+
+    if is_shadow_build && [[ ! $BUILD_NOPREP_ARGS ]]; then
+        fatal "The '--prepare' option is not available with shadow builds." \
+            "Use the 'prepare' command on the source tree instead."
+    fi
+
     [[ $BUILD_JOBS ]] || BUILD_JOBS=$(getconf _NPROCESSORS_ONLN)
 
     [[ ! $BUILD_SIGN ]] || sign_rpms__prepare
@@ -3156,6 +3162,8 @@ run_build() {
 }
 
 run_prepare() {
+    ! is_shadow_build || fatal "The 'prepare' command must be used on the source tree."
+
     maybe_increment_build_number "$OPT_SPEC"
     # TODO maybe add toggle here for disabling patch applying?
     flatten_spec "$OPT_SPEC" >"$TMP_SPEC"
