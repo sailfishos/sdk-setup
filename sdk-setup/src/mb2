@@ -5028,10 +5028,12 @@ KNOWN_ISSUE "Passes -j without argument"
 KNOWN_ISSUE "Silently ignores extra arguments"
 run_tc sb2_arg_pass "prepare" \
     "$(expect_args \
-        -t "$DEFAULT_TARGET" -- rpmbuild --build-in-place --target= \
+        -t "$DEFAULT_TARGET" -- env PATH="$WRAPPERS_PATH:/tmp/@TMPDIR@/stubs:$ORIG_PATH" rpmbuild \
+        --build-in-place --target= \
         --define '_smp_mflags -j' \
         --define '_sourcedir /tmp/@TMPDIR@/rpm' \
         --define "_buildhost $BUILDHOST" \
+        --define "__patch patch" \
         -bp --short-circuit \
         /tmp/@TMPDIR@/.mb2/spec)" \
     prepare "a b" "c  d" e f
@@ -5046,6 +5048,7 @@ run_tc sb2_arg_pass "build" \
         --define '_sourcedir /tmp/@TMPDIR@/rpm' \
         --define '_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm' \
         --define "_buildhost $BUILDHOST" \
+        --define "__patch patch" \
         --buildroot=/tmp/@TMPDIR@/installroot \
         -bb \
         /tmp/@TMPDIR@/.mb2/spec \
@@ -5061,6 +5064,7 @@ run_tc sb2_arg_pass "build with debug" \
         --define '_sourcedir /tmp/@TMPDIR@/rpm' \
         --define '_rpmfilename %%{name}-%%{version}-%%{release}.%%{arch}.rpm' \
         --define "_buildhost $BUILDHOST" \
+        --define "__patch patch" \
         --buildroot=/tmp/@TMPDIR@/installroot \
         -bb \
         /tmp/@TMPDIR@/.mb2/spec \
