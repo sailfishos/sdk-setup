@@ -2621,8 +2621,7 @@ init_patch_wrapper() (
         fi
 
         : ${subject:="(no subject)"}
-        local stamp="*$WE-prepare*"
-        local full_message=$stamp' '$subject$'\n\n'$message
+        local full_message=$PREPARE_LEADER$subject$'\n\n'$message
 
         local untracked_old=$(git status --porcelain |sed -n 's/^?? //p' |sort -u)
 
@@ -2666,6 +2665,7 @@ init_patch_wrapper() (
 STATEDIR=$(quote "$STATEDIR")
 FAKE_GIT_AUTHOR=$(quote "$FAKE_GIT_AUTHOR")
 FAKE_GIT_EMAIL=$(quote "$FAKE_GIT_EMAIL")
+PREPARE_LEADER=$(quote "$PREPARE_LEADER")
 WE=$(quote "$WE")
 
 $(declare -f git)
@@ -4231,6 +4231,8 @@ fi
 
 FAKE_GIT_AUTHOR=$WE
 FAKE_GIT_EMAIL="<$WE>"
+
+PREPARE_LEADER="*$WE-prepare* "
 
 ################################################################################
 if [[ $1 != --self-test ]]; then  ###  M A I N  EXECUTION BEGINS HERE  #########
