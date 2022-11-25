@@ -1930,10 +1930,12 @@ maybe_fix_package_version() {
                 printf '%s %s %s\n' "$name" "$short" "$time"
             fi
         }
-        git_ submodule --quiet foreach --recursive \
-            "$(declare -p prepared tag_sha1 PATCHSET_ID_REF)
-             $(declare -f describe_if_modified skip_patches)
-             describe_if_modified"
+        git_ submodule --quiet foreach --recursive "
+            set -o nounset
+            $(declare -p prepared tag_sha1 PATCHSET_ID_REF)
+            $(declare -f describe_if_modified skip_patches)
+            describe_if_modified
+        "
     )
     if [[ $? -ne 0 ]]; then
         fatal "Cannot save state of Git submodules: git-stash failed for some."
@@ -2293,6 +2295,8 @@ init_qmake_wrapper() (
     cat <<END >"$wrapper"
 #!/bin/bash
 
+set -o nounset
+
 IS_SHADOW_BUILD=$(is_shadow_build && echo 1)
 BUILD_DIR=$(quote "$PWD")
 SRC_DIR=$(quote "${OPT_SRC_DIR:-$PWD}")
@@ -2425,6 +2429,8 @@ init_cmake_wrapper() (
     cat <<END >"$wrapper"
 #!/bin/bash
 
+set -o nounset
+
 IS_SHADOW_BUILD=$(is_shadow_build && echo 1)
 BUILD_DIR=$(quote "$PWD")
 SRC_DIR=$(quote "${OPT_SRC_DIR:-$PWD}")
@@ -2529,6 +2535,8 @@ init_cd_to_sources_wrapper() (
     cat <<END >"$wrapper"
 #!/bin/bash
 
+set -o nounset
+
 BUILD_DIR=$(quote "$PWD")
 SRC_DIR=$(quote "${OPT_SRC_DIR:-$PWD}")
 
@@ -2600,6 +2608,8 @@ init_make_compiledb_wrapper() (
     init_wrappers_dir
     cat <<END >"$wrapper"
 #!/bin/bash
+
+set -o nounset
 
 CANDIDATE_TARGETS=(compiledb compile_commands.json)
 COMPILEDB_INPUT=$(quote "$COMPILEDB_INPUT")
@@ -2703,7 +2713,7 @@ init_patch_wrapper() (
         local untracked_added=()
         readarray -t untracked_added < <(join -v 2 \
             <(printf '%s' "$untracked_old") <(printf '%s' "$untracked_now"))
-        if [[ $untracked_added ]]; then
+        if [[ ${#untracked_added[*]} -gt 0 ]]; then
             if ! git add "${untracked_added[@]}"; then
                 echo "$self: Failed to git-add some of the newly added files" >&2
             fi
@@ -2735,6 +2745,8 @@ init_patch_wrapper() (
     init_wrappers_dir
     cat <<END >"$wrapper"
 #!/bin/bash
+
+set -o nounset
 
 STATEDIR=$(quote "$STATEDIR")
 FAKE_GIT_AUTHOR=$(quote "$FAKE_GIT_AUTHOR")
@@ -2794,6 +2806,7 @@ init_noop_wrapper() {
     init_wrappers_dir
     cat <<'END' >"$wrapper"
 #!/bin/bash
+set -o nounset
 self=${0#$PWD/}
 command=${0##*/}
 NBSP=$'\xC2\xA0'
@@ -2895,6 +2908,10 @@ init_commit_prep_changes_hook() {
 
     init_wrappers_dir
     cat <<END >"$hook"
+#!/bin/bash
+
+set -o nounset
+
 FAKE_GIT_AUTHOR=$(quote "$FAKE_GIT_AUTHOR")
 FAKE_GIT_EMAIL=$(quote "$FAKE_GIT_EMAIL")
 PREPARE_LEADER=$(quote "$PREPARE_LEADER")
