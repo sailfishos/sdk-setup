@@ -74,6 +74,10 @@ COMMANDS OVERVIEW
    undeploy  Undeploy from a device
    check  Perform quality checks
 
+   Maintaining software
+
+   scrape  Scrape modifications from sources and save them as patches
+
    IDE support
 
    compiledb  Generate compilation database
@@ -531,8 +535,13 @@ COMMANDS
         option. If you have no other changes, it will not indicate any change
         since the last tagged version.
 
+        Changes originating from patches may be updated by usual ways of Git
+        usage, after which the 'scrape' command can be used to propagate
+        the changes back to the patches.
+
         The above described behavior may be suppressed by the '--no-vcs-apply'
         global option.
+
 
     apply [-R]
         Apply all patches defined in the RPM SPEC file to the source tree.
@@ -831,6 +840,51 @@ COMMANDS
     run [<command> [<arg>...]]
         Run the given command on the device specified with '--device'.  Can be
         used for running gdb and a gdb server.
+
+    scrape [-n|--dry-run] [--keep] [-o|--output-dir <dir>]
+        Scrape modifications from sources and save them as patches.
+
+        This command is specifically designed to support maintenance of
+        packages where
+
+        1) the sources are under version control by Git,
+        2) another source repository is embedded as a Git submodule, and
+        3) the embedded repository is not write-accessible.
+
+        If a need to update the code under the embedded repository (submodule)
+        arises in this case, the changes may be shared in form of patch files
+        versioned under the embedding repository (superproject). This command
+        makes this option less tedious, automating the job of collecting
+        patches for new commits appearing in submodules (recursively),
+        updating existing patch files in a safe manner and as a last step
+        removing the corresponding commits from submodules.
+
+        This command may be used in pair with the 'prepare' command, which is
+        capable of doing the opposite job: applying patches as commits.
+
+        This command enforces certain patch formatting and file naming
+        conventions. When used in pair with the 'prepare' command, it is not
+        guaranteed (not desired) that it produces patch files matching the
+        original patch files. Among others the file numbering is enforced,
+        using discrete number ranges for patches originating from different
+        submodules.
+
+        Unless overriden with the '--output-dir' option, patches will be
+        stored under the well known 'rpm' directory (where the RPM SPEC file
+        lives).
+
+        Use the '--dry-run' option to preview the list of commits considered
+        for scraping - there are no safety limits on the number of commits to
+        process.
+
+        For every Git submodule, all commits reported by 'git submodule
+        summary' executed under its superproject are considered. Out of these,
+        commits which have the 'Mb2-scrape: discard' trailer line in their
+        commit message, will be scraped without creating a patch.
+
+        When the '--keep' option is used, commits will not be removed from
+        submodules after patches are created from them.
+
 
 GLOBAL OPTIONS
     The order of passing options matters. Options that occur later on the
@@ -2878,7 +2932,8 @@ init_commit_prep_changes_hook() {
             message+=$'\n\n'"These changes were introduced by other means than applying patches."
 
             # Use --allow-empty just to be sure.
-            if ! git_commit_brief --allow-empty --message "$message"; then
+            if ! git_commit_brief --allow-empty --message "$message" \
+                    --trailer "$SCRAPE_TRAILER=$SCRAPE_DISCARD"; then
                 echo "$self: Failed to git-commit changes done by the %prep section" >&2
                 return 1
             fi
@@ -2915,6 +2970,8 @@ set -o nounset
 FAKE_GIT_AUTHOR=$(quote "$FAKE_GIT_AUTHOR")
 FAKE_GIT_EMAIL=$(quote "$FAKE_GIT_EMAIL")
 PREPARE_LEADER=$(quote "$PREPARE_LEADER")
+SCRAPE_TRAILER=$(quote "$SCRAPE_TRAILER")
+SCRAPE_DISCARD=$(quote "$SCRAPE_DISCARD")
 PATCHSET_ID_REF=$(quote "$PATCHSET_ID_REF")
 PATCHSET_ID=$(quote "$patchset_id")
 
@@ -3392,6 +3449,200 @@ run_prepare() {
 
     return 0
 }
+
+run_scrape__process_args() {
+    SCRAPE_DRY_RUN=
+    SCRAPE_KEEP=
+    SCRAPE_OUTPUT_DIR=$OPT_PKGDIR
+
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -n|--dry-run)
+                SCRAPE_DRY_RUN=1
+                ;;
+            --keep)
+                SCRAPE_KEEP=1
+                ;;
+            -o|--output-dir)
+                [[ $2 ]] || fatal "Option expects argument: '$1'"
+                SCRAPE_OUTPUT_DIR=$2
+                shift
+                ;;
+            *)
+                fatal "Unexpected argument: '$1'"
+                ;;
+        esac
+        shift
+    done
+}
+
+run_scrape() {
+
+    if [[ $(cd "$SCRAPE_OUTPUT_DIR" && ls *.patch) ]] 2>/dev/null; then
+        local status=
+        if ! status=$(git_ status --porcelain -- "$SCRAPE_OUTPUT_DIR"/*.patch 2>/dev/null); then
+            fatal "Cannot scrapees: You have existing patches in output directory" \
+                "that does not seem to be under version control."
+        elif grep -e '^.[^ ]' --quiet <<<$status; then
+            fatal "Cannot scrapees: You have unstaged changes to the existing patches."
+        fi
+    fi
+
+    local dirty=$(run_scrape__dirty_submodules)
+    if [[ $dirty ]]; then
+        fatal "The following submodules have uncommitted changes to files:" \
+            $'\n\n'"$dirty" \
+            $'\n\n'"Commit or reset changes to files in submodules first and try again." \
+            "(Do not commit the changes to submodule's sha1 itself!)"
+    fi
+
+    local incomplete=$(run_scrape__summary --author="$FAKE_GIT_AUTHOR <$FAKE_GIT_EMAIL>")
+    if [[ $incomplete ]]; then
+        fatal "The following commits were created from plain patches and use fake author" \
+            "information. Correct the authorship and try again:" $'\n\n'"$incomplete"
+    fi
+
+    if [[ $SCRAPE_DRY_RUN ]]; then
+        run_scrape__summary
+        return
+    fi
+
+    local tmpdir=
+    run_scrape_cleanup() (
+        trap 'echo cleaning up...' INT TERM HUP
+        if [[ $tmpdir ]]; then
+            rm -rf "$tmpdir"
+        fi
+    )
+    trap 'run_scrape_cleanup; trap - RETURN' RETURN
+    trap 'return 1' INT TERM HUP
+
+    tmpdir=$(mktemp -d) || return
+
+    run_scrape__format_patch "$tmpdir" || return
+
+    local have_patches=
+    if [[ $(cd "$tmpdir" && ls *.patch) ]] 2>/dev/null; then
+        have_patches=1
+        # Strip PREPARE_LEADER from file names
+        local leader_dashed=${PREPARE_LEADER//+([^[:alnum:]])/-}
+        local patch=
+        for patch in "$tmpdir"/*.patch; do
+            patch=$(basename "$patch")
+            local stripped=$(sed "s/^\([0-9]\+\)-\?${leader_dashed}-\?/\1-/" <<<$patch)
+            if [[ $stripped != "$patch" ]]; then
+                mv --no-clobber "$tmpdir/$patch" "$tmpdir/$stripped" || return
+            fi
+        done
+
+        # Strip PREPARE_LEADER from subject lines
+        run_scrape__strip_leader_from_subject "$tmpdir"/*.patch
+    fi
+
+    mkdir -p "$SCRAPE_OUTPUT_DIR" || return
+    find "$SCRAPE_OUTPUT_DIR" -maxdepth 1 -name '*.patch' -delete
+
+    if [[ $have_patches ]]; then
+        local relative_output_dir=$(realpath --relative-to="$PWD" "$SCRAPE_OUTPUT_DIR")
+        mv --target-directory "$SCRAPE_OUTPUT_DIR" "$tmpdir"/*.patch \
+            && { ls -1 "$relative_output_dir"/*.patch ||:; } || return
+    fi
+
+    if [[ ! $SCRAPE_KEEP ]]; then
+        git_ submodule update --recursive || :
+    fi
+}
+
+run_scrape__dirty_submodules() (
+    print_if_dirty() {
+        local status=$(git status --porcelain --ignore-submodules --untracked-files=no)
+        ! [[ $status ]] || printf ' %s\n' "$displaypath"
+    }
+    git_ submodule --quiet foreach --recursive "
+        $(declare -f print_if_dirty)
+        print_if_dirty
+    "
+)
+
+run_scrape__summary() (
+    local rev_list_args=("$@")
+
+    local regexp='^'$SCRAPE_TRAILER':[[:space:]]*'$SCRAPE_DISCARD'$'
+    rev_list_args+=(--invert-grep --grep="$regexp")
+
+    summary() {
+        local format=" > %h %s"
+        local count=$(git rev-list "${rev_list_args[@]}" --count "$sha1..")
+        [[ $count -eq 0 ]] && return
+        printf "%s %s..%s (%d):\n" "$displaypath" \
+            "$(git rev-parse --short "$sha1")" \
+            "$(git rev-parse --short HEAD)" \
+            "$count"
+        git log "${rev_list_args[@]}" --format="$format" "$sha1.."
+    }
+    git_ submodule --quiet foreach --recursive "
+        set -o nounset
+        $(declare -p rev_list_args)
+        $(declare -f summary)
+        summary
+    "
+)
+
+run_scrape__strip_leader_from_subject()
+{
+    local files=("$@")
+
+    local leader_quoted=${PREPARE_LEADER//\*/\\*}
+
+    # Drop the leader from the Subject and re-do word wrapping if any
+    sed -i "${files[@]}" -e '
+        /^Subject: / {
+            s/ '"$leader_quoted"' */ /;
+
+            # Leader not found, nothing to do here
+            T;
+
+            # Join continuation lines
+            : next;
+            N;
+            s/\n\s\+/ /;
+            t next;
+
+            # Word wrap
+            s/\(.\{,78\}\)\( \|$\)/\1\n\2/g;
+
+            # Avoid extra blank line
+            s/\n\n/\n/;
+
+            P; D;
+        }'
+}
+
+run_scrape__format_patch() (
+    local tmp_output_dir=$1
+
+    local regexp='^'$SCRAPE_TRAILER':[[:space:]]*'$SCRAPE_DISCARD'$'
+    local rev_list_args=(--invert-grep --grep="$regexp")
+    local format_patch_args=("${rev_list_args[@]}" "${OPT_GIT_FORMAT_PATCH_ARGS[@]}")
+
+    doit() {
+        local sequence_file=$tmp_output_dir/.seq
+
+        local sequence_number=$([[ -r "$sequence_file" ]] && cat "$sequence_file" || echo 0)
+        printf '%s' "$((sequence_number + 1))" > "$sequence_file"
+
+        local start_number=$((sequence_number * 100))
+
+        git format-patch --quiet --output-directory "$tmp_output_dir" \
+            --start-number "$start_number" "${format_patch_args[@]}" "$sha1"
+    }
+    git_ submodule --quiet foreach --recursive "
+        set -o nounset
+        $(declare -p tmp_output_dir format_patch_args)
+        $(declare -f doit)
+        doit
+    "
+)
 
 run_cmake__process_args() {
     CMAKE_MODE=
@@ -4358,6 +4609,7 @@ fi
 DEF_TASK='git:^[[:alpha:]]{2,5}[[:digit:]]{3,}'
 DEF_SNAPSHOT=default
 DEF_SNAPSHOT_POOL_SIZE=5
+DEF_GIT_FORMAT_PATCH_ARGS=(--no-numbered --zero-commit --no-signature --full-index)
 
 # option variables
 OPT_SPEC=
@@ -4394,6 +4646,7 @@ OPT_PACKAGE_SIGN_PASSPHRASE_FILE=
 OPT_CHECK_SUITES=
 OPT_HOOKS_DIR=
 OPT_NO_VCS_APPLY=
+OPT_GIT_FORMAT_PATCH_ARGS=("${DEF_GIT_FORMAT_PATCH_ARGS[@]}")
 
 STATEDIR=$PWD/.$WE
 TMP_SPEC=$STATEDIR/spec
@@ -4441,6 +4694,8 @@ FAKE_GIT_AUTHOR=$WE
 FAKE_GIT_EMAIL=$WE
 
 PREPARE_LEADER="*$WE-prepare* "
+SCRAPE_TRAILER="${WE^}-scrape"
+SCRAPE_DISCARD=discard
 PATCHSET_ID_REF=$WE/patchset
 NULL_ID=0000000000000000000000000000000000000000
 
@@ -4697,7 +4952,7 @@ while [[ "$1" ]]; do
             OPT_NEEDSPEC=soft
             break;
             ;;
-        run | ssh | undeploy )
+        run | ssh | undeploy | scrape)
             break
             ;;
         --version )
@@ -4807,7 +5062,7 @@ fi
 case "$1" in
     build | qmake | cmake | make | make-install | install | package | rpm | deploy | undeploy \
             | build-requires | installdeps | prepare | prep | apply | build-shell | compiledb \
-            | check | build-init )
+            | check | build-init | scrape)
         if [[ $1 == install ]]; then
             notice "The 'install' command is deprecated. Use 'make-install' instead."
             set -- make-install "${@:2}"
