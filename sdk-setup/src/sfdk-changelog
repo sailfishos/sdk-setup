@@ -1211,6 +1211,10 @@ git()
     export GIT_COMMITTER_EMAIL='alice.committer@example.net'
 
     case "$1" in
+        init )
+            shift
+            command git init -b master "$@" >/dev/null
+            ;;
         commit )
             shift
             command git commit --allow-empty "$@" >/dev/null
