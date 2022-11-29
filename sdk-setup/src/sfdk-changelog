@@ -210,8 +210,7 @@ Options:
     -<number>                    : limit output to <number> revisions
 
 Examples:
-    Consider a Git history illustrating the situation where, at some point, a
-    decision was taken to
+    Consider a Git history where, at some point, a decision was taken to
 
         1) start using annotated tags for changelog generation and
         2) no more require special markup for lines to be included in changelog
@@ -2813,15 +2812,13 @@ git commit -m '[Foo] Fix #2000-04'
 git tag 0.1
 
 # use annotated tags since now
+
 git commit -m 'Foo: Fix #2000-05'
-
-# compared to '[Foo] Fix #2000-02 more' this will not leak into changelog
 git commit -m 'Foo: Fix #2000-05 more'
-
-# both commit log and changelog can use its own proper language
 git tag 0.1.1 -a -m 'Foo: Fixed #2000-05'
 
 git commit -m 'Foo: Fix #2000-06'
+git commit -m 'Foo: Fix #2000-06 more'
 git tag 0.2 -a -m 'Foo: Fixed #2000-06'
 # example_1_end
 # ------------------------------------------------------------
