@@ -259,7 +259,7 @@ Using '--append-cmd' Option:
         Prepend blank line to a non-empty input.
 
     In the following example the use of '--append-cmd' option is equivalent to
-    passing '--append-file Changelog':
+    passing '--append-from Changelog':
 
 $(sed -n '/^# example_2_begin/,/^# example_2_end/p' $0 \
     |sed -e '/# example/d' \
