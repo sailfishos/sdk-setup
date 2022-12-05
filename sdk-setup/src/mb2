@@ -5482,8 +5482,6 @@ run_tc rpm_quote "Test RPM macro escaping"
 sb2_arg_pass_ts_set_up() {
     arg_pass_stub_create sb2 || return
 
-    WRAPPERS_PATH="/tmp/@TMPDIR@/.mb2/wrappers:/tmp/@TMPDIR@/.mb2/user-wrappers"
-
     # Create an empty spec file
     mkdir rpm || return
     : >rpm/test.spec || return
@@ -5494,7 +5492,6 @@ sb2_arg_pass_ts_tear_down() {
     arg_pass_stub_remove sb2 || return
     rm -f rpm/test.spec || return
     rmdir rpm || return
-    unset WRAPPERS_PATH
 }
 
 sb2_arg_pass_tc() {
@@ -5531,6 +5528,8 @@ END
 }
 
 set_up_ts sb2_arg_pass "Passing arguments to sb2"
+
+WRAPPERS_PATH="/tmp/@TMPDIR@/.mb2/wrappers:/tmp/@TMPDIR@/.mb2/user-wrappers"
 
 KNOWN_ISSUE "Does not disable debug by default (ignores --enable-debug)"
 KNOWN_ISSUE "Passes -j without argument"
