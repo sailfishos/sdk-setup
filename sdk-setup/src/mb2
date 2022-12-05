@@ -5407,6 +5407,10 @@ sb2_stub_remove() {
 DEFAULT_TARGET=$(. ~/.scratchbox2/config; echo "$DEFAULT_TARGET")
 DEFAULT_JOBS=$(getconf _NPROCESSORS_ONLN)
 
+if inside_build_engine && [[ ${SAILFISH_SDK_FRONTEND:-} != sfdk ]]; then
+    fatal "Please use 'sfdk engine exec' to execute the self-test under the build engine"
+fi
+
 if inside_build_engine; then
     # Assume the first one mentioned is the most recent one
     DEFAULT_DEVICE=$(sed -n 's/.*name="\(Sailfish OS Emulator[^"]*\)".*/\1/; T; p; q' \
