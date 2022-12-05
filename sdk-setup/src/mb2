@@ -993,12 +993,12 @@ GLOBAL OPTIONS
         Do not update build-time dependencies unless required explicitly with
         'build-requires {pull|reset}'.
 
-    -c, --git-change-log[=<args>]
-        Include change log generated from Git history with 'git-change-log'
+    -c, --changelog[=<args>]
+        Include changelog generated from Git history with 'sfdk-changelog'
         command, forwarding any <args>.  This option is not intended for
         regular use - create a script file named after the RPM SPEC file but 
         with '.changes.run' extension to instruct $ME to generate changelog
-        with 'git-change-log <args>' instead.
+        with 'sfdk-changelog <args>' instead.
 
     --no-vcs-apply
         Do not record applied patches in the version control system, ignore
@@ -1458,10 +1458,10 @@ try_to_make_changelog() {
     local changes_file=${OPT_SPEC%.spec}.changes
     local changes_run_file=${OPT_SPEC%.spec}.changes.run
 
-    if [[ $OPT_GIT_CHANGE_LOG ]]; then
+    if [[ $OPT_CHANGELOG ]]; then
         notice "Auto generating changelog from Git history…"
         echo "%changelog"
-        git-change-log $OPT_GIT_CHANGE_LOG_ARGS |sanitize_changelog
+        sfdk-changelog $OPT_CHANGELOG_ARGS |sanitize_changelog
     elif [[ -f $changes_run_file ]]; then
         notice "Generating changelog entries with '$changes_run_file'…"
         local runner=
@@ -4631,8 +4631,8 @@ OPT_NEEDTARGET=
 OPT_FIX_VERSION=
 OPT_FIX_VERSION_HINT=
 OPT_NO_FIX_VERSION=
-OPT_GIT_CHANGE_LOG=
-OPT_GIT_CHANGE_LOG_ARGS=
+OPT_CHANGELOG=
+OPT_CHANGELOG_ARGS=
 OPT_SHARED_DIR=/etc/mersdk/share
 OPT_INC_BUILD_NUMBER=0
 OPT_PULL_BUILD_REQUIRES=1
@@ -4884,12 +4884,18 @@ while [[ "$1" ]]; do
             fi
             OPT_PULL_BUILD_REQUIRES=
             ;;
-        "-c" | "--git-change-log" ) shift
-            OPT_GIT_CHANGE_LOG=1
+        "-c" | "--changelog" | "--git-change-log" ) shift
+            if [[ $1 == --git-change-log ]]; then
+                notice "The '$1' option is deprecated. Use '--changelog|-c' instead."
+            fi
+            OPT_CHANGELOG=1
             ;;
-        "-c="* | "--git-change-log="* )
-            OPT_GIT_CHANGE_LOG=1
-            OPT_GIT_CHANGE_LOG_ARGS="${1#*=}"
+        "-c="* | "--changelog="* | "--git-change-log="* )
+            if [[ $1 == --git-change-log=* ]]; then
+                notice "The '$1' option is deprecated. Use '--changelog|-c' instead."
+            fi
+            OPT_CHANGELOG=1
+            OPT_CHANGELOG_ARGS="${1#*=}"
             shift
             ;;
         "-m" | "--submodule" )

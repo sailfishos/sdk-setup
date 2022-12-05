@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# git-change-log creates change log from Git commit messages and tag annotations
+# sfdk-changelog creates changelog from Git commit messages and tag annotations
 #
 # Copyright (C) 2016 Jolla Ltd.
 # Contact: Martin Kampas <martin.kampas@jolla.com>
@@ -49,7 +49,12 @@ US=$'\x1F'
 RS=$'\x1E'
 SELF=$(basename $0)
 SHA1_WIDTH=40
-REQUIRED_SCRIPT_SHEBANG=$'#!/usr/bin/git-change-log --script\n'
+REQUIRED_SCRIPT_SHEBANG="#!$(readlink -f "$0") --script"$'\n'
+
+# Backward compatibility
+SELF_REAL=$(basename "$(readlink -f "$0")")
+SELF_OLD=git-change-log
+REQUIRED_SCRIPT_SHEBANG_OLD=$'#!/usr/bin/git-change-log --script\n'
 
 SEPARATOR=';'
 cut() { command cut -d $SEPARATOR "$@"; }
@@ -87,7 +92,7 @@ EOF
 usage()
 {
     cat <<EOF
-$SELF creates change log from Git commit messages and tag annotations.
+$SELF creates changelog from Git commit messages and tag annotations.
 
 $(synopsis)
 
@@ -96,7 +101,7 @@ defaults to current HEAD. REVISION can be any revision as understood by
 git-rev-parse(1).
 
 Unless '--auto-add-annotations', '--only-add-annotations' or '--sed-entries' is
-used, just the lines matching the following pattern will be used as change log
+used, just the lines matching the following pattern will be used as changelog
 entries:
 
     [BLANKS] '[' SHORT-DESCRIPTION ']' BLANKS LONG-DESCRIPTION
@@ -104,7 +109,7 @@ entries:
 The '--script' option provides restricted execution environment, enabling
 untrusted sources to customize their changelog generation without the need for a
 full-fledged process isolation.  It accepts a shell-like script that consists
-just from plain command invocations of 'git-change-log', 'git-show' or 'echo'.
+just from plain command invocations of '$SELF', 'git-show' or 'echo'.
 Any other command will be rejected.  The '--append-cmd' option is not available
 inside the script.  Custom 'sed' script passed with '--sed-entries' or
 '--append-from' will be executed with 'sed --sandbox'.  The script MUST start
@@ -116,10 +121,10 @@ Options:
                                    annotations when no entry would be included
                                    for a revision otherwise
     -A | --only-add-annotations  : always use the subjects (first lines) of tag
-                                   annotations as change log entries, completely
+                                   annotations as changelog entries, completely
                                    ignore commit messages
     -T | --only-add-tagged       : only consider tagged commits when searching
-                                   for change log entries. This honours the
+                                   for changelog entries. This honours the
                                    '--tags' option and therefore can be used to
                                    exclude upstream commits where
                                    '--rev-list-args' cannot be used.
@@ -155,7 +160,7 @@ Options:
                                    for more details about this option
     -s | --since[-date] <date>   : only print revisions after the given <date>,
        | --since[-rev] <rev>       <rev> or the latest revision found in the
-       | --since <file>            given change log <file>.  <rev> is compared
+       | --since <file>            given changelog <file>.  <rev> is compared
                                    literally, i.e., it does not neccessarily
                                    match the (prefixed) tag name!
     --sort-entries               : sort entries alphabetically according to
@@ -205,14 +210,13 @@ Options:
     -<number>                    : limit output to <number> revisions
 
 Examples:
-    Consider a Git history illustrating the situation where, at some point, a
-    decision was taken to
+    Consider a Git history where, at some point, a decision was taken to
 
-        1) start using annotated tags for change log generation and
-        2) no more require special markup for lines to be included in change log
+        1) start using annotated tags for changelog generation and
+        2) no more require special markup for lines to be included in changelog
 
     In the following scenario, commit author is always John Author, committer is
-    always Alice Committer (never figures in change log) and tagging is always
+    always Alice Committer (never figures in changelog) and tagging is always
     done by Jack Tagger.  They always perform their job on the first, second and
     third day of a month respectively. The #YYYY-MM task number designates the
     year and month of the commit/tag creation.
@@ -220,7 +224,7 @@ Examples:
 $(sed -n '/^# example_1_begin/,/^# example_1_end/p' $0 \
     |sed -e '/# example/d' -e 's/^/    \$ /')
 
-    Here is how the corresponding change log with patch-level changes merged
+    Here is how the corresponding changelog with patch-level changes merged
     together would look like:
 
 $(sed -n '/^# example_1_out_begin/,/^# example_1_out_end/p' $0 \
@@ -241,21 +245,21 @@ Using '--append-cmd' Option:
     The following commands are available to this script as an extension to the
     host execution environment:
 
-    git_chl__head_added_lines [<rev-1>..]<rev> <file>
+    changelog__head_added_lines [<rev-1>..]<rev> <file>
         Output lines prepended to the <file> between revisions <rev-1> and <rev>
         or the whole file when single <rev> is passed.
 
-    git_chl__trim_newlines
+    changelog__trim_newlines
         Filter stdin removing any extra starting or trailing newlines.
 
-    git_chl__indent
-        Add indentation suitable for change log continuation lines.
+    changelog__indent
+        Add indentation suitable for changelog continuation lines.
 
-    git_chl__nostick
+    changelog__nostick
         Prepend blank line to a non-empty input.
 
     In the following example the use of '--append-cmd' option is equivalent to
-    passing '--append-file Changelog':
+    passing '--append-from Changelog':
 
 $(sed -n '/^# example_2_begin/,/^# example_2_end/p' $0 \
     |sed -e '/# example/d' \
@@ -414,9 +418,15 @@ stable_uniq()
     nl |sort -k 2 -u |sort -k 1,1 |cut -f 2-
 }
 
-git_chl__trim_newlines()
+changelog__trim_newlines()
 {
     sed -e '/./,$!d' |tac |sed -e '/./,$!d' |tac
+}
+
+git_chl__trim_newlines()
+{
+    warn "The 'git_chl__trim_newlines' command has been renamed as 'changelog__trim_newlines' - update your scripts."
+    changelog__trim_newlines "$@"
 }
 
 # Read a patch produced by git-diff and output just the first sequence of '+' lines
@@ -425,7 +435,7 @@ head_added_lines()
     sed '0,/^@@/d' |sed '/^+/,$!d' |sed '/^[^+]/,$d' |sed -n 's/^+//p'
 }
 
-git_chl__head_added_lines()
+changelog__head_added_lines()
 {
     local range=$1
     local file=$2
@@ -437,15 +447,33 @@ git_chl__head_added_lines()
     fi
 }
 
-git_chl__indent()
+git_chl__head_added_lines()
+{
+    warn "The 'git_chl__head_added_lines' command has been renamed as 'changelog__head_added_lines' - update your scripts."
+    changelog__head_added_lines "$@"
+}
+
+changelog__indent()
 {
     sed '/./s/^/  /'
 }
 
+git_chl__indent()
+{
+    warn "The 'git_chl__indent' command has been renamed as 'changelog__indent' - update your scripts."
+    changelog__indent "$@"
+}
+
 # Prepend blank line to a non-empty input
-git_chl__nostick()
+changelog__nostick()
 {
     sed '1i \\'
+}
+
+git_chl__nostick()
+{
+    warn "The 'git_chl__nostick' command has been renamed as 'changelog__nostick' - update your scripts."
+    changelog__nostick "$@"
 }
 
 # Each output line describes one tag with the following fields, sorted first by
@@ -508,7 +536,7 @@ create_tag_info()
     TZ=UTC eval "$eval" |sort_tag_info |limit_to_first_parent_and_add_ordering
 }
 
-# Reads input produced by list_objects and outputs change log entries, each line
+# Reads input produced by list_objects and outputs changelog entries, each line
 # prefixed with '- '
 extract_entries()
 {
@@ -624,7 +652,7 @@ list_objects()
     done < <(git rev-list ${OPT_REV_LIST_ARGS:-} $range)
 }
 
-# Turns tag name info revision string for use in the change log headline
+# Turns tag name info revision string for use in the changelog headline
 pretty_revision()
 {
     local tag=$1
@@ -645,7 +673,7 @@ pretty_revision()
     fi
 }
 
-# Write change log headline for the given tag, using pretty_revision
+# Write changelog headline for the given tag, using pretty_revision
 write_headline()
 {
     local tag=$1
@@ -701,7 +729,7 @@ append_from()
         return
     fi
 
-    git_chl__head_added_lines "$range" "$OPT_APPEND_FROM" \
+    changelog__head_added_lines "$range" "$OPT_APPEND_FROM" \
         |if [[ $OPT_APPEND_FROM_SED ]]; then
             sed -n ${GIT_CHANGE_LOG_RESTRICTED:+$SANDBOX_OPT} "$OPT_APPEND_FROM_SED"
         else
@@ -710,17 +738,17 @@ append_from()
         |if [[ $OPT_APPEND_FROM_OPTS == *" notrim "* ]]; then
             cat
         else
-            git_chl__trim_newlines
+            changelog__trim_newlines
         fi \
         |if [[ $OPT_APPEND_FROM_OPTS == *" noindent "* ]]; then
             cat
         else
-            git_chl__indent
+            changelog__indent
         fi \
         |if [[ $OPT_APPEND_FROM_OPTS == *" stick "* ]]; then
             cat
         else
-            git_chl__nostick
+            changelog__nostick
         fi
 }
 
@@ -769,8 +797,18 @@ run_script()
         IFS= read -r -d '' -n "${#REQUIRED_SCRIPT_SHEBANG}" magic
 
         if [[ $magic != "$REQUIRED_SCRIPT_SHEBANG" ]]; then
-            fatal "$file: The script MUST start with '${REQUIRED_SCRIPT_SHEBANG%$NL}'."
-            return 1
+            # Limited backward compatibility
+            local more=$((${#REQUIRED_SCRIPT_SHEBANG_OLD} - ${#REQUIRED_SCRIPT_SHEBANG}))
+            [[ $more -ge 0 ]] || more=0
+            local more_magic=
+            IFS= read -r -d '' -n "$more" more_magic
+
+            if [[ $magic$more_magic != "$REQUIRED_SCRIPT_SHEBANG_OLD" ]]; then
+                fatal "$file: The script MUST start with '${REQUIRED_SCRIPT_SHEBANG%$NL}'."
+                return 1
+            fi
+
+            warn "The '$SELF_OLD' command has been renamed as '$SELF_REAL' - update your scripts."
         fi
 
         local parsed=
@@ -783,6 +821,10 @@ run_script()
         args=("${invocation[@]:1}")
         case $cmd in
             "$SELF")
+                cmd=$0
+                ;;
+            "$SELF_OLD")
+                warn "The '$SELF_OLD' command has been renamed as '$SELF_REAL' - update your scripts."
                 cmd=$0
                 ;;
             git-show)
@@ -806,6 +848,10 @@ run_script()
 ##############################################################################
 if [[ ${1:-} != --self-test ]]; then ###  M A I N  EXECUTION BEGINS HERE #####
 ##############################################################################
+
+if [[ $SELF == "$SELF_OLD" ]]; then
+    warn "The '$SELF_OLD' command has been renamed as '$SELF_REAL' - update your scripts."
+fi
 
 OPT_SELF_TEST=
 configure
@@ -1013,7 +1059,7 @@ if [[ $OPT_SINCE ]]; then
     if [[ $OPT_SINCE_TYPE == 'file' ]]; then
         last_rev=$(head "$OPT_SINCE" |sed -n '/^\* / { s/^.*- \([^[:space:]]\+\)$/\1/p; q }')
         if [[ ! $last_rev ]]; then
-            bad_usage "This does not look like a change log file: '$OPT_SINCE'"
+            bad_usage "This does not look like a changelog file: '$OPT_SINCE'"
         fi
         OPT_SINCE_TYPE='rev'
         OPT_SINCE=$last_rev
@@ -1068,7 +1114,7 @@ if [[ $OPT_UNTAGGED_ONLY ]]; then
     echo "$untagged_entries"
 else
     if [[ $untagged_entries ]]; then
-        warn "skipping change log entries in untagged commits"
+        warn "skipping changelog entries in untagged commits"
     fi
 
     date_limit=$([[ $OPT_SINCE_TYPE != 'date' ]] || date --date="$OPT_SINCE" '+%F')
@@ -1085,7 +1131,7 @@ else
 
         if ! list_objects "$range" |extract_entries; then
             tag_abbrev=$(git rev-parse --symbolic --abbrev-ref $tag)
-            warn "No change log entries for tag '$tag_abbrev'"
+            warn "No changelog entries for tag '$tag_abbrev'"
         fi
 
         if [[ $OPT_APPEND_FROM ]]; then
@@ -1165,6 +1211,10 @@ git()
     export GIT_COMMITTER_EMAIL='alice.committer@example.net'
 
     case "$1" in
+        init )
+            shift
+            command git init -b master "$@" >/dev/null
+            ;;
         commit )
             shift
             command git commit --allow-empty "$@" >/dev/null
@@ -1188,13 +1238,12 @@ git()
 REPO=$(readlink -f $(mktemp -d $SELF.test.XXX))
 trap "rm -rf '$REPO/.git' && rm -r '$REPO'" EXIT
 
-SELF=$(which "$0")
 cd $REPO
 
 # Do not test on empty repository - it will fail with error message possibly
 # specific to particular Git version
 
-# Case: No change log entries, no tags
+# Case: No changelog entries, no tags
 git init .
 git commit -m 'Commit 2000-01'
 # ------------------------------------------------------------
@@ -1202,7 +1251,7 @@ verify <<EOF
 EOF
 # ============================================================
 
-# Case: No change log entries, no tags
+# Case: No changelog entries, no tags
 git init .
 git commit -m 'Commit 2000-01'
 git commit -m 'Commit 2000-02'
@@ -1211,18 +1260,18 @@ verify <<EOF
 EOF
 # ============================================================
 
-# Case: Has change log entry, no tags
+# Case: Has changelog entry, no tags
 git init .
 git commit -m 'Commit 2000-01'
 git commit -m 'Commit 2000-02'
 git commit -m '[FooBar] Commit 2000-03'
 # ------------------------------------------------------------
 verify <<EOF
-git-change-log: WARNING: skipping change log entries in untagged commits
+$SELF: WARNING: skipping changelog entries in untagged commits
 EOF
 # ============================================================
 
-# Case: Has tagged change log entry
+# Case: Has tagged changelog entry
 git init .
 git commit -m 'Commit 2000-01'
 git commit -m 'Commit 2000-02'
@@ -1235,7 +1284,7 @@ verify <<EOF
 EOF
 # ============================================================
 
-# Case: Has tagged and untagged change log entries
+# Case: Has tagged and untagged changelog entries
 git init .
 git commit -m 'Commit 2000-01'
 git commit -m 'Commit 2000-02'
@@ -1248,13 +1297,13 @@ Lorem ipsum...
 [FooBar] Commit 2000-04'
 # ------------------------------------------------------------
 verify <<EOF
-git-change-log: WARNING: skipping change log entries in untagged commits
+$SELF: WARNING: skipping changelog entries in untagged commits
 * Thu Mar 02 2000 John Author <john.author@example.net> - 0.1
 - [FooBar] Commit 2000-03
 EOF
 # ============================================================
 
-# Case: Has tagged change log entry, --untagged-only used
+# Case: Has tagged changelog entry, --untagged-only used
 git init .
 git commit -m 'Commit 2000-01'
 git commit -m 'Commit 2000-02'
@@ -1265,7 +1314,7 @@ verify --untagged-only <<EOF
 EOF
 # ============================================================
 
-# Case: Has tagged and untagged change log entries, --untagged-only used
+# Case: Has tagged and untagged changelog entries, --untagged-only used
 git init .
 git commit -m 'Commit 2000-01'
 git commit -m 'Commit 2000-02'
@@ -1300,7 +1349,7 @@ verify <<EOF
 EOF
 # ============================================================
 
-# Case: Has all change log entries tagged, some plain commit on top
+# Case: Has all changelog entries tagged, some plain commit on top
 git init .
 git commit -m 'Commit 2000-01'
 git commit -m 'Commit 2000-02'
@@ -1319,7 +1368,7 @@ verify <<EOF
 EOF
 # ============================================================
 
-# Case: Has all change log entries tagged, one tag with no entry
+# Case: Has all changelog entries tagged, one tag with no entry
 git init .
 git commit -m 'Commit 2000-01'
 git commit -m 'Commit 2000-02'
@@ -1332,7 +1381,7 @@ git tag 0.1.2
 # ------------------------------------------------------------
 verify <<EOF
 * Tue May 02 2000 John Author <john.author@example.net> - 0.1.2
-git-change-log: WARNING: No change log entries for tag '0.1.2'
+$SELF: WARNING: No changelog entries for tag '0.1.2'
 
 * Sun Apr 02 2000 John Author <john.author@example.net> - 0.1.1
 - [FooBar] Commit 2000-04
@@ -1453,7 +1502,7 @@ git tag -a 0.2 -m 'Tag 2000-06'
 # ------------------------------------------------------------
 verify <<EOF
 * Fri Jun 02 2000 John Author <john.author@example.net> - 0.2
-git-change-log: WARNING: No change log entries for tag '0.2'
+$SELF: WARNING: No changelog entries for tag '0.2'
 
 * Tue May 02 2000 John Author <john.author@example.net> - 0.1.2
 - [FooBar] Tag 2000-05
@@ -1533,10 +1582,10 @@ verify --only-add-annotations <<EOF
 - Tag 2000-06
 
 * Sun Apr 02 2000 John Author <john.author@example.net> - 0.1.1
-git-change-log: WARNING: No change log entries for tag '0.1.1'
+$SELF: WARNING: No changelog entries for tag '0.1.1'
 
 * Thu Mar 02 2000 John Author <john.author@example.net> - 0.1
-git-change-log: WARNING: No change log entries for tag '0.1'
+$SELF: WARNING: No changelog entries for tag '0.1'
 EOF
 # ============================================================
 
@@ -1673,7 +1722,7 @@ EOF
 # ============================================================
 
 # Case: --dense and --auto-add-annotations used, one annotated tag without entry
-# Rationale: it is not desired to mix two styles in one change log section,
+# Rationale: it is not desired to mix two styles in one changelog section,
 # therefore 'Tag 2000-06' will not be mentioned.
 git init .
 git commit -m 'Commit 2000-01'
@@ -1850,7 +1899,7 @@ git commit -m '[FooBar] Commit 2000-05'
 git commit -m '[FooBar] Commit 2000-06'
 git tag 0.3
 # ------------------------------------------------------------
-verify --since <($SELF 0.2 2>&1) <<EOF
+verify --since <("$0" 0.2 2>&1) <<EOF
 * Fri Jun 02 2000 John Author <john.author@example.net> - 0.3
 - [FooBar] Commit 2000-06
 - [FooBar] Commit 2000-05
@@ -2188,7 +2237,8 @@ git merge 0.1-fix -m 'Merge 2000-10'
 git tag 0.1.3
 git tag 0.2
 # ------------------------------------------------------------
-verify --dense '/[0-9]\+\.[0-9]\+$' --rev-list-args={,'--date-order --reverse'} <<EOF
+verify --dense '/[0-9]\+\.[0-9]\+$' --rev-list-args '' \
+    --rev-list-args '--date-order --reverse' <<EOF
 * Mon Oct 02 2000 John Author <john.author@example.net> - 0.2
 - [FooBar] Commit 2000-03
 - [FooBar] Commit 2000-04
@@ -2231,7 +2281,7 @@ git checkout upstream/master
 git commit -m '[FooBar] Upstream commit 2000-10'
 git tag 0.1.3
 # ------------------------------------------------------------
-verify --tags 'refs/tags/our/*' --rev-list-args='^upstream/master' master <<EOF
+verify --tags 'refs/tags/our/*' --rev-list-args '^upstream/master' master <<EOF
 * Sat Sep 02 2000 John Author <john.author@example.net> - 0.1.2+git2
 - [FooBar] Commit 2000-09
 
@@ -2281,7 +2331,8 @@ sed -i "1i Committed 2000-10" Changelog
 git commit -m '[FooBar] Upstream commit 2000-10' -a
 git tag 0.1.3
 # ------------------------------------------------------------
-verify --tags 'refs/tags/our/*' --rev-list-args='^upstream/master' --append-from Changelog master <<EOF
+verify --tags 'refs/tags/our/*' --rev-list-args '^upstream/master' \
+    --append-from Changelog master <<EOF
 * Sat Sep 02 2000 John Author <john.author@example.net> - 0.1.2+git2
 - [FooBar] Commit 2000-09
 
@@ -2339,7 +2390,8 @@ git tag 0.1.3
 # ------------------------------------------------------------
 filter='1i Upstream changes,sed:
 s/^/- /p'
-verify --tags 'refs/tags/our/*' --rev-list-args='^upstream/master' --append-from Change\\,log,stick,sed:"$filter" master <<EOF
+verify --tags 'refs/tags/our/*' --rev-list-args '^upstream/master' \
+    --append-from Change\\,log,stick,sed:"$filter" master <<EOF
 * Sat Sep 02 2000 John Author <john.author@example.net> - 0.1.2+git2
 - [FooBar] Commit 2000-09
 
@@ -2361,7 +2413,7 @@ EOF
 # ============================================================
 
 # Case: Ignoring upstream commits with --rev-list-args but adding upstream
-# change log with a command
+# changelog with a command
 git init .
 touch Changelog
 git add Changelog
@@ -2399,11 +2451,11 @@ git tag 0.1.3
 # example_2_begin
 my_append()
 {
-    git_chl__head_added_lines "$1" Changelog \
-        |git_chl__trim_newlines |git_chl__indent |git_chl__nostick
+    changelog__head_added_lines "$1" Changelog \
+        |changelog__trim_newlines |changelog__indent |changelog__nostick
 }
 verify --append-cmd "$(declare -f my_append); my_append" \
-    --tags 'refs/tags/our/*' --rev-list-args='^upstream/master' master <<EOF
+    --tags 'refs/tags/our/*' --rev-list-args '^upstream/master' master <<EOF
 * Sat Sep 02 2000 John Author <john.author@example.net> - 0.1.2+git2
 - [FooBar] Commit 2000-09
 
@@ -2688,20 +2740,20 @@ git tag our/0.4+git1
 
 # ------------------------------------------------------------
 verify --script <(cat <<EOF
-#!/usr/bin/git-change-log --script
-# Originally we used git-subtree to separate our change log from upstream.
+#!$(readlink -f "$0") --script
+# Originally we used git-subtree to separate our changelog from upstream.
 # Since 0.3+git1 we keep our changes in a normal git branch, using
-# --only-add-tagged and --tags to select our own change log items. We now also
+# --only-add-tagged and --tags to select our own changelog items. We now also
 # include summary of upstream changes (stored in 'UpstreamChanges') and trim
 # very old entries.
 
-git-change-log --tags 'refs/tags/our/*' \
-               --only-add-tagged \
-               --append-from UpstreamChanges \
-               master
+$SELF --tags 'refs/tags/our/*' \
+      --only-add-tagged \
+      --append-from UpstreamChanges \
+      master
 echo ""
-git-change-log --since 0.1+git1 \
-               0.2+git2
+$SELF --since 0.1+git1 \
+      0.2+git2
 echo ""
 echo "  [Some changelog entries trimmed for brevity]"
 EOF
@@ -2733,6 +2785,27 @@ EOF
 
 # ============================================================
 
+# Case: Executing script -- backward compatibility
+git init .
+git commit -m 'Commit 2000-01'
+git commit -m 'Commit 2000-02'
+git commit -m '[FooBar] Commit 2000-03'
+git tag 0.1
+
+# ------------------------------------------------------------
+verify --script <(cat <<EOF
+#!/usr/bin/git-change-log --script
+git-change-log
+EOF
+) <<EOF
+$SELF: WARNING: The 'git-change-log' command has been renamed as '$SELF' - update your scripts.
+$SELF: WARNING: The 'git-change-log' command has been renamed as '$SELF' - update your scripts.
+* Thu Mar 02 2000 John Author <john.author@example.net> - 0.1
+- [FooBar] Commit 2000-03
+EOF
+
+# ============================================================
+
 # Case: Example printed with --help
 git init .
 # example_1_begin
@@ -2746,15 +2819,13 @@ git commit -m '[Foo] Fix #2000-04'
 git tag 0.1
 
 # use annotated tags since now
+
 git commit -m 'Foo: Fix #2000-05'
-
-# compared to '[Foo] Fix #2000-02 more' this will not leak into change log
 git commit -m 'Foo: Fix #2000-05 more'
-
-# both commit log and change log can use its own proper language
 git tag 0.1.1 -a -m 'Foo: Fixed #2000-05'
 
 git commit -m 'Foo: Fix #2000-06'
+git commit -m 'Foo: Fix #2000-06 more'
 git tag 0.2 -a -m 'Foo: Fixed #2000-06'
 # example_1_end
 # ------------------------------------------------------------
