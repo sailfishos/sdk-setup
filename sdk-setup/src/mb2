@@ -2466,7 +2466,7 @@ init_cmake_wrapper() (
             exit 1
         fi
 
-        if [[ $1 != --build ]]; then
+        if [[ ${1:-} != --build ]]; then
             if [[ ! $ALLOWED_MODE || $ALLOWED_MODE == configure ]]; then
                 do_configure "$@"
             else
