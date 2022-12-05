@@ -5220,6 +5220,7 @@ tear_down_ts() {
     local ts=$1
 
     if [[ $MB2_SELF_TEST_TS && $TS_NAME != "$MB2_SELF_TEST_TS" ]]; then
+        echo "*** Skipping test suite: $TS_NAME"
         return
     fi
 
