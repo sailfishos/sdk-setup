@@ -2196,12 +2196,16 @@ ssh_as() {
 
 get_spec_setup_subdir() {
     local spec=$1
-    # avoid spawning another process for | cut -s -f2 -d '/'
-    local setup_dir=$(grep -Po '%(auto)?setup.*-n[[:space:]]+[^[:space:]]+' "$spec")
-    # if setup_dir has '/' return the part after it
-    setup_dir=${setup_dir/#*\//}
-    # if it did not have a '/' then we got the original match => erase it
-    setup_dir=${setup_dir/#%?(auto)setup*/}
+    local setup_dir=$(sed -n "$spec" -e '
+        /^%\(auto\)\?setup\s/ {
+            # only care about the argument to "-n"
+            s/^.*[[:space:]]\+-n[[:space:]]\+\([^[:space:]]\+\).*$/\1/
+            # only care about subdirectories
+            s/^[^/]\+\///p
+            # the rest of the file can be skipped
+            q
+        }
+    ')
 
     # in case we got a spec %{tag} out of this, try to expand it
     get_spec_tag "$spec" "$setup_dir"
