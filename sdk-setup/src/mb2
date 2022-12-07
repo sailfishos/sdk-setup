@@ -2196,12 +2196,16 @@ ssh_as() {
 
 get_spec_setup_subdir() {
     local spec=$1
-    # avoid spawning another process for | cut -s -f2 -d '/'
-    local setup_dir=$(grep -Po '%(auto)?setup.*-n[[:space:]]+[^[:space:]]+' "$spec")
-    # if setup_dir has '/' return the part after it
-    setup_dir=${setup_dir/#*\//}
-    # if it did not have a '/' then we got the original match => erase it
-    setup_dir=${setup_dir/#%?(auto)setup*/}
+    local setup_dir=$(sed -n "$spec" -e '
+        /^%\(auto\)\?setup\s/ {
+            # only care about the argument to "-n"
+            s/^.*[[:space:]]\+-n[[:space:]]\+\([^[:space:]]\+\).*$/\1/
+            # only care about subdirectories
+            s/^[^/]\+\///p
+            # the rest of the file can be skipped
+            q
+        }
+    ')
 
     # in case we got a spec %{tag} out of this, try to expand it
     get_spec_tag "$spec" "$setup_dir"
@@ -2462,7 +2466,7 @@ init_cmake_wrapper() (
             exit 1
         fi
 
-        if [[ $1 != --build ]]; then
+        if [[ ${1:-} != --build ]]; then
             if [[ ! $ALLOWED_MODE || $ALLOWED_MODE == configure ]]; then
                 do_configure "$@"
             else
@@ -5216,6 +5220,7 @@ tear_down_ts() {
     local ts=$1
 
     if [[ $MB2_SELF_TEST_TS && $TS_NAME != "$MB2_SELF_TEST_TS" ]]; then
+        echo "*** Skipping test suite: $TS_NAME"
         return
     fi
 
@@ -5403,6 +5408,10 @@ sb2_stub_remove() {
 DEFAULT_TARGET=$(. ~/.scratchbox2/config; echo "$DEFAULT_TARGET")
 DEFAULT_JOBS=$(getconf _NPROCESSORS_ONLN)
 
+if inside_build_engine && [[ ${SAILFISH_SDK_FRONTEND:-} != sfdk ]]; then
+    fatal "Please use 'sfdk engine exec' to execute the self-test under the build engine"
+fi
+
 if inside_build_engine; then
     # Assume the first one mentioned is the most recent one
     DEFAULT_DEVICE=$(sed -n 's/.*name="\(Sailfish OS Emulator[^"]*\)".*/\1/; T; p; q' \
@@ -5473,8 +5482,6 @@ run_tc rpm_quote "Test RPM macro escaping"
 sb2_arg_pass_ts_set_up() {
     arg_pass_stub_create sb2 || return
 
-    WRAPPERS_PATH="/tmp/@TMPDIR@/.mb2/wrappers:/tmp/@TMPDIR@/.mb2/user-wrappers"
-
     # Create an empty spec file
     mkdir rpm || return
     : >rpm/test.spec || return
@@ -5485,7 +5492,6 @@ sb2_arg_pass_ts_tear_down() {
     arg_pass_stub_remove sb2 || return
     rm -f rpm/test.spec || return
     rmdir rpm || return
-    unset WRAPPERS_PATH
 }
 
 sb2_arg_pass_tc() {
@@ -5522,6 +5528,8 @@ END
 }
 
 set_up_ts sb2_arg_pass "Passing arguments to sb2"
+
+WRAPPERS_PATH="/tmp/@TMPDIR@/.mb2/wrappers:/tmp/@TMPDIR@/.mb2/user-wrappers"
 
 KNOWN_ISSUE "Does not disable debug by default (ignores --enable-debug)"
 KNOWN_ISSUE "Passes -j without argument"
