@@ -5031,18 +5031,20 @@ if [[ $1 == @(run|ssh) ]]; then
     exit
 fi
 
-if [[ ! "$OPT_TARGET" ]]; then
-    if [[ -f ~/.scratchbox2/config ]]; then
-        . ~/.scratchbox2/config
-        OPT_TARGET=$DEFAULT_TARGET
+if [[ $OPT_NEEDTARGET ]]; then
+    if [[ ! $OPT_TARGET ]]; then
+        if [[ -f ~/.scratchbox2/config ]]; then
+            . ~/.scratchbox2/config
+            OPT_TARGET=$DEFAULT_TARGET
+        fi
+        [[ $OPT_TARGET ]] || fatal "No build target specified and there is no default one"
     fi
-    [[ "$OPT_TARGET" ]] || fatal "No build target specified and there is no default one"
 fi
 
+[[ ! $OPT_TARGET || -d ~/.scratchbox2/$OPT_TARGET ]] \
+    || fatal "'$OPT_TARGET' is not a known build target"
+
 OPT_ORIGINAL_TARGET=$OPT_TARGET
-
-[[ -d ~/.scratchbox2/$OPT_TARGET ]] || fatal "'$OPT_TARGET' is not a known build target"
-
 if [[ ! $OPT_NO_SNAPSHOT && ! $MB2_SELF_TEST_RUN ]]; then
     reset=soft
     # Only commands that do pull build-requires should reset.
