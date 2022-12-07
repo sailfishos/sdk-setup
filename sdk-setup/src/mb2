@@ -4959,6 +4959,7 @@ while [[ "$1" ]]; do
             break;
             ;;
         build-requires )
+            OPT_NEEDTARGET=1
             OPT_NEEDSPEC=soft
             break;
             ;;
@@ -5031,37 +5032,35 @@ if [[ $1 == @(run|ssh) ]]; then
     exit
 fi
 
-if [[ ! "$OPT_TARGET" ]]; then
-    if [[ -f ~/.scratchbox2/config ]]; then
-        . ~/.scratchbox2/config
-        OPT_TARGET=$DEFAULT_TARGET
+if [[ $OPT_NEEDTARGET ]]; then
+    if [[ ! $OPT_TARGET ]]; then
+        if [[ -f ~/.scratchbox2/config ]]; then
+            . ~/.scratchbox2/config
+            OPT_TARGET=$DEFAULT_TARGET
+        fi
+        [[ $OPT_TARGET ]] || fatal "No build target specified and there is no default one"
     fi
-    [[ "$OPT_TARGET" ]] || fatal "No build target specified and there is no default one"
 fi
 
+[[ ! $OPT_TARGET || -d ~/.scratchbox2/$OPT_TARGET ]] \
+    || fatal "'$OPT_TARGET' is not a known build target"
+
 OPT_ORIGINAL_TARGET=$OPT_TARGET
-
-[[ -d ~/.scratchbox2/$OPT_TARGET ]] || fatal "'$OPT_TARGET' is not a known build target"
-
-if [[ ! $OPT_NO_SNAPSHOT && ! $MB2_SELF_TEST_RUN ]]; then
+if [[ ! $OPT_NEEDTARGET ]]; then
+    # Just in case we failed to set OPT_NEEDTARGET correctly
+    OPT_TARGET+=--some-garbage-to-prevent-accidental-use
+elif [[ ! $OPT_NO_SNAPSHOT && ! $MB2_SELF_TEST_RUN ]]; then
     reset=soft
     # Only commands that do pull build-requires should reset.
     # The 'build-requires' command resets on its own based on its arguments.
     if [[ $OPT_PULL_BUILD_REQUIRES && $1 = @(prepare|build|qmake|cmake|compiledb)  ]]; then
         reset=outdated
     fi
-
     switch_to_snapshot --reset="$reset" || fatal "Failed to init build target snapshot"
-
 elif [[ $OPT_NO_SNAPSHOT != force && ! $MB2_SELF_TEST_RUN ]]; then
     if [[ $(sdk-manage target list --snapshots-of "$OPT_TARGET") ]]; then
-        if [[ $OPT_NEEDTARGET ]]; then
-            echo >&2 "The '$OPT_TARGET' target has snapshots - refusing to use it directly."
-            exit 1
-        else
-            # Just in case we failed to set OPT_NEEDTARGET correctly
-            OPT_TARGET+=--some-garbage-to-prevent-accidental-use
-        fi
+        echo >&2 "The '$OPT_TARGET' target has snapshots - refusing to use it directly."
+        exit 1
     fi
 fi
 
