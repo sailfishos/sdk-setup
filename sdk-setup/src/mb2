@@ -4959,6 +4959,7 @@ while [[ "$1" ]]; do
             break;
             ;;
         build-requires )
+            OPT_NEEDTARGET=1
             OPT_NEEDSPEC=soft
             break;
             ;;
