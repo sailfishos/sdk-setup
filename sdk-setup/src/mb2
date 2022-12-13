@@ -841,7 +841,7 @@ COMMANDS
         Run the given command on the device specified with '--device'.  Can be
         used for running gdb and a gdb server.
 
-    scrape [-n|--dry-run] [--keep] [-o|--output-dir <dir>]
+    scrape [-n|--dry-run] [--keep] [-o|--output-dir <dir>] [--stable]
         Scrape modifications from sources and save them as patches.
 
         This command is specifically designed to support maintenance of
@@ -868,6 +868,9 @@ COMMANDS
         original patch files. Among others the file numbering is enforced,
         using discrete number ranges for patches originating from different
         submodules.
+
+        Use the '--stable' option when it is desired to preserve the original
+        file names of patches previously applied with the 'prepare' command.
 
         Unless overriden with the '--output-dir' option, patches will be
         stored under the well known 'rpm' directory (where the RPM SPEC file
@@ -2749,7 +2752,8 @@ init_patch_wrapper() (
             return 1
         fi
 
-        local patch=$(cat)
+        local patch=
+        IFS='' read -r -d '' patch
 
         local author=
         local author_email=
@@ -2786,19 +2790,34 @@ init_patch_wrapper() (
             return 1
         fi
 
+        local extra_args=()
+
+        local patch_id=$(printf '%s' "$patch" |git hash-object --stdin)
+        local patch_file=${PATCHES[$patch_id]:-}
+        if [[ $patch_file ]]; then
+            extra_args+=(--trailer "$SCRAPE_TRAILER=$SCRAPE_FILENAME=$patch_file")
+        fi
+
         export GIT_AUTHOR_NAME=${author:-$FAKE_GIT_AUTHOR}
         export GIT_AUTHOR_EMAIL=${author_email:-$FAKE_GIT_EMAIL}
         export GIT_AUTHOR_DATE=$date
         export GIT_COMMITTER_NAME=$FAKE_GIT_AUTHOR
         export GIT_COMMITTER_EMAIL=$FAKE_GIT_EMAIL
 
-        if ! git_commit_brief --all --allow-empty --message "$full_message"; then
+        if ! git_commit_brief --all --allow-empty --message "$full_message" \
+                "${extra_args[@]}"; then
             echo "$self: Failed to git-commit applied changes" >&2
             return 1
         fi
 
         git notes --ref "$PATCHSET_ID_REF" add --message "$PATCHSET_ID"
     }
+
+    local -A PATCHES=()
+    local mode= type= id= name=
+    while read -r -d '' mode type id name; do
+        [[ $name = *.patch ]] && PATCHES[$id]=$name
+    done < <(git ls-tree -z --full-tree 'HEAD:rpm')
 
     init_wrappers_dir
     cat <<END >"$wrapper"
@@ -2812,7 +2831,11 @@ FAKE_GIT_EMAIL=$(quote "$FAKE_GIT_EMAIL")
 PREPARE_LEADER=$(quote "$PREPARE_LEADER")
 PATCHSET_ID_REF=$(quote "$PATCHSET_ID_REF")
 PATCHSET_ID=$(quote "$patchset_id")
+SCRAPE_TRAILER=$(quote "$SCRAPE_TRAILER")
+SCRAPE_FILENAME=$(quote "$SCRAPE_FILENAME")
 WE=$(quote "$WE")
+
+$(declare -p PATCHES)
 
 $(declare -f git)
 $(declare -f git_commit_brief)
@@ -3458,6 +3481,7 @@ run_scrape__process_args() {
     SCRAPE_DRY_RUN=
     SCRAPE_KEEP=
     SCRAPE_OUTPUT_DIR=$OPT_PKGDIR
+    SCRAPE_STABLE=
 
     while [[ $# -gt 0 ]]; do
         case $1 in
@@ -3471,6 +3495,9 @@ run_scrape__process_args() {
                 [[ $2 ]] || fatal "Option expects argument: '$1'"
                 SCRAPE_OUTPUT_DIR=$2
                 shift
+                ;;
+            --stable)
+                SCRAPE_STABLE=1
                 ;;
             *)
                 fatal "Unexpected argument: '$1'"
@@ -3541,6 +3568,12 @@ run_scrape() {
 
         # Strip PREPARE_LEADER from subject lines
         run_scrape__strip_leader_from_subject "$tmpdir"/*.patch
+
+        if [[ $SCRAPE_STABLE ]]; then
+            run_scrape__rename_patches "$tmpdir"/*.patch
+        fi
+
+        run_scrape__strip_trailer "$tmpdir"/*.patch
     fi
 
     mkdir -p "$SCRAPE_OUTPUT_DIR" || return
@@ -3620,6 +3653,47 @@ run_scrape__strip_leader_from_subject()
 
             P; D;
         }'
+}
+
+run_scrape__rename_patches() {
+    local patches=("$@")
+
+    local trailer= filename=
+    for patch in "${patches[@]}"; do
+        trailer=$(git interpret-trailers --parse <"$patch" \
+            |sed -n "s/^$SCRAPE_TRAILER:\s*//p")
+        # Should someone include it in a patch by mistake...
+        trailed=$(tail -n1 <<<$trailer)
+        if [[ $trailer = "$SCRAPE_FILENAME="* ]]; then
+            filename=${trailer#"$SCRAPE_FILENAME="}
+            mv "$patch" "$tmpdir/$filename"
+        fi
+    done
+}
+
+# Strip our trailer - ensure to drop a possible preceding blank line
+# but do not drop the blank line immediately following the "Subject:"
+# header.
+# TODO Use git-interpret-trailers once it knows to remove trailers
+run_scrape__strip_trailer() {
+    local patches=("$@")
+
+    sed -i -e '
+        # Read the whole subject, which may be line-wrapped, and the
+        # following blank line at once and print it unchanged
+        /^Subject: / {
+            : repeat
+            N
+            s/\n [^\n]\+$/&/
+            t repeat
+            b
+        }
+
+        # Read our trailer and a possible preceding blank line at once and
+        # drop it
+        /^$/ N
+        /\(^\|\n\)'"$SCRAPE_TRAILER"':/d
+    ' -- "${patches[@]}"
 }
 
 run_scrape__format_patch() (
@@ -4700,6 +4774,7 @@ FAKE_GIT_EMAIL=$WE
 PREPARE_LEADER="*$WE-prepare* "
 SCRAPE_TRAILER="${WE^}-scrape"
 SCRAPE_DISCARD=discard
+SCRAPE_FILENAME=filename
 PATCHSET_ID_REF=$WE/patchset
 NULL_ID=0000000000000000000000000000000000000000
 
