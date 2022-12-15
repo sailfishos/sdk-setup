@@ -380,6 +380,25 @@ get_object_ssu_release_from_tarball_meta_data() {
     printf '%s/%s\n' "$brand" "$release"
 }
 
+configure_http_proxy() {
+    local object=$1
+
+    local file=/etc/pacrunner/dbus-bus-address
+
+    local address=
+    if [[ $INSIDE_CHROOT ]]; then
+        address="null"
+    else
+        address="tcp:host=127.0.0.1,port=777"
+    fi
+
+    enter "$object" mkdir -p "$(dirname "$file")" || return
+    enter "$object" tee "$file" >/dev/null <<EOF
+# Written by sdk-manage
+$address
+EOF
+}
+
 disk_full() [[ $(stat --file-system --format '%a*%s/1024' "$1") -lt 10000 ]]
 
 update_df_cache() {
@@ -1133,6 +1152,8 @@ install_tooling() {
     fi
 
     init_machine_id tooling "$name" || return
+
+    configure_http_proxy "tooling:$name"
 
     if [[ $INSIDE_VBOX ]]; then
         update_df_cache
@@ -2190,6 +2211,8 @@ install_target() {
     ) || return
 
     init_machine_id target "$target" || return
+
+    configure_http_proxy "target:$name"
 
     # fix target's /etc/hosts
     amend_target_hosts "$target" || return
