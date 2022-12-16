@@ -3555,12 +3555,15 @@ run_scrape() {
     local have_patches=
     if [[ $(cd "$tmpdir" && ls *.patch) ]] 2>/dev/null; then
         have_patches=1
-        # Strip PREPARE_LEADER from file names
+        # Strip possible PREPARE_LEADER from filenames, enforce max filename length
         local leader_dashed=${PREPARE_LEADER//+([^[:alnum:]])/-}
         local patch=
         for patch in "$tmpdir"/*.patch; do
             patch=$(basename "$patch")
             local stripped=$(sed "s/^\([0-9]\+\)-\?${leader_dashed}-\?/\1-/" <<<$patch)
+            if [[ ${#stripped} -gt $PATCH_FILENAME_MAX_LENGTH ]]; then
+                stripped=${stripped:0:(PATCH_FILENAME_MAX_LENGTH-6)}.patch
+            fi
             if [[ $stripped != "$patch" ]]; then
                 mv --no-clobber "$tmpdir/$patch" "$tmpdir/$stripped" || return
             fi
@@ -3712,10 +3715,12 @@ run_scrape__format_patch() (
         local start_number=$((sequence_number * 100))
 
         git format-patch --quiet --output-directory "$tmp_output_dir" \
+            --filename-max-length "$((PATCH_FILENAME_MAX_LENGTH + ${#PREPARE_LEADER}))" \
             --start-number "$start_number" "${format_patch_args[@]}" "$sha1"
     }
     git_ submodule --quiet foreach --recursive "
         set -o nounset
+        $(declare -p PATCH_FILENAME_MAX_LENGTH PREPARE_LEADER)
         $(declare -p tmp_output_dir format_patch_args)
         $(declare -f doit)
         doit
@@ -4776,6 +4781,9 @@ SCRAPE_TRAILER="${WE^}-scrape"
 SCRAPE_DISCARD=discard
 SCRAPE_FILENAME=filename
 PATCHSET_ID_REF=$WE/patchset
+# Git's default. Note that it claims to be 64 in the man page but there is likely a bug causing it
+# to count also the terminating '\0' or so, because git-format-patch produces 63 chars long names.
+PATCH_FILENAME_MAX_LENGTH=63
 NULL_ID=0000000000000000000000000000000000000000
 
 ################################################################################
