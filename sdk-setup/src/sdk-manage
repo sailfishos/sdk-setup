@@ -2212,7 +2212,7 @@ install_target() {
 
     init_machine_id target "$target" || return
 
-    configure_http_proxy "target:$name"
+    configure_http_proxy "target:$target"
 
     # fix target's /etc/hosts
     amend_target_hosts "$target" || return
