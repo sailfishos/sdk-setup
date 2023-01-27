@@ -701,7 +701,8 @@ find_spec_for_name()
 
 find_subdirs_with_qmltypes()
 {
-    git ls-files '*.qmltypes' |xargs -n1 -d'\n' --no-run-if-empty dirname |sort -u
+    git ls-files --recurse-submodules '*.qmltypes' \
+        |xargs -n1 -d'\n' --no-run-if-empty dirname |sort -u
 }
 
 find_build_dirs_for_qmltypes_subdirs()
@@ -862,13 +863,29 @@ patch_removes_just_manual_additions()
 
 revert_removal_of_manual_additions()
 {
-    local modified= all_modified=
-    all_modified=$(git ls-files --modified '*.qmltypes') || return
+    local all_modified=
+    all_modified=$(
+        ls_modified() {
+            local prefix=${1:-.}
+            git ls-files --modified '*.qmltypes' \
+                |awk -v prefix="$prefix" '{print prefix ":" $0}'
+        }
+        ls_modified_submodule()
+        {
+            ls_modified "$displaypath"
+        }
+        ls_modified && git submodule foreach --recursive --quiet "
+            set -o nounset
+            $(declare -f ls_modified ls_modified_submodule)
+            ls_modified_submodule
+        "
+    ) || return
     [[ $all_modified ]] || return 0
 
-    while read modified; do
-        if git diff "$modified" |patch_removes_just_manual_additions; then
-            git checkout "$modified" || return
+    local prefix= path=
+    while IFS=: read prefix path; do
+        if git -C "$prefix" diff "$path" |patch_removes_just_manual_additions; then
+            git -C "$prefix" checkout "$path" || return
         fi
     done <<<"$all_modified"
 }
@@ -964,7 +981,7 @@ job_do_clone()
     self[resolved_revision]=$ref
 
     git -C "$OPT_WORK_DIR" submodule --quiet add -- "$original" "${self[local_path]}" || return
-    git -C "$OPT_WORK_DIR" submodule --quiet init -- "${self[local_path]}" || return
+    git -C "$OPT_WORK_DIR" submodule --quiet update --init --recursive -- "${self[local_path]}" || return
 
     git -C "$clone" fetch --quiet origin "$ref:$ref" || return
     git -C "$clone" checkout --quiet --detach "$ref" -- || return
@@ -977,6 +994,24 @@ job_do_clone()
     git -C "$clone" remote add "${self[remote]}" "$remote_url" || return
 
     ok=1
+}
+
+job_do_prepare()
+{
+    [[ $1 = self ]] || local -n self=$1
+
+    local spec=
+    spec=$(find_spec_for_name "${self[name]}") || return
+
+    if ! silent mb2 "${OPT_MB2_OPTIONS[@]}" --specfile "$spec" build-init; then
+        fatal "Failed to run build-init"
+        return 1
+    fi
+
+    if ! silent mb2 "${OPT_MB2_OPTIONS[@]}" --specfile "$spec" prepare; then
+        fatal "Failed to run prepare"
+        return 1
+    fi
 }
 
 job_do_prepare_makefiles()
@@ -1062,6 +1097,7 @@ job_do_make_qmltypes()
 S_TODO='todo'
 S_INSTALLED='installed'
 S_CLONED='cloned'
+S_PREPARED='prepared'
 S_MAKEFILES_READY='makefiles-ready'
 S_DONE='done'
 S_FAIL='fail'
@@ -1211,6 +1247,10 @@ main_batch()
                     next_state=$S_CLONED
                     ;;
                 $S_CLONED)
+                    next_task=job_do_prepare
+                    next_state=$S_PREPARED
+                    ;;
+                $S_PREPARED)
                     next_task=job_do_prepare_makefiles
                     next_state=$S_MAKEFILES_READY
                     ;;
@@ -1318,7 +1358,18 @@ show_status()
         printf '     binaries:      %s\n' "$(job_expand_binaries job)"
 
         if [[ ${job[state]} == $S_DONE ]]; then
-            git -C "$OPT_WORK_DIR/${job[local_path]}" --no-pager diff ${colorful:+--color} |sed 's/^/     /'
+            git -C "$OPT_WORK_DIR/${job[local_path]}" --no-pager diff --ignore-submodules \
+                --line-prefix '     ' ${colorful:+--color}
+            submodule_diff() {
+                git --no-pager diff --ignore-submodules \
+                    --src-prefix "a/$displaypath/" \
+                    --dst-prefix "b/$displaypath/" \
+                    --line-prefix '     ' ${colorful:+--color}
+            }
+            git -C "$OPT_WORK_DIR/${job[local_path]}" submodule foreach --recursive --quiet "
+                set -o nounset
+                $(declare -f submodule_diff); $(declare -p colorful); submodule_diff
+            "
         fi
     done 3<<<"$config" |pager
 
