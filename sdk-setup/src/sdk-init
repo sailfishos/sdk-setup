@@ -151,6 +151,14 @@ install_template()
             [[ $OPT_BUILDER == qmake ]] || return 0
             target=$OPT_NAME.pro
             ;;
+        */template-qmake.spec)
+            [[ $OPT_BUILDER == qmake ]] || return 0
+            target=rpm/$OPT_NAME.spec
+            ;;
+        */template-cmake.spec)
+            [[ $OPT_BUILDER == cmake ]] || return 0
+            target=rpm/$OPT_NAME.spec
+            ;;
         */CMakeLists.txt)
             [[ $OPT_BUILDER == cmake ]] || return 0
             ;;
