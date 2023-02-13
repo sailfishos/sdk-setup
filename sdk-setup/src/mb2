@@ -2686,9 +2686,10 @@ END
 init_patch_wrapper() (
     local wrapper=$1
     local patchset_id=$2
-
+    local host_git=$(which git)
+    
     # Use git from host
-    git() { SBOX_DISABLE_MAPPING=1 /usr/bin/git "$@"; }
+    git() { SBOX_DISABLE_MAPPING=1 "$HOST_GIT" "$@"; }
 
     # We cannot simply use git-am as it does not accept all the patch
     # options we may get passed. So we need to parse the possible info
@@ -2817,7 +2818,7 @@ init_patch_wrapper() (
     local mode= type= id= name=
     while read -r -d '' mode type id name; do
         [[ $name = *.patch ]] && PATCHES[$id]=$name
-    done < <(git ls-tree -z --full-tree 'HEAD:rpm')
+    done < <(command git ls-tree -z --full-tree 'HEAD:rpm')
 
     init_wrappers_dir
     cat <<END >"$wrapper"
@@ -2833,6 +2834,7 @@ PATCHSET_ID_REF=$(quote "$PATCHSET_ID_REF")
 PATCHSET_ID=$(quote "$patchset_id")
 SCRAPE_TRAILER=$(quote "$SCRAPE_TRAILER")
 SCRAPE_FILENAME=$(quote "$SCRAPE_FILENAME")
+HOST_GIT=$(quote "$host_git")
 WE=$(quote "$WE")
 
 $(declare -p PATCHES)
@@ -2941,9 +2943,10 @@ switch_to_snapshot() {
 init_commit_prep_changes_hook() {
     local hook=$1
     local patchset_id=$2
+    local host_git=$(which git)
 
     # Use git from host
-    git() { SBOX_DISABLE_MAPPING=1 /usr/bin/git "$@"; }
+    git() { SBOX_DISABLE_MAPPING=1 "$HOST_GIT" "$@"; }
 
     commit_all() {
         if [[ $(git status --untracked-files=no --porcelain --ignore-submodules) ]]; then
@@ -3001,6 +3004,7 @@ SCRAPE_TRAILER=$(quote "$SCRAPE_TRAILER")
 SCRAPE_DISCARD=$(quote "$SCRAPE_DISCARD")
 PATCHSET_ID_REF=$(quote "$PATCHSET_ID_REF")
 PATCHSET_ID=$(quote "$patchset_id")
+HOST_GIT=$(quote "$host_git")
 
 $(declare -f git)
 $(declare -f git_commit_brief)
