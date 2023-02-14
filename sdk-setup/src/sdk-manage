@@ -389,7 +389,7 @@ configure_http_proxy() {
     if [[ $INSIDE_CHROOT ]]; then
         address="null"
     else
-        address="tcp:host=127.0.0.1,port=777"
+        address="tcp:host=127.0.0.1,port=778"
     fi
 
     enter "$object" mkdir -p "$(dirname "$file")" || return

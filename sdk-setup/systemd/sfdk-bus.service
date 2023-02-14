@@ -1,0 +1,14 @@
+[Unit]
+Description=D-Bus Message Bus for communication with sfdk
+DefaultDependencies=no
+After=local-fs.target
+Before=multi-user.target
+Conflicts=shutdown.target
+
+[Service]
+ExecStart=/bin/bash -c 'exec /usr/bin/dbus-daemon --config-file=/usr/share/sdk-setup/sfdk-bus.conf --nofork --nopidfile --print-address=3 3>/run/sdk-setup/sfdk_bus_address'
+ExecReload=/bin/bash -c 'read bus </run/sdk-setup/sfdk_bus_address && /usr/bin/dbus-send --print-reply --bus="$bus" --type=method_call --dest=org.freedesktop.DBus / org.freedesktop.DBus.ReloadConfig'
+OOMScoreAdjust=-900
+
+[Install]
+WantedBy=multi-user.target
