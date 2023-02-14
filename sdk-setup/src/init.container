@@ -88,6 +88,7 @@ END
 
     mkdir -p "$(dirname "$DBUS_ADDRESS_FILE")"
     dbus-daemon --config-file=/usr/share/sdk-setup/sfdk-bus.conf --print-address=3 3>"$DBUS_ADDRESS_FILE"
+    /usr/libexec/sdk-setup/sfdk-bus-expose-nonce
 
     /usr/libexec/sdk-setup/dnat-emulators
 

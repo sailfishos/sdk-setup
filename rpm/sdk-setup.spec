@@ -169,6 +169,7 @@ cp src/workspace-autodetect %{buildroot}%{_libexecdir}/%{name}/
 cp src/sdk-setup-env %{buildroot}%{_libexecdir}/%{name}/
 cp src/dnat-emulators %{buildroot}%{_libexecdir}/%{name}/
 cp src/proxymanager %{buildroot}%{_libexecdir}/%{name}/
+cp src/sfdk-bus-expose-nonce %{buildroot}%{_libexecdir}/%{name}/
 mkdir -p %{buildroot}%{_datadir}/%{name}
 cp etc/sfdk-bus.conf %{buildroot}%{_datadir}/%{name}/
 mkdir -p %{buildroot}/%{_tmpfilesdir}
@@ -279,6 +280,7 @@ rm -Rf /home/.zypp-cache
 %systemd_preun oneshot-root-late-sdk.service
 %systemd_preun sdk-freespace.service
 %systemd_preun sfdk-bus.service
+%systemd_preun sfdk-bus-expose-nonce.path
 
 %post -n sdk-vm
 %systemd_post workspace.service
@@ -296,6 +298,7 @@ rm -Rf /home/.zypp-cache
 %systemd_post oneshot-root-late-sdk.service
 %systemd_post sdk-freespace.service
 %systemd_post sfdk-bus.service
+%systemd_post sfdk-bus-expose-nonce.path
 # this could be mounted read-only so to avoid a
 # cpio: chmod failed - Read-only file system
 if [ $1 -eq 1 ] ; then
@@ -333,6 +336,7 @@ fi
 %{_libexecdir}/%{name}/sdk-setup-env
 %{_libexecdir}/%{name}/dnat-emulators
 %{_libexecdir}/%{name}/proxymanager
+%{_libexecdir}/%{name}/sfdk-bus-expose-nonce
 %{_datadir}/%{name}/sfdk-bus.conf
 %{_exec_prefix}/local/bin/git
 /home/.zypp-cache
@@ -353,6 +357,8 @@ fi
 %{_unitdir}/oneshot-root-late-sdk.service
 %{_unitdir}/sdk-freespace.service
 %{_unitdir}/sfdk-bus.service
+%{_unitdir}/sfdk-bus-expose-nonce.service
+%{_unitdir}/sfdk-bus-expose-nonce.path
 %config %{_sysconfdir}/systemd/system/default.target
 %config %{_sysconfdir}/udev/rules.d/80-net-setup-link.rules
 %config %{_sysconfdir}/ssh/ssh-env.conf

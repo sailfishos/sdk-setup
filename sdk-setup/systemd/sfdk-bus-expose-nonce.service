@@ -1,0 +1,5 @@
+[Unit]
+Description=Expose D-Bus nonce on a location known to sfdk.
+
+[Service]
+ExecStart=/usr/libexec/sdk-setup/sfdk-bus-expose-nonce
