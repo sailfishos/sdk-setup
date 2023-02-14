@@ -1402,7 +1402,8 @@ run_hook() {
     local args_=$(make_gvariant_array ${args:+"${args[@]}"})
 
     local reply=
-    reply=$(gdbus call --timeout=30000 --system \
+    reply=$(gdbus call --timeout=30000 \
+        --address="$(</run/sdk-setup/sfdk_bus_address)" \
         --dest="$SAILFISH_SDK_SFDK_DBUS_SERVICE" --object-path / \
         --method org.sailfishos.sfdk.Sdk.runHook \
         "$OPT_HOOKS_DIR/$hook" "$args_" "$PWD" "$environment") \
@@ -2114,7 +2115,8 @@ ensure_device_prepared() {
         return
     fi
 
-    gdbus call --timeout=30000 --system \
+    gdbus call --timeout=30000 \
+        --address="$(</run/sdk-setup/sfdk_bus_address)" \
         --dest="$SAILFISH_SDK_SFDK_DBUS_SERVICE" --object-path /device \
         --method org.sailfishos.sfdk.Device.prepare \
         >/dev/null

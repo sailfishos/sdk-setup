@@ -1,0 +1,9 @@
+[Unit]
+Description=Expose D-Bus nonce on a location known to sfdk.
+Before=sfdk-bus.service
+
+[Path]
+PathChanged=/run/sdk-setup/sfdk_bus_address
+
+[Install]
+WantedBy=multi-user.target

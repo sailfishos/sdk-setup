@@ -1,0 +1,125 @@
+#!/bin/bash
+#
+# Copyright (C) 2023 Jolla Ltd.
+# Contact: http://jolla.com/
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#
+# - Redistributions of source code must retain the above copyright
+#   notice, this list of conditions and the following disclaimer.
+# - Redistributions in binary form must reproduce the above copyright
+#   notice, this list of conditions and the following disclaimer in
+#   the documentation and/or other materials provided with the
+#   distribution.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+# ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+# LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+# POSSIBILITY OF SUCH DAMAGE.
+
+set -o nounset
+
+ADDRESS_FILE=/run/sdk-setup/sfdk_bus_address
+NONCE_FILE=/run/sdk-setup/sfdk_bus_nonce
+BUS_USER=mersdk
+
+usage() {
+    cat <<END
+usage: $0
+
+Expose D-Bus nonce on a location known to sfdk.
+END
+}
+
+fatal() {
+    echo "Fatal: $*" >&2
+}
+
+nonce_file_from_address() {
+    local address_list=$1
+    local address= protocol= params= param= name= value=
+    while read -d';' address; do
+        [[ $address ]] || continue
+        IFS=':' read protocol params <<<$address
+        [[ $protocol == nonce-tcp ]] || continue
+        while read -d',' param; do
+            IFS='=' read name value <<<$param
+            if [[ $name == noncefile ]]; then
+                printf '%s\n' "$value"
+                return
+            fi
+        done <<<"$params,"
+    done <<<"$address_list;"
+
+    return 1
+}
+
+doit() {
+    local dbus_address=$(<"$ADDRESS_FILE")
+    if [[ ! $dbus_address ]]; then
+        fatal "Failed to determine sfdk bus address"
+        return 1
+    fi
+
+    local nonce_file=$(nonce_file_from_address "$dbus_address")
+    if [[ ! $nonce_file || ! -e $nonce_file ]]; then
+        fatal "Failed to determine D-Bus nonce file path"
+        return 1
+    fi
+
+    # Workaround https://gitlab.freedesktop.org/dbus/dbus/-/issues/448.
+    # The nonce file is created before the dbus-daemon switches to the
+    # configured user, so it cannot read it afterwards.  The end result is
+    # that an attempt for D-Bus connection hangs.
+    if ! chown -R "$BUS_USER" "$(dirname "$nonce_file")"; then
+        fatal "Failed to fix D-Bus nonce file permissions"
+        return 1
+    fi
+
+    # Expose it on a path known to sfdk
+    ln -sfn "$nonce_file" "$NONCE_FILE"
+}
+
+set_defaults() {
+    OPT_HELP=
+}
+
+parse_options() {
+    while (($# > 0)); do
+        case $1 in
+            -h|--help)
+                OPT_HELP=1
+                return
+                ;;
+            *)
+                fatal "Unexpected argument: $1"
+                return 1
+                ;;
+        esac
+        shift
+    done
+}
+
+main() {
+    set_defaults || return
+    parse_options "$@" || return
+
+    if [[ $OPT_HELP ]]; then
+        usage
+        return
+    fi
+
+    doit
+}
+
+main "$@"
