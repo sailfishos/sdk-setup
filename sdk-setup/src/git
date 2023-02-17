@@ -29,7 +29,15 @@
 
 set -o nounset
 
-host_is_windows() [[ -e /dev/fuse ]]
+# Backward compatibility with older sfdk - to be dropped later
+if [[ ! ${SAILFISH_SDK_HOST_OS:-} ]]; then
+    if [[ -e /dev/fuse ]]; then
+        SAILFISH_SDK_HOST_OS=Windows
+    else
+        SAILFISH_SDK_HOST_OS=Linux
+    fi
+fi
+
 inside_virtualbox() [[ $(systemd-detect-virt) == oracle ]]
 
 extra_args=()
@@ -41,7 +49,7 @@ extra_args=()
 # is simply bind-mounted. At least 'stat' may report different device ID in
 # that case.
 if inside_virtualbox \
-        || (host_is_windows && ! [[ -e /etc/mersdk/share/workspace1.no-dynexec ]]); then
+        || [[ $SAILFISH_SDK_HOST_OS == Windows && ! -e /etc/mersdk/share/workspace1.no-dynexec ]]; then
     extra_args+=(-c core.fileMode=false)
 fi
 extra_args+=(-c core.checkStat=minimal)

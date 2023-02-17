@@ -135,13 +135,13 @@ Connman configs for SDK emulator to ensure session is started
 rm -rf %{buildroot}
 # all sdks
 mkdir -p %{buildroot}%{_bindir}/
-cp src/sdk-version %{buildroot}%{_bindir}/
+install -D -m 755 src/sdk-version -t %{buildroot}%{_bindir}/
 mkdir %{buildroot}/home
 ln -s /var/cache/zypp %{buildroot}/home/.zypp-cache
 
 # sdk-chroot
 mkdir -p %{buildroot}/%{_sysconfdir}
-cp src/sdk-chroot %{buildroot}/
+install -D -m 755 src/sdk-chroot -t %{buildroot}/
 ln -s sdk-chroot %{buildroot}/mer-sdk-chroot
 mkdir -p %{buildroot}/%{_sysconfdir}/profile.d
 cp etc/sailfish-sdk-profile.sh %{buildroot}%{_sysconfdir}/profile.d/
@@ -155,28 +155,28 @@ mkdir -p %{buildroot}%{_libexecdir}/%{name}
 
 # sdk-vm
 mkdir -p %{buildroot}%{_sbindir}/
-cp src/init.container %{buildroot}%{_sbindir}/
+install -D -m 755 src/init.container -t %{buildroot}%{_sbindir}/
 mkdir -p %{buildroot}/%{_unitdir}
 cp -r --no-dereference systemd/* %{buildroot}/%{_unitdir}/
-cp src/sdk-info %{buildroot}%{_bindir}/
-cp src/sdk-setup-enginelan %{buildroot}%{_bindir}/
+install -D -m 755 src/sdk-info -t %{buildroot}%{_bindir}/
+install -D -m 755 src/sdk-setup-enginelan -t %{buildroot}%{_bindir}/
 mkdir -p %{buildroot}/%{_sysconfdir}/udev/rules.d
 ln -s /dev/null %{buildroot}/%{_sysconfdir}/udev/rules.d/80-net-setup-link.rules
-cp src/sdk-shutdown %{buildroot}%{_bindir}/
-cp src/dynexecfs %{buildroot}%{_bindir}/
+install -D -m 755 src/sdk-shutdown -t %{buildroot}%{_bindir}/
+install -D -m 755 src/dynexecfs -t %{buildroot}%{_bindir}/
 mkdir -p %{buildroot}%{_libexecdir}/%{name}
-cp src/workspace-autodetect %{buildroot}%{_libexecdir}/%{name}/
-cp src/sdk-setup-env %{buildroot}%{_libexecdir}/%{name}/
-cp src/dnat-emulators %{buildroot}%{_libexecdir}/%{name}/
-cp src/proxymanager %{buildroot}%{_libexecdir}/%{name}/
-cp src/sfdk-bus-expose-nonce %{buildroot}%{_libexecdir}/%{name}/
+install -D -m 755 src/workspace-autodetect -t %{buildroot}%{_libexecdir}/%{name}/
+install -D -m 755 src/sdk-setup-env -t %{buildroot}%{_libexecdir}/%{name}/
+install -D -m 755 src/dnat-emulators -t %{buildroot}%{_libexecdir}/%{name}/
+install -D -m 755 src/proxymanager -t %{buildroot}%{_libexecdir}/%{name}/
+install -D -m 755 src/sfdk-bus-expose-nonce -t %{buildroot}%{_libexecdir}/%{name}/
 mkdir -p %{buildroot}%{_datadir}/%{name}
 cp etc/sfdk-bus.conf %{buildroot}%{_datadir}/%{name}/
 mkdir -p %{buildroot}/%{_tmpfilesdir}
 cp etc/tmpfiles.d/sdk-setup.conf %{buildroot}%{_tmpfilesdir}/
 # hack
 mkdir -p %{buildroot}%{_exec_prefix}/local/bin
-cp src/git %{buildroot}%{_exec_prefix}/local/bin/
+install -D -m 755 src/git -t %{buildroot}%{_exec_prefix}/local/bin/
 
 # This should really be %%{_unitdir}/default.target but systemd owns that :/
 mkdir -p %{buildroot}/%{_sysconfdir}/systemd/system/
@@ -208,7 +208,7 @@ cp etc/mersdk.env.systemd  %{buildroot}/%{_sysconfdir}/
 install -D -m 755 src/resize-rootfs %{buildroot}%{_bindir}/resize-rootfs
 
 # sdk-tooling-chroot
-cp src/mer-tooling-chroot %{buildroot}/
+install -D -m 755 src/mer-tooling-chroot -t %{buildroot}/
 
 # sdk-sb2-config
 mkdir -p %{buildroot}/usr/share/scratchbox2/modes/
@@ -217,26 +217,26 @@ ln -sf obs-rpm-build+pp  %{buildroot}/usr/share/scratchbox2/modes/sdk-build+pp
 ln -sf obs-rpm-install  %{buildroot}/usr/share/scratchbox2/modes/sdk-install
 
 # sdk-utils
-cp src/sfdk-changelog %{buildroot}%{_bindir}/
+install -D -m 755 src/sfdk-changelog -t %{buildroot}%{_bindir}/
 ln -s sfdk-changelog %{buildroot}%{_bindir}/git-change-log
-cp src/mb %{buildroot}%{_bindir}/
-cp src/mb2 %{buildroot}%{_bindir}/
-cp src/qb %{buildroot}%{_bindir}/
-cp src/sdk-foreach-su %{buildroot}%{_bindir}/
-cp src/sdk-manage %{buildroot}%{_bindir}/
-cp src/sdk-assistant %{buildroot}%{_bindir}/
-cp src/updateQtCreatorTargets %{buildroot}%{_bindir}/updateQtCreatorTargets
-cp src/sdk-motd %{buildroot}%{_bindir}/
-cp src/rpmvalidation %{buildroot}%{_bindir}/
+install -D -m 755 src/mb -t %{buildroot}%{_bindir}/
+install -D -m 755 src/mb2 -t %{buildroot}%{_bindir}/
+install -D -m 755 src/qb -t %{buildroot}%{_bindir}/
+install -D -m 755 src/sdk-foreach-su -t %{buildroot}%{_bindir}/
+install -D -m 755 src/sdk-manage -t %{buildroot}%{_bindir}/
+install -D -m 755 src/sdk-assistant -t %{buildroot}%{_bindir}/
+install -D -m 755 src/updateQtCreatorTargets -t %{buildroot}%{_bindir}/
+install -D -m 755 src/sdk-motd -t %{buildroot}%{_bindir}/
+install -D -m 755 src/rpmvalidation -t %{buildroot}%{_bindir}/
 ln -sf rpmvalidation %{buildroot}%{_bindir}/rpmvalidation.sh
-cp src/git-lltb %{buildroot}%{_bindir}/
-cp src/sdk-init %{buildroot}%{_bindir}/
-cp src/sdk-make-qmltypes %{buildroot}%{_bindir}/
-cp src/sfdk %{buildroot}%{_bindir}/
+install -D -m 755 src/git-lltb -t %{buildroot}%{_bindir}/
+install -D -m 755 src/sdk-init -t %{buildroot}%{_bindir}/
+install -D -m 755 src/sdk-make-qmltypes -t %{buildroot}%{_bindir}/
+install -D -m 755 src/sfdk -t %{buildroot}%{_bindir}/
 mkdir -p %{buildroot}%{_libexecdir}/%{name}
-cp src/oomadvice %{buildroot}%{_libexecdir}/%{name}/
-cp src/sdk-setup-swap %{buildroot}%{_libexecdir}/%{name}/
-cp src/ssh-askpass %{buildroot}%{_libexecdir}/%{name}/
+install -D -m 755 src/oomadvice -t %{buildroot}%{_libexecdir}/%{name}/
+install -D -m 755 src/sdk-setup-swap -t %{buildroot}%{_libexecdir}/%{name}/
+install -D -m 755 src/ssh-askpass -t %{buildroot}%{_libexecdir}/%{name}/
 mkdir -p %{buildroot}%{_datadir}/%{name}
 cp README.tips.wiki %{buildroot}%{_datadir}/%{name}/
 
