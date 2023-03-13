@@ -3270,9 +3270,9 @@ run_apply() {
         maybe_cd_to_spec_setup_subdir "$TMP_SPEC"
         for p in $to_apply; do
             if [[ ! $auto_applied ]]; then
-                op="$(sed -n "s/^%patch$p \+\(.*\)/\1/p" "$TMP_SPEC")"
+                op="$(sed -n "s/^%patch$p[\ \t]\+\(.*\)/\1/p" "$TMP_SPEC")"
             fi
-            patch_file="$(sed -n "s/^Patch$p: \+\(.*\)/\1/p" "$TMP_SPEC")"
+            patch_file="$(sed -n "s/^Patch$p:[\ \t]\+\(.*\)/\1/p" "$TMP_SPEC")"
             echo "$message $patch_file" >&2
             patch "${common_op[@]}" $op < "$OPT_PKGDIR/$patch_file" >&2 \
                 || fatal "$message $patch_file failed, exiting"
