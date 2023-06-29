@@ -180,6 +180,7 @@ install_template()
         -e 's/%{Version}/0/g' \
         -e "s/%{SpectacleBuilder}/$OPT_SPECTACLE_BUILDER/g" \
         -e "s/%{ApplicationName}/$OPT_APPLICATION_NAME/g" \
+        -e "s/%{Description}/Short description of $OPT_NAME Application/g" \
         -e 's/\\\\/\\/g' \
         || return
 }
