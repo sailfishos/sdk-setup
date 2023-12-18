@@ -6492,7 +6492,8 @@ License:    LICENSE
 URL:        http://example.org/
 Source0:    %{name}-%{version}.tar.bz2
 # rpmbuild applies patches in the order they appear here, ignoring their numbering
-${enable_patch:+Patch1:  test-fix-1.patch}
+# the next line has hard tab on purpose - it tests that tabs work
+${enable_patch:+Patch1:    test-fix-1.patch}
 ${enable_patch:+Patch0:  test-fix-2.patch}
 
 %description
