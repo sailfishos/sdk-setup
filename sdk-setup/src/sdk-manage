@@ -2909,7 +2909,8 @@ HOST_TARGETS=/host_targets
 SBOX2DIR=${HOME}/.scratchbox2
 TARGETS_XML=${HOST_TARGETS}/targets.xml
 USER_TARGETS_REPOSITORY=${HOST_TARGETS}/targets.repository
-CONFIG_FILE=.sdk-manage.conf
+CONFIG_FILE_UNPREFIXED=sdk-manage.conf
+CONFIG_FILE=.${CONFIG_FILE_UNPREFIXED}
 NON_INTERACTIVE=1
 
 MODE_KEY=mode
@@ -2963,6 +2964,10 @@ fi
 ################################################################################
 if [[ $1 != --self-test ]]; then  ###  M A I N  EXECUTION BEGINS HERE  #########
 ################################################################################
+
+if [ -e "${XDG_CONFIG_HOME:-$HOME/.config}/$CONFIG_FILE_UNPREFIXED" ] ; then
+    source "${XDG_CONFIG_HOME:-$HOME/.config}/$CONFIG_FILE_UNPREFIXED"
+fi
 
 while (( $# > 0)); do
     case $1 in
