@@ -433,7 +433,7 @@ sfdk_dbus_send()
 {
     local reply=
     reply=$(dbus-send --type=method_call --print-reply --reply-timeout=60000 \
-        --address="$(</run/sdk-setup/sfdk_bus_address)" \
+        --bus="$(</run/sdk-setup/sfdk_bus_address)" \
         --dest="$SAILFISH_SDK_SFDK_DBUS_SERVICE" "$@") || true
 
     # dbus-send behaves so when error is received - it also prints it
