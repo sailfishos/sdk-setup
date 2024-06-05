@@ -1931,9 +1931,37 @@ EOF
 #generates sailfishos-bundle.json for QtCreator
 generate_qml_bundle() {
     local libdir=$1
-    local imports=$(sed -n -e 's,^\s*exports: \["\([^/]\+\)/[^ ]\+ \([0-9.]\+\)"\],"\1 \2",p' \
-            "$libdir"/qt5/qml/**/plugins.qmltypes \
-            |sort -u |sed '$! s/$/,/')
+    local imports=$(
+        sed -n "$libdir"/qt5/qml/**/plugins.qmltypes -e '
+                # Look for the "export" blocks. They may be one-line...
+                /^\s*exports: \[\s*[^[:space:]]\+/p
+
+                # ...or multi-line.
+                /^\s*exports: \[$/,/^\s*\]$/p
+            ' \
+            |sed -e '
+                # Drop the envelope
+                s/^\s*exports: \[//
+                s/\]$//
+
+                # Drop the trailing commas of the entries inside multi-line blocks
+                s/,$//
+
+                # Split the one-liners with multiple entries
+                s/,\s\+/\n/g
+            ' \
+            |sed -e '
+
+                # Drop trailing spaces and empty lines
+                s/^\s\+//
+                /^\s*$/d
+
+                # What remains are the sole entries like "Foo/Bar X.Y". Get rid of the optional
+                # "/Bar" stuff.
+                s/"\([^/]\+\)\(\/[^ ]\+\)\? \([0-9.]\+\)"/"\1 \3"/
+            ' \
+            |sort -u |sed '$! s/$/,/'
+        )
 
     local bundlefile=$libdir/qt5/qml/sailfishos-bundle.json
     cat - > "$bundlefile" <<EOF
