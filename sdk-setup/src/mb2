@@ -1758,7 +1758,7 @@ maybe_verify_target_dependencies() {
     fi
 
     local deps=()
-    readarray -t deps < <(sb2_build rpmspec --query --buildrequires "${extra_args[@]}" \
+    readarray -t deps < <(sb2_build rpmspec --query --srpm --requires "${extra_args[@]}" \
         --define "_sourcedir $OPT_PKGDIR" \
         "$spec" |sed 's/\s*$//')
 
