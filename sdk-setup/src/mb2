@@ -3253,7 +3253,8 @@ run_apply() {
     local to_apply=
     local auto_applied=$(grep -q "^%autosetup" "$TMP_SPEC" \
         && ! grep -q "^%autopatch" "$TMP_SPEC" \
-        && ! grep -q "^%patch[0-9]" "$TMP_SPEC" \
+        && ! grep -q "^%patch\s?[0-9]" "$TMP_SPEC" \
+        && ! grep -q "^%patch.*-P [0-9]" "$TMP_SPEC" \
         && echo 1)
     if [[ $auto_applied ]]; then
         to_apply=$(sed -n 's/^Patch\([0-9]*\):.*/\1/p' "$TMP_SPEC")
