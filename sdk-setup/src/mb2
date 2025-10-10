@@ -551,7 +551,7 @@ COMMANDS
 
         -R    reverse apply patches (patch -R)
 
-    build [-p|--prepare] [--no-check] [-d|--enable-debug] [-j <n>] [-s|--sign] 
+    build [-p|--prepare] [--no-check] [-d|--enable-debug] [-j <n>] [-s|--sign]
           [<project-dir-or-file>] [--] [<rpmbuild-extra-arg>...]
         Run rpmbuild. Execute all sections of the RPM SPEC file except for
         %prep unless told otherwise.
@@ -999,7 +999,7 @@ GLOBAL OPTIONS
     -c, --changelog[=<args>]
         Include changelog generated from Git history with 'sfdk-changelog'
         command, forwarding any <args>.  This option is not intended for
-        regular use - create a script file named after the RPM SPEC file but 
+        regular use - create a script file named after the RPM SPEC file but
         with '.changes.run' extension to instruct $ME to generate changelog
         with 'sfdk-changelog <args>' instead.
 
@@ -1045,7 +1045,7 @@ GLOBAL OPTIONS
     --package-signing-passphrase <string>
         In case a passphrase-protected signing key is selected for signing
         packages, use <string> as the passphrase.
-        
+
     --package-signing-passphrase-file <file>
         In case a passphrase-protected signing key is selected for signing
         packages, read the passphrase from the <file>. Only the first line will
@@ -1758,7 +1758,7 @@ maybe_verify_target_dependencies() {
     fi
 
     local deps=()
-    readarray -t deps < <(sb2_build rpmspec --query --buildrequires "${extra_args[@]}" \
+    readarray -t deps < <(sb2_build rpmspec --query --srpm --requires "${extra_args[@]}" \
         --define "_sourcedir $OPT_PKGDIR" \
         "$spec" |sed 's/\s*$//')
 
@@ -2159,7 +2159,7 @@ with_specific_or_default_keys() {
 
         ssh-add() {
             DISPLAY=:0 SSH_ASKPASS=/usr/libexec/sdk-setup/ssh-askpass command ssh-add "$@"
-        } 
+        }
 
         local key=$1
         if [[ $key ]]; then
@@ -2689,7 +2689,7 @@ init_patch_wrapper() (
     local wrapper=$1
     local patchset_id=$2
     local host_git=$(which git)
-    
+
     # Use git from host
     git() { SBOX_DISABLE_MAPPING=1 "$HOST_GIT" "$@"; }
 
@@ -2745,7 +2745,7 @@ init_patch_wrapper() (
         if ! git --help &>/dev/null; then
             echo "$self: The 'git' command is not available under the build environment. " \
                 "Resorting to plain 'patch'." >&2
-            
+
             "$real" "$@"
             return
         fi
@@ -3019,7 +3019,7 @@ END
 }
 
 sign_rpms__prepare() {
-    if ! [[ -x $SDK_RPMSIGN ]]; then 
+    if ! [[ -x $SDK_RPMSIGN ]]; then
         sign_rpms_native__prepare
     fi
 }
@@ -3066,7 +3066,7 @@ sign_rpms_native__prepare() {
             fi
         done
 
-        if ! gpg2 --quiet --import "${shared_key}"; then 
+        if ! gpg2 --quiet --import "${shared_key}"; then
             fatal "Cannot sign packages: Internal error: Failed to import GPG key from file '$shared_key'."
         fi
     fi
@@ -4012,7 +4012,7 @@ run_package__process_args() {
         esac
         shift
     done
-    
+
     [[ ! $PACKAGE_SIGN ]] || sign_rpms__prepare
 }
 
