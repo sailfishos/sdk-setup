@@ -159,6 +159,7 @@ while [[ ${1:-} ]]; do
             shift
             ;;
         -- )
+            shift
             break
             ;;
         -??* )
