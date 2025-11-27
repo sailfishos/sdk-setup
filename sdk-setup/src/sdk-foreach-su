@@ -93,6 +93,12 @@ Options:
     -y | --non-interactive  : do not ask questions; execute on each build
                               target and device without confirmation
     -l                      : execute also locally
+    -T | --toolings <regex> : include targets matching the regex
+    -t | --targets <regex>  : include toolings matching the regex
+    -d | --devices <regex>  : include devices matching the regex
+
+If one or more regex arguments are given, everything is excluded by default.
+Toolings, targets and devices are then matched and included independently.
 
 EOF
 }
@@ -102,7 +108,11 @@ execute_locally() {
 }
 
 list_toolings() {
-    sdk-manage --tooling --list
+    if [ -n "$OPT_TOOLING_REGEX" ]; then
+        sdk-manage --tooling --list | grep -E "$OPT_TOOLING_REGEX"
+    else
+        sdk-manage --tooling --list
+    fi
 }
 
 execute_in_tooling() {
@@ -112,7 +122,11 @@ execute_in_tooling() {
 }
 
 list_targets() {
-    sdk-manage --target --list
+    if [ -n "$OPT_TARGET_REGEX" ]; then
+        sdk-manage --target --list | grep -E "$OPT_TARGET_REGEX"
+    else
+        sdk-manage --target --list
+    fi
 }
 
 execute_in_target() {
@@ -123,7 +137,12 @@ execute_in_target() {
 
 list_devices() {
     [[ $INSIDE_VBOX ]] || return 0
-    xmllint --xpath '//device/@name' "$DEVICES_XML" |sed 's/ name=/ /g' |tr '"' "'"
+    if [ -n "$OPT_DEVICE_REGEX" ]; then
+        xmllint --xpath '//device/@name' "$DEVICES_XML" | sed 's/ name=/ /g' | tr '"' "'" | grep -E "$OPT_DEVICE_REGEX"
+    else
+        xmllint --xpath '//device/@name' "$DEVICES_XML" | sed 's/ name=/ /g' | tr '"' "'"
+    fi
+
 }
 
 execute_on_device() {
@@ -135,6 +154,10 @@ execute_on_device() {
 OPT_NONINTERACTIVE=
 OPT_LOCAL=
 OPT_SB2_MODE=sdk-install
+OPT_DEVICE_REGEX=
+OPT_TARGET_REGEX=
+OPT_TOOLING_REGEX=
+HAS_REGEX=
 
 # handle commandline options
 while [[ ${1:-} ]]; do
@@ -158,7 +181,38 @@ while [[ ${1:-} ]]; do
             fi
             shift
             ;;
+        -d | --devices )
+            OPT_DEVICE_REGEX=${2:-}
+            if [ -z "$OPT_DEVICE_REGEX" ]; then
+                fatal "$1: Argument expected"
+                usage >&2
+                exit 1
+            fi
+            HAS_REGEX=1
+            shift
+            ;;
+        -t | --targets)
+            OPT_TARGET_REGEX=${2:-}
+            if [ -z "$OPT_TARGET_REGEX" ]; then
+                fatal "$1: Argument expected"
+                usage >&2
+                exit 1
+            fi
+            HAS_REGEX=1
+            shift
+            ;;
+        -T | --toolings)
+            OPT_TOOLING_REGEX=${2:-}
+            if [ -z "$OPT_TOOLING_REGEX" ]; then
+                fatal "$1: Argument expected"
+                usage >&2
+                exit 1
+            fi
+            HAS_REGEX=1
+            shift
+            ;;
         -- )
+            shift
             break
             ;;
         -??* )
@@ -197,24 +251,30 @@ if [[ $OPT_LOCAL ]]; then
     execute_locally "$@"
 fi
 
-for tooling in $(list_toolings); do
-    maybe_ask "Execute in '$tooling' tooling?" || continue
-    message info "Executing in '$tooling' tooling..."
-    execute_in_tooling "$tooling" "$@"
-done
+if [ -z "$HAS_REGEX" ] || [ -n "$OPT_TOOLING_REGEX" ]; then
+    for tooling in $(list_toolings); do
+        maybe_ask "Execute in '$tooling' tooling?" || continue
+        message info "Executing in '$tooling' tooling..."
+        execute_in_tooling "$tooling" "$@"
+    done
+fi
 
-for target in $(list_targets); do
-    maybe_ask "Execute in '$target' build target?" || continue
-    message info "Executing in '$target' build target..."
-    execute_in_target "$target" "$@"
-done
+if [ -z "$HAS_REGEX" ] || [ -n "$OPT_TARGET_REGEX" ]; then
+    for target in $(list_targets); do
+        maybe_ask "Execute in '$target' build target?" || continue
+        message info "Executing in '$target' build target..."
+        execute_in_target "$target" "$@"
+    done
+fi
 
-eval devices=($(list_devices))
-for device in ${devices[@]:+"${devices[@]}"}; do
-    maybe_ask "Execute on '$device' device?" || continue
-    message info "Executing on '$device' device..."
-    execute_on_device "$device" "$@"
-done
+if [ -z "$HAS_REGEX" ] || [ -n "$OPT_DEVICE_REGEX" ]; then
+    eval devices=($(list_devices))
+    for device in ${devices[@]:+"${devices[@]}"}; do
+        maybe_ask "Execute on '$device' device?" || continue
+        message info "Executing on '$device' device..."
+        execute_on_device "$device" "$@"
+    done
+fi
 
 # For Emacs:
 # Local Variables:
