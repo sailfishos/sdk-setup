@@ -981,9 +981,11 @@ GLOBAL OPTIONS
 
         If the current HEAD, index or working tree differs from the tree
         denoted by the (latest or selected) tag, a suffix composed from the
-        current branch name, time stamp and a commit SHA1 will be added to the
+        current branch name, time stamp and a commit hash will be added to the
         package version. If git-state is not clean a git-stash will be created
-        and its SHA1 will be used.
+        and its hash will be used instead. Similarly, hashes will be recorded
+        for all modified git submodules, if any. The formatting of the suffix
+        can be controlled with the '--dirty-version-suffix' option.
 
         It is recommended to store 'Version: 0' and 'Release: 1' in the SPEC
         file when this option is to be used; as a sign that the version
@@ -991,6 +993,49 @@ GLOBAL OPTIONS
 
     -X, --no-fix-version
         Override --fix-version option.
+
+    --dirty-version-suffix <format>
+        Adjust the behavior of the '--fix-version' option by using custom
+        formatting for the suffix added to the version string when the current
+        HEAD, index or working tree differs from the tree denoted by the
+        (latest or selected) tag.
+
+        Defaults to: '$DEF_DIRTY_VERSION_SUFFIX'
+
+        The <format> will be evaluated as a shell expression in the same
+        context as $ME. It can be an arbitrary shell expression that evaluates
+        to a string.
+
+        The following shell variables will be available to the expression:
+
+        branch
+            The name of the current git branch
+
+        timestamp
+            The time of the most recent change
+
+        hash
+            The (abbreviated) hash of the most recent commit or stash
+
+        submodule_info
+            List of name + hash pairs for all possibly modified submodules
+
+        The <format> can be an empty string too, in which case no suffix will
+        be used.
+
+        The resulting string will be further sanitized and any characters not
+        allowed in an RPM version string will be replaced with dots.
+
+        Examples:
+
+        '+\$branch.\$timestamp.\$hash\${submodule_info:++submodules}'
+            Omit possibly long summary of submodule changes
+
+        '+\$(tr "a-z" "A-Z" <<<\$branch).\$timestamp'
+            Capitalize branch name and omit other info than the timestamp
+
+        '+\$timestamp\$(echo "\$timestamp \$hash \$submodule_info" >> log)'
+            Use just the timestamp and note other values in a file caled 'log'
 
     -n, --no-pull-build-requires
         Do not update build-time dependencies unless required explicitly with
@@ -2016,7 +2061,15 @@ maybe_fix_package_version() {
 
         local timestamp=$(TZ=UTC date --date=@"$time" +%Y%m%d%H%M%S)
         local sha1sum=$(git_ rev-list --max-count=1 --abbrev-commit "$head")
-        version=$version+$branch.$timestamp.$sha1sum$submodule_info
+
+        local suffix=
+        suffix=$(
+            hash=$sha1sum
+            eval "S=$OPT_DIRTY_VERSION_SUFFIX" || exit
+            printf '%s' "$S"
+        ) || fatal "Failed to format version suffix."
+
+        version+=$suffix
     fi
 
     version=${version//[^+_[:alnum:]]/.} # replace characters not allowed in the version field
@@ -4701,6 +4754,7 @@ DEF_TASK='git:^[[:alpha:]]{2,5}[[:digit:]]{3,}'
 DEF_SNAPSHOT=default
 DEF_SNAPSHOT_POOL_SIZE=5
 DEF_GIT_FORMAT_PATCH_ARGS=(--no-numbered --zero-commit --no-signature --full-index)
+DEF_DIRTY_VERSION_SUFFIX='+$branch.$timestamp.$hash$submodule_info'
 
 # option variables
 OPT_SPEC=
@@ -4722,6 +4776,7 @@ OPT_NEEDTARGET=
 OPT_FIX_VERSION=
 OPT_FIX_VERSION_HINT=
 OPT_NO_FIX_VERSION=
+OPT_DIRTY_VERSION_SUFFIX=$DEF_DIRTY_VERSION_SUFFIX
 OPT_CHANGELOG=
 OPT_CHANGELOG_ARGS=
 OPT_SHARED_DIR=/etc/mersdk/share
@@ -4972,6 +5027,9 @@ while [[ "$1" ]]; do
             OPT_FIX_VERSION=
             OPT_FIX_VERSION_HINT=
             OPT_NO_FIX_VERSION=1
+            ;;
+        "--dirty-version-suffix" ) shift
+            OPT_DIRTY_VERSION_SUFFIX=$1; shift
             ;;
         "-n" | "--no-deps" | "--no-pull-build-requires" ) shift
             if [[ $1 == --no-deps ]]; then
