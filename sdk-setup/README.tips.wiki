@@ -24,7 +24,7 @@ You can SSU register all SDK Targets, Toolings and the SDK itself with the <code
 
 === Accelerating ARM builds ===
 
-Compared to build tools from SDK Target, those from SDK Tooling run without QEMU emulation. There is a chance to speed up your ARM builds by installing more tools in the SDK Tooling used by your SDK Target. Maintain it with <code>/srv/mer/toolings/&lt;tooling&gt;/mer-tooling-chroot</code>.
+Compared to build tools from SDK Target, those from SDK Tooling run without QEMU emulation. There is a chance to speed up your ARM builds by installing more tools in the SDK Tooling used by your SDK Target. Maintain it with <code>sdk-assistant maintain &lt;tooling&gt;</code>.
 
 
 === On the importance of keeping the SDK chroot up to date ===
@@ -43,7 +43,7 @@ Should you hit such a condition try to fix your SDK by upgrading the SDK Chroot 
 
 === Using shared directory for related RPMs ===
 
-To make deployment easier, <code>mb2</code> can use a shared output directory.  Add yourself <code>alias mb2='mb2 --output-prefix &lt;path&gt;'</code> to <code>~/.mersdk.profile</code> to achieve this. Add <code>--task</code> as well to let it further adjust the output path based on your Git branch name.
+To make deployment easier, <code>mb2</code> can use a shared output directory.  Add yourself <code>alias mb2='mb2 --output-prefix &lt;path&gt;'</code> to <code>~/.bashrc</code> to achieve this. Add <code>--task</code> as well to let it further adjust the output path based on your Git branch name.
 
 
 When the <code>--output-prefix</code> option is used, the output directory is also searched for build-time dependencies by default, so if <code>packageB</code> requires another locally built <code>packageA</code> at build time, it is not necessary to install <code>packageA</code> manually to the build target.
@@ -89,7 +89,7 @@ The usage of <code>clean</code> in <code>mb2 make clean</code> is not a construc
 
 === Preparing sources ===
 
-By default <code>mb2</code> skips the <code>%prep</code> section of an RPM spec file. The <code>--doprep</code> (short <code>-p</code>) option or the <code>prep</code> and <code>apply</code> commands may help you in case of a non-trivial <code>%prep</code> section.
+By default <code>mb2</code> skips the <code>%prep</code> section of an RPM spec file. The <code>--prepare</code> (short <code>-p</code>) option or the <code>prepare</code> and <code>apply</code> commands may help you in case of a non-trivial <code>%prep</code> section.
 
 
 The effect of the <code>apply</code> command can be reverted executing again with the <code>-R</code> option.
