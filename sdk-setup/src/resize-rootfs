@@ -40,12 +40,12 @@ partsize()
 {
     local dump=
     dump=$(sfdisk --dump /dev/sda)
-    sed -n 's,^/dev/sda1 : .*size=[[:space:]]*\([0-9]\+\).*,\1,p' <<<"$dump"
+    printf '%s\n' "$dump" |sed -n 's,^/dev/sda1 : .*size=[[:space:]]*\([0-9]\+\).*,\1,p'
 }
 
 expandpart()
 {
-    sfdisk --force -N 1 /dev/sda <<<", +"
+    echo ", +" |sfdisk --force -N 1 /dev/sda
     newsize=$(partsize)
     resizepart /dev/sda 1 "$newsize"
 
