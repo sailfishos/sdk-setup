@@ -2173,6 +2173,12 @@ ensure_device_prepared() {
         --dest="$SAILFISH_SDK_SFDK_DBUS_SERVICE" --object-path /device \
         --method org.sailfishos.sfdk.Device.prepare \
         >/dev/null
+
+    if ! ssh_as -o ConnectTimeout=20 "$device_username" /bin/true; then
+        fatal "Failed to establish connection between the build engine and the device." \
+            "Please consult the FAQ" \
+            "<https://docs.sailfishos.org/Tools/Sailfish_SDK/FAQ/>."
+    fi
 }
 
 # SSH requires that a private key file is only accessible to the user. Under
@@ -2242,14 +2248,29 @@ rsync_as() {
 }
 
 ssh_as() {
-    local maybe_t_opt=
-    if [[ $1 == -t ]]; then
-        maybe_t_opt=-t
+    local opts=()
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -t)
+                opts+=(-t)
+                ;;
+            -o)
+                opts+=(-o "$2")
+                shift
+                ;;
+            *)
+                break
+                ;;
+        esac
         shift
-    fi
-    local user="$1";shift
+    done
+
+    local user=$1; shift
+    local command=$(quote "$@")
+
     with_specific_or_default_keys "$user" \
-        ssh $maybe_t_opt -F /etc/ssh/ssh_config.sdk -l $user $device_ip -p $device_sshport "$(quote "$@")"
+        ssh "${opts[@]}" -F /etc/ssh/ssh_config.sdk -l "$user" -p "$device_sshport" \
+                "$device_ip" "$command"
 }
 
 get_spec_setup_subdir() {
