@@ -57,6 +57,8 @@ Usage:
                               using the image at <URL>. In case of a new
                               target, an appropriate tooling will be selected
                               automatically unless overridden with '--tooling'.
+                              Use netrc to supply your credentials in case of
+                              an <URL> which requires authentication.
                               Automatic creation of the default build target
                               snapshot may be suppressed with the
                               '--no-snapshot' option.
