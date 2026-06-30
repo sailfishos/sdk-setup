@@ -5511,14 +5511,14 @@ sb2_stub() {
 
     local args=("$@")
     bad_args() {
-        echo "stub $0: unexpected arguments: $(printf "%q " "${args[@]}")" >&2
+        echo "stub $0: unexpected argument '$1' in $(printf "%q " "${args[@]}")" >&2
     }
 
-    [[ $1 == -t ]] && shift 2 || { bad_args; return 1; }
+    [[ $1 == -t ]] && shift 2 || { bad_args "$1"; return 1; }
     [[ $1 == -m ]] && shift 2
     [[ $1 == -R ]] && shift
     [[ $1 == -- ]] && shift
-    [[ $1 != -* ]] || { bad_args; return 1; }
+    [[ $1 != -* ]] || { bad_args "$1"; return 1; }
 
     env=(env)
     if [[ $1 == env ]]; then
@@ -5536,7 +5536,7 @@ sb2_stub() {
                     echo "i486-meego-linux"
                     ;;
                 *)
-                    bad_args
+                    bad_args "$1"
                     return 1
                     ;;
             esac
@@ -5555,7 +5555,7 @@ sb2_stub() {
             exec "${env[@]}" "$@"
             ;;
         *)
-            bad_args
+            bad_args "$1"
             return 1
             ;;
     esac
