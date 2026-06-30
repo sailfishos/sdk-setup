@@ -2358,6 +2358,7 @@ clean_dir_no_recurse() {
     find "$dir" -maxdepth 1 ! -type d -delete && rmdir --parents "$dir" &>/dev/null
 }
 
+# TODO perform once
 init_wrappers_dir() {
     [[ -e $WRAPPERSDIR ]] || mkdir -p "$WRAPPERSDIR"
     [[ -e $USERWRAPPERSDIR ]] || mkdir -p "$USERWRAPPERSDIR"
@@ -2367,6 +2368,13 @@ init_wrappers_dir() {
         wrapper=${user_wrapper#*:}
         ln -s "$wrapper" "$USERWRAPPERSDIR/$command"
     done
+
+    cat >"$INJECT_WRAPPERS" <<END
+#!/bin/sh
+export PATH="$WRAPPERSDIR:$USERWRAPPERSDIR:\$PATH"
+exec "\$@"
+END
+    chmod +x "$INJECT_WRAPPERS"
 }
 
 remove_wrappers_dir() {
@@ -3469,7 +3477,7 @@ run_build() {
 
     (
         maybe_cd_to_spec_setup_subdir "$TMP_SPEC"
-        sb2_build env PATH="$WRAPPERSDIR:$USERWRAPPERSDIR:$PATH" rpmbuild \
+        sb2_build "$INJECT_WRAPPERS" rpmbuild \
             --build-in-place --target=$build_tgt \
             "${BUILD_DEBUG_ARGS[@]}" \
             --define "_smp_mflags -j$(rpm_quote "$BUILD_JOBS")" \
@@ -3541,7 +3549,7 @@ run_prepare() {
 
     (
         maybe_cd_to_spec_setup_subdir "$TMP_SPEC"
-        sb2_build env PATH="$WRAPPERSDIR:$USERWRAPPERSDIR:$PATH" rpmbuild \
+        sb2_build "$INJECT_WRAPPERS" rpmbuild \
             --build-in-place --target=$build_tgt \
             --define "_smp_mflags -j$BUILD_JOBS" \
             --define "_sourcedir $OPT_PKGDIR" \
@@ -3897,7 +3905,7 @@ run_cmake() {
 
     (
         maybe_cd_to_spec_setup_subdir "$TMP_SPEC"
-        sb2_build env PATH="${WRAPPERSDIR}:${USERWRAPPERSDIR}:${PATH}" rpmbuild \
+        sb2_build "$INJECT_WRAPPERS" rpmbuild \
             --build-in-place --target=$build_tgt \
             --define "noecho 1" \
             --define "_sourcedir $OPT_PKGDIR" \
@@ -3947,7 +3955,7 @@ run_qmake() {
 
     (
         maybe_cd_to_spec_setup_subdir "$TMP_SPEC"
-        sb2_build env PATH="$WRAPPERSDIR:$USERWRAPPERSDIR:$PATH" rpmbuild \
+        sb2_build "$INJECT_WRAPPERS" rpmbuild \
             --build-in-place --target=$build_tgt \
             --define "noecho 1" \
             --define "_sourcedir $OPT_PKGDIR" \
@@ -3988,7 +3996,7 @@ run_compiledb() {
 
     (
         maybe_cd_to_spec_setup_subdir "$TMP_SPEC"
-        sb2_build env PATH="$WRAPPERSDIR:$USERWRAPPERSDIR:$PATH" rpmbuild \
+        sb2_build "$INJECT_WRAPPERS" rpmbuild \
             --build-in-place --target=$build_tgt \
             --define "noecho 1" \
             --define "_sourcedir $OPT_PKGDIR" \
@@ -4022,7 +4030,7 @@ run_make() {
 
     (
         maybe_cd_to_spec_setup_subdir "$TMP_SPEC"
-        sb2_build env PATH="$WRAPPERSDIR:$USERWRAPPERSDIR:$PATH" rpmbuild \
+        sb2_build "$INJECT_WRAPPERS" rpmbuild \
             --build-in-place --target=$build_tgt \
             --define "noecho 1" \
             --define "_sourcedir $OPT_PKGDIR" \
@@ -4848,6 +4856,8 @@ else
     USERWRAPPERSDIR=$STATEDIR/user-wrappers
 fi
 
+INJECT_WRAPPERS=$WRAPPERSDIR/.inject.sh
+
 # Virtualbox environment will install in this hardcoded location
 if inside_build_engine; then
     # Intersperse with quotes to avoid /usr/lib/rpm/check-buildroot to complain
@@ -5333,6 +5343,7 @@ if [[ "$OPT_SPEC" ]]; then
 fi
 
 remove_wrappers_dir
+init_wrappers_dir
 
 $cmd "$@"
 
@@ -5353,7 +5364,6 @@ cd "$temp" || exit
 
 mkdir stubs || exit
 STUBS_DIR=$(readlink -f stubs)
-ORIG_PATH=$PATH
 export PATH="$STUBS_DIR:$PATH"
 
 BUILDHOST=$(get_hostname)
@@ -5521,12 +5531,19 @@ sb2_stub() {
     [[ $1 != -* ]] || { bad_args "$1"; return 1; }
 
     env=(env)
+
+    # Unused, left for future reference
     if [[ $1 == env ]]; then
         shift
         while [[ $1 == -* || $1 =~ ^[[:alnum:]_]+= ]]; do
             env+=("$1")
             shift
         done
+    fi
+
+    if [[ $1 == *"/.inject.sh" ]]; then
+        env+=("$1")
+        shift
     fi
 
     case $1 in
@@ -5698,14 +5715,12 @@ END
 
 set_up_ts sb2_arg_pass "Passing arguments to sb2"
 
-WRAPPERS_PATH="/tmp/@TMPDIR@/.mb2/wrappers:/tmp/@TMPDIR@/.mb2/user-wrappers"
-
 KNOWN_ISSUE "Does not disable debug by default (ignores --enable-debug)"
 KNOWN_ISSUE "Passes -j without argument"
 KNOWN_ISSUE "Silently ignores extra arguments"
 run_tc sb2_arg_pass "prepare" \
     "$(expect_args \
-        -t "$DEFAULT_TARGET" -- env PATH="$WRAPPERS_PATH:/tmp/@TMPDIR@/stubs:$ORIG_PATH" rpmbuild \
+        -t "$DEFAULT_TARGET" -- "/tmp/@TMPDIR@/.mb2/wrappers/.inject.sh" rpmbuild \
         --build-in-place --target= \
         --define '_smp_mflags -j' \
         --define '_sourcedir /tmp/@TMPDIR@/rpm' \
@@ -5717,7 +5732,7 @@ run_tc sb2_arg_pass "prepare" \
 
 run_tc sb2_arg_pass "build" \
     "$(expect_args \
-        -t "$DEFAULT_TARGET" -- env PATH="$WRAPPERS_PATH:/tmp/@TMPDIR@/stubs:$ORIG_PATH" rpmbuild \
+        -t "$DEFAULT_TARGET" -- "/tmp/@TMPDIR@/.mb2/wrappers/.inject.sh" rpmbuild \
         --build-in-place --target= \
         --define 'debug_package %{nil}' \
         --define "_smp_mflags -j$(rpm_quote "bad  1")" \
@@ -5734,7 +5749,7 @@ run_tc sb2_arg_pass "build" \
 
 run_tc sb2_arg_pass "build with debug" \
     "$(expect_args \
-        -t "$DEFAULT_TARGET" -- env PATH="$WRAPPERS_PATH:/tmp/@TMPDIR@/stubs:$ORIG_PATH" rpmbuild \
+        -t "$DEFAULT_TARGET" -- "/tmp/@TMPDIR@/.mb2/wrappers/.inject.sh" rpmbuild \
         --build-in-place --target= \
         --define "_smp_mflags -j$(rpm_quote "bad  1")" \
         --define '_rpmdir /tmp/@TMPDIR@/RPMS' \
@@ -5750,7 +5765,7 @@ run_tc sb2_arg_pass "build with debug" \
 
 run_tc sb2_arg_pass "qmake" \
     "$(expect_args \
-        -t "$DEFAULT_TARGET" -- env PATH="$WRAPPERS_PATH:/tmp/@TMPDIR@/stubs:$ORIG_PATH" rpmbuild \
+        -t "$DEFAULT_TARGET" -- "/tmp/@TMPDIR@/.mb2/wrappers/.inject.sh" rpmbuild \
         --build-in-place --target= \
         --define 'noecho 1' \
         --define '_sourcedir /tmp/@TMPDIR@/rpm' \
@@ -5762,7 +5777,7 @@ run_tc sb2_arg_pass "qmake" \
 
 run_tc sb2_arg_pass "cmake" \
     "$(expect_args \
-        -t "$DEFAULT_TARGET" -- env PATH="$WRAPPERS_PATH:/tmp/@TMPDIR@/stubs:$ORIG_PATH" rpmbuild \
+        -t "$DEFAULT_TARGET" -- "/tmp/@TMPDIR@/.mb2/wrappers/.inject.sh" rpmbuild \
         --build-in-place --target= \
         --define 'noecho 1' \
         --define '_sourcedir /tmp/@TMPDIR@/rpm' \
@@ -5774,7 +5789,7 @@ run_tc sb2_arg_pass "cmake" \
 
 run_tc sb2_arg_pass "make" \
     "$(expect_args \
-        -t "$DEFAULT_TARGET" -- env PATH="$WRAPPERS_PATH:/tmp/@TMPDIR@/stubs:$ORIG_PATH" rpmbuild \
+        -t "$DEFAULT_TARGET" -- "/tmp/@TMPDIR@/.mb2/wrappers/.inject.sh" rpmbuild \
         --build-in-place --target= \
         --define 'noecho 1' \
         --define '_sourcedir /tmp/@TMPDIR@/rpm' \
