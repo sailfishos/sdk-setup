@@ -33,6 +33,7 @@ def process_gcc_dump_includes(dump):
         if not inside_search_list:
             continue
         if line.startswith("End of search list."):
+            retv.append(line);
             break
 
         if line.startswith(" /srv/mer/toolings/"):
